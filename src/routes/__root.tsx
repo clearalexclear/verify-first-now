@@ -79,10 +79,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "VerifyFirst — Independent supplier verification for China & Vietnam" },
       { name: "description", content: "Independent verification reports on Chinese and Vietnamese suppliers. We work for you — never paid by the factory. Reports in 72 hours." },
-      { property: "og:title", content: "VerifyFirst — Know your supplier before you wire the money" },
-      { property: "og:description", content: "Independent supplier verification reports for importers and Amazon sellers buying from China and Vietnam." },
+      { property: "og:title", content: "VerifyFirst — Independent supplier verification for China & Vietnam" },
+      { property: "og:description", content: "Independent verification reports on Chinese and Vietnamese suppliers. We work for you — never paid by the factory. Reports in 72 hours." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "VerifyFirst — Independent supplier verification for China & Vietnam" },
+      { name: "twitter:description", content: "Independent verification reports on Chinese and Vietnamese suppliers. We work for you — never paid by the factory. Reports in 72 hours." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/d9c7454b-d28a-4fb9-8c45-c3a4db557248/id-preview-237f3b0f--eec538a7-cf56-47d4-b4a4-83790f009944.lovable.app-1781101901351.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/d9c7454b-d28a-4fb9-8c45-c3a4db557248/id-preview-237f3b0f--eec538a7-cf56-47d4-b4a4-83790f009944.lovable.app-1781101901351.png" },
     ],
     links: [
       {
