@@ -14,7 +14,66 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      orders: {
+        Row: {
+          certificates_info: string | null
+          concerns_text: string | null
+          created_at: string
+          customer_company: string
+          customer_email: string
+          customer_name: string
+          destination_market: string
+          estimated_order_value: string
+          id: string
+          order_reference: string
+          payment_status: string
+          product_category: string
+          supplier_company_name: string
+          supplier_contact_person: string | null
+          supplier_country: string
+          tier_selected: string
+          website_marketplace_url: string
+        }
+        Insert: {
+          certificates_info?: string | null
+          concerns_text?: string | null
+          created_at?: string
+          customer_company: string
+          customer_email: string
+          customer_name: string
+          destination_market: string
+          estimated_order_value: string
+          id?: string
+          order_reference?: string
+          payment_status?: string
+          product_category: string
+          supplier_company_name: string
+          supplier_contact_person?: string | null
+          supplier_country: string
+          tier_selected: string
+          website_marketplace_url: string
+        }
+        Update: {
+          certificates_info?: string | null
+          concerns_text?: string | null
+          created_at?: string
+          customer_company?: string
+          customer_email?: string
+          customer_name?: string
+          destination_market?: string
+          estimated_order_value?: string
+          id?: string
+          order_reference?: string
+          payment_status?: string
+          product_category?: string
+          supplier_company_name?: string
+          supplier_contact_person?: string | null
+          supplier_country?: string
+          tier_selected?: string
+          website_marketplace_url?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
