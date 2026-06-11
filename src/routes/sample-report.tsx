@@ -342,7 +342,7 @@ function SampleReport() {
           </div>
 
           {/* Closing */}
-          <div className="mt-10 rounded-xl border border-border bg-navy p-8 text-center text-navy-foreground sm:p-12">
+          <div className="no-print mt-10 rounded-xl border border-border bg-navy p-8 text-center text-navy-foreground sm:p-12">
             <h3 className="text-2xl font-bold sm:text-3xl">This is what €490 buys you.</h3>
             <p className="mt-4 text-sm leading-relaxed text-navy-foreground/80 sm:text-base">
               Every report is researched and written for your specific supplier and your specific order. Average delivery: 72 hours.
