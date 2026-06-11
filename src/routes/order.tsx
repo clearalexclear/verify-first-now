@@ -410,17 +410,24 @@ function OrderPage() {
                 </span>
               </div>
 
+              {submitError && (
+                <div className="mt-4 rounded-md border border-danger/40 bg-danger/5 p-4 text-sm text-danger">
+                  {submitError}
+                </div>
+              )}
+
               <div className="mt-8 flex items-center justify-between">
-                <Button variant="ghost" onClick={() => setStep(2)}>
+                <Button variant="ghost" onClick={() => setStep(2)} disabled={isSubmitting}>
                   <ArrowLeft className="mr-2 h-4 w-4" /> Back
                 </Button>
                 <Button
                   size="lg"
                   onClick={handleSubmit}
+                  disabled={isSubmitting}
                   className="bg-success text-success-foreground hover:bg-success/90"
                 >
                   <ShieldCheck className="mr-2 h-4 w-4" />
-                  Pay €{tierInfo.price} & start verification
+                  {isSubmitting ? "Saving order…" : `Pay €${tierInfo.price} & start verification`}
                 </Button>
               </div>
             </>
