@@ -99,7 +99,7 @@ function SampleReport() {
               </section>
 
               {/* Overall rating */}
-              <div className="mt-8 rounded-lg border border-warning/40 bg-warning/10 p-6">
+              <div className="avoid-break mt-8 rounded-lg border border-warning/40 bg-warning/10 p-6">
                 <div className="flex items-center gap-3">
                   <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
                     Overall Risk Rating
@@ -112,7 +112,7 @@ function SampleReport() {
               </div>
 
               {/* Key findings */}
-              <div className="mt-6 rounded-lg border border-border bg-card p-5 shadow-sm">
+              <div className="avoid-break mt-6 rounded-lg border border-border bg-card p-5 shadow-sm">
                 <h3 className="text-[11px] font-bold uppercase tracking-widest text-navy">
                   Key findings
                 </h3>
