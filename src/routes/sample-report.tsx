@@ -359,7 +359,7 @@ function SampleReport() {
       </div>
 
       {/* Sticky bottom CTA */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 px-4 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] backdrop-blur">
+      <div className="no-print fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 px-4 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] backdrop-blur">
         <div className="mx-auto flex max-w-4xl flex-col items-center justify-between gap-3 sm:flex-row">
           <p className="text-sm font-medium text-foreground">
             Check my supplier before I pay the deposit — <span className="font-bold text-navy">€490</span>
@@ -370,7 +370,9 @@ function SampleReport() {
         </div>
       </div>
 
-      <SiteFooter />
+      <div className="no-print">
+        <SiteFooter />
+      </div>
     </div>
   );
 }
