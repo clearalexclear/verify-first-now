@@ -414,7 +414,7 @@ function ReportTable({ rows }: { rows: [string, string][] }) {
 
 function AnalystNote({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mt-5 rounded-md border-l-4 border-navy/40 bg-muted/40 p-4 text-sm italic leading-relaxed text-foreground">
+    <div className="avoid-break mt-5 rounded-md border-l-4 border-navy/40 bg-muted/40 p-4 text-sm italic leading-relaxed text-foreground">
       <span className="mr-1 font-sans not-italic font-semibold text-navy">Buyer implication:</span>
       {children}
     </div>
