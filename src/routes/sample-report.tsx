@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { RiskBadge } from "@/components/RiskBadge";
-import { Check, ShieldCheck } from "lucide-react";
+import { Check, Download, ShieldCheck } from "lucide-react";
 
 export const Route = createFileRoute("/sample-report")({
   head: () => ({
