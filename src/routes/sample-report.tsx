@@ -349,7 +349,7 @@ function SampleReport() {
             Check my supplier before I pay the deposit — <span className="font-bold text-navy">€490</span>
           </p>
           <Button asChild size="sm" className="bg-navy text-navy-foreground hover:bg-navy/90">
-            <Link to="/order" search={{ tier: "standard" }}>Start verification</Link>
+            <Link to="/order" search={{ tier: "standard" }}>Check my supplier now</Link>
           </Button>
         </div>
       </div>
