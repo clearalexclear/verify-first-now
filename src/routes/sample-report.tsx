@@ -35,7 +35,7 @@ function SampleReport() {
     <div className="min-h-screen bg-background">
       <SiteHeader />
 
-      <div className="bg-muted/50 pb-32 pt-10 sm:pt-14">
+      <div className="bg-muted/50 pb-48 pt-10 sm:pt-14">
         <div className="mx-auto max-w-3xl px-4 sm:px-6">
           {/* Paper container */}
           <article className="sample-watermark relative overflow-hidden rounded-lg bg-card shadow-sm ring-1 ring-border">
