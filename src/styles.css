@@ -162,5 +162,33 @@
   @page {
     margin: 14mm;
   }
+  /* Avoid breaking key blocks across pages */
+  .print-area section,
+  .print-area table,
+  .print-area thead,
+  .print-area tr,
+  .print-area li,
+  .print-area h1,
+  .print-area h2,
+  .print-area h3,
+  .print-area h4,
+  .print-area img,
+  .print-area .avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  /* Keep section titles with the content that follows */
+  .print-area h2,
+  .print-area h3,
+  .print-area h4 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  /* Header band shouldn't be split */
+  .print-area > header {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
 }
+
 
