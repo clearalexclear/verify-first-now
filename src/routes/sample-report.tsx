@@ -314,7 +314,7 @@ function SampleReport() {
           </article>
 
           {/* What we need from you */}
-          <div className="mt-10 rounded-xl border border-border bg-card p-6 sm:p-8">
+          <div className="no-print mt-10 rounded-xl border border-border bg-card p-6 sm:p-8">
             <h3 className="text-lg font-bold text-navy">What we need from you</h3>
             <p className="mt-2 text-sm text-muted-foreground">
               Ordering takes 5 minutes. To start a verification, we ask for:
