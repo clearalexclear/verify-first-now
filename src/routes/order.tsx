@@ -81,6 +81,9 @@ function OrderPage() {
   const [data, setData] = useState<FormData>(empty);
   const [submitted, setSubmitted] = useState(false);
   const [orderId, setOrderId] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const submitOrderFn = useServerFn(submitOrder);
 
   const tierInfo = TIERS[tier];
 
@@ -99,26 +102,39 @@ function OrderPage() {
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.yourEmail) &&
     data.orderValue;
 
-  const handleSubmit = () => {
-    const id = `VF-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 9000) + 1000)}`;
-    setOrderId(id);
-    // Store locally so it can be processed manually until backend is wired
+  const handleSubmit = async () => {
+    setSubmitError(null);
+    setIsSubmitting(true);
     try {
-      const order = {
-        id,
-        tier,
-        price: tierInfo.price,
-        delivery: tierInfo.delivery,
-        createdAt: new Date().toISOString(),
-        ...data,
-      };
-      const existing = JSON.parse(localStorage.getItem("verifyfirst_orders") || "[]");
-      existing.push(order);
-      localStorage.setItem("verifyfirst_orders", JSON.stringify(existing));
-    } catch {
-      /* ignore */
+      const result = await submitOrderFn({
+        data: {
+          tier_selected: tier,
+          supplier_company_name: data.supplierName.trim(),
+          supplier_country: data.country,
+          destination_market: data.destinationMarket,
+          website_marketplace_url: data.supplierUrl.trim(),
+          supplier_contact_person: data.supplierContact.trim(),
+          product_category: data.productCategory.trim(),
+          certificates_info: data.documents.trim(),
+          concerns_text: data.concerns.trim(),
+          customer_name: data.yourName.trim(),
+          customer_company: data.yourCompany.trim(),
+          customer_email: data.yourEmail.trim(),
+          estimated_order_value: data.orderValue,
+        },
+      });
+      setOrderId(result.orderReference);
+      setSubmitted(true);
+    } catch (e) {
+      console.error(e);
+      setSubmitError(
+        e instanceof Error
+          ? e.message
+          : "Something went wrong saving your order. Please try again.",
+      );
+    } finally {
+      setIsSubmitting(false);
     }
-    setSubmitted(true);
   };
 
   if (submitted) {
