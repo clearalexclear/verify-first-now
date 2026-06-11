@@ -39,7 +39,7 @@ function SampleReport() {
         <div className="mx-auto max-w-3xl px-4 sm:px-6">
           {/* Paper container */}
           <article className="sample-watermark relative overflow-hidden rounded-lg bg-card shadow-sm ring-1 ring-border">
-            <div className="sample-watermark-text">SAMPLE</div>
+            <div className="sample-watermark-text" aria-hidden="true" />
 
             {/* Header band */}
             <header className="relative z-10 bg-navy px-6 py-8 text-navy-foreground sm:px-12 sm:py-10">
