@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
+import { useServerFn } from "@tanstack/react-start";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { submitOrder } from "@/lib/orders.functions";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { Check, ArrowLeft, ArrowRight, ShieldCheck, Lock } from "lucide-react";
@@ -79,6 +81,9 @@ function OrderPage() {
   const [data, setData] = useState<FormData>(empty);
   const [submitted, setSubmitted] = useState(false);
   const [orderId, setOrderId] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const submitOrderFn = useServerFn(submitOrder);
 
   const tierInfo = TIERS[tier];
 
@@ -97,26 +102,39 @@ function OrderPage() {
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.yourEmail) &&
     data.orderValue;
 
-  const handleSubmit = () => {
-    const id = `VF-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 9000) + 1000)}`;
-    setOrderId(id);
-    // Store locally so it can be processed manually until backend is wired
+  const handleSubmit = async () => {
+    setSubmitError(null);
+    setIsSubmitting(true);
     try {
-      const order = {
-        id,
-        tier,
-        price: tierInfo.price,
-        delivery: tierInfo.delivery,
-        createdAt: new Date().toISOString(),
-        ...data,
-      };
-      const existing = JSON.parse(localStorage.getItem("verifyfirst_orders") || "[]");
-      existing.push(order);
-      localStorage.setItem("verifyfirst_orders", JSON.stringify(existing));
-    } catch {
-      /* ignore */
+      const result = await submitOrderFn({
+        data: {
+          tier_selected: tier,
+          supplier_company_name: data.supplierName.trim(),
+          supplier_country: data.country,
+          destination_market: data.destinationMarket,
+          website_marketplace_url: data.supplierUrl.trim(),
+          supplier_contact_person: data.supplierContact.trim(),
+          product_category: data.productCategory.trim(),
+          certificates_info: data.documents.trim(),
+          concerns_text: data.concerns.trim(),
+          customer_name: data.yourName.trim(),
+          customer_company: data.yourCompany.trim(),
+          customer_email: data.yourEmail.trim(),
+          estimated_order_value: data.orderValue,
+        },
+      });
+      setOrderId(result.orderReference);
+      setSubmitted(true);
+    } catch (e) {
+      console.error(e);
+      setSubmitError(
+        e instanceof Error
+          ? e.message
+          : "Something went wrong saving your order. Please try again.",
+      );
+    } finally {
+      setIsSubmitting(false);
     }
-    setSubmitted(true);
   };
 
   if (submitted) {
@@ -392,17 +410,24 @@ function OrderPage() {
                 </span>
               </div>
 
+              {submitError && (
+                <div className="mt-4 rounded-md border border-danger/40 bg-danger/5 p-4 text-sm text-danger">
+                  {submitError}
+                </div>
+              )}
+
               <div className="mt-8 flex items-center justify-between">
-                <Button variant="ghost" onClick={() => setStep(2)}>
+                <Button variant="ghost" onClick={() => setStep(2)} disabled={isSubmitting}>
                   <ArrowLeft className="mr-2 h-4 w-4" /> Back
                 </Button>
                 <Button
                   size="lg"
                   onClick={handleSubmit}
+                  disabled={isSubmitting}
                   className="bg-success text-success-foreground hover:bg-success/90"
                 >
                   <ShieldCheck className="mr-2 h-4 w-4" />
-                  Pay €{tierInfo.price} & start verification
+                  {isSubmitting ? "Saving order…" : `Pay €${tierInfo.price} & start verification`}
                 </Button>
               </div>
             </>
