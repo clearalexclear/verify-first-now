@@ -61,16 +61,26 @@ function SampleReport() {
                 This is a fictional sample report created to illustrate the structure and depth of a typical VerifyFirst supplier verification report. Real findings depend on available supplier, country, product, and registry data.
               </div>
 
-              {/* Report metadata */}
-              <dl className="mt-8 grid grid-cols-1 gap-3 border-y border-border py-6 text-sm sm:grid-cols-2">
-                <MetaRow label="Report ID" value="VF-2026-0147 (SAMPLE)" />
-                <MetaRow label="Date of issue" value={today} />
-                <MetaRow label="Prepared for" value="[Client name redacted]" />
-                <MetaRow label="Subject" value="Ningbo Brightway Industry & Trade Co., Ltd." />
-                <MetaRow label="Country" value="China (Zhejiang Province)" />
-                <MetaRow label="Product category" value="Stainless steel kitchenware" />
-                <MetaRow label="Stated order value" value="€45,000" />
-              </dl>
+              {/* Report metadata — executive cover panel */}
+              <section className="mt-8 overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+                <header className="flex items-center justify-between border-b border-border bg-muted/40 px-5 py-3">
+                  <h2 className="text-[11px] font-bold uppercase tracking-widest text-navy">
+                    Executive information
+                  </h2>
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                    Confidential
+                  </span>
+                </header>
+                <dl className="grid grid-cols-1 gap-x-8 gap-y-4 px-5 py-6 text-sm sm:grid-cols-2">
+                  <MetaRow label="Report ID" value="VF-2026-0147 (SAMPLE)" />
+                  <MetaRow label="Date of issue" value={today} />
+                  <MetaRow label="Prepared for" value="[Client name redacted]" />
+                  <MetaRow label="Subject" value="Ningbo Brightway Industry & Trade Co., Ltd." />
+                  <MetaRow label="Country" value="China (Zhejiang Province)" />
+                  <MetaRow label="Product category" value="Stainless steel kitchenware" />
+                  <MetaRow label="Stated order value" value="€45,000" />
+                </dl>
+              </section>
 
               {/* Overall rating */}
               <div className="mt-8 rounded-lg border border-warning/40 bg-warning/10 p-6">
@@ -84,6 +94,32 @@ function SampleReport() {
                   <strong>Recommendation:</strong> Proceed only with structured payment terms and pre-shipment inspection. Do not pay more than 30% deposit. Key concern: subject is a trading company presenting itself as a manufacturer, with certification inconsistencies.
                 </p>
               </div>
+
+              {/* Key findings */}
+              <div className="mt-6 rounded-lg border border-border bg-card p-5 shadow-sm">
+                <h3 className="text-[11px] font-bold uppercase tracking-widest text-navy">
+                  Key findings
+                </h3>
+                <ul className="mt-3 space-y-2 text-sm text-foreground">
+                  {[
+                    { ok: true, text: "Legal entity verified" },
+                    { ok: false, text: "Trading company, not direct manufacturer" },
+                    { ok: true, text: "Export history found in relevant product category" },
+                    { ok: false, text: "One certificate unverifiable" },
+                    { ok: false, text: "Proceed only with safeguards" },
+                  ].map((f) => (
+                    <li key={f.text} className="flex items-start gap-2">
+                      {f.ok ? (
+                        <Check className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+                      ) : (
+                        <span className="mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full bg-warning" />
+                      )}
+                      <span>{f.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
 
               {/* Exec summary */}
               <SectionTitle>Executive summary</SectionTitle>
