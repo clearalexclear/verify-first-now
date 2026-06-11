@@ -33,13 +33,29 @@ function SampleReport() {
 
   return (
     <div className="min-h-screen bg-background">
-      <SiteHeader />
+      <div className="no-print">
+        <SiteHeader />
+      </div>
 
       <div className="bg-muted/50 pb-48 pt-10 sm:pt-14">
         <div className="mx-auto max-w-3xl px-4 sm:px-6">
+          {/* Download PDF */}
+          <div className="no-print mb-4 flex justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.print()}
+              className="gap-2"
+            >
+              <Download className="h-4 w-4" />
+              Download as PDF
+            </Button>
+          </div>
+
           {/* Paper container */}
-          <article className="sample-watermark relative overflow-hidden rounded-lg bg-card shadow-sm ring-1 ring-border">
+          <article className="print-area sample-watermark relative overflow-hidden rounded-lg bg-card shadow-sm ring-1 ring-border">
             <div className="sample-watermark-text" aria-hidden="true" />
+
 
             {/* Header band */}
             <header className="relative z-10 bg-navy px-6 py-8 text-navy-foreground sm:px-12 sm:py-10">
