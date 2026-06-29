@@ -16,15 +16,42 @@ import {
 import { submitOrder } from "@/lib/orders.functions";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
-import { Check, ArrowLeft, ArrowRight, ShieldCheck, Lock } from "lucide-react";
+import {
+  Check,
+  ArrowLeft,
+  ArrowRight,
+  ShieldCheck,
+  Lock,
+  Upload,
+  X,
+  FileText,
+} from "lucide-react";
 
 const TIERS = {
-  standard: { name: "Standard", price: 490, delivery: "72 hours" },
-  priority: { name: "Priority", price: 690, delivery: "24 hours" },
-  onsite: { name: "On-Site", price: 1290, delivery: "7 days" },
+  standard: { name: "Standard", price: 490, delivery: "AI report by email" },
+  priority: { name: "Priority", price: 690, delivery: "Priority queue" },
+  onsite: { name: "On-Site", price: 1290, delivery: "7 days incl. inspection" },
 } as const;
 
 type TierId = keyof typeof TIERS;
+
+const DOC_CATEGORIES = [
+  { value: "business_licence", label: "Business licence" },
+  { value: "certificate", label: "Certificate / test report" },
+  { value: "quotation", label: "Quotation / payment instructions" },
+] as const;
+type DocCategory = (typeof DOC_CATEGORIES)[number]["value"];
+
+const MAX_FILES = 3;
+const MAX_BYTES = 10 * 1024 * 1024;
+const ALLOWED_TYPES = ["application/pdf", "image/jpeg", "image/jpg", "image/png"];
+const ALLOWED_EXTS = ["pdf", "jpg", "jpeg", "png"];
+
+interface PendingDoc {
+  file: File;
+  category: DocCategory;
+  error?: string;
+}
 
 const searchSchema = z.object({
   tier: z.enum(["standard", "priority", "onsite"]).catch("standard"),
@@ -35,14 +62,13 @@ export const Route = createFileRoute("/order")({
   head: () => ({
     meta: [
       { title: "Order a verification — VerifyFirst" },
-      { name: "description", content: "Start your independent supplier verification. Takes about 5 minutes." },
+      { name: "description", content: "Start your automated AI supplier investigation. Report by email." },
     ],
   }),
   component: OrderPage,
 });
 
 type FormData = {
-  // Step 1
   supplierName: string;
   supplierChineseName: string;
   country: string;
@@ -51,9 +77,7 @@ type FormData = {
   productCategory: string;
   productDescription: string;
   destinationMarket: string;
-  documents: string;
   concerns: string;
-  // Step 2
   yourName: string;
   yourCompany: string;
   yourEmail: string;
@@ -69,7 +93,6 @@ const empty: FormData = {
   productCategory: "",
   productDescription: "",
   destinationMarket: "",
-  documents: "",
   concerns: "",
   yourName: "",
   yourCompany: "",
@@ -77,15 +100,27 @@ const empty: FormData = {
   orderValue: "",
 };
 
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // strip the "data:...;base64," prefix
+      const i = result.indexOf(",");
+      resolve(i >= 0 ? result.slice(i + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 function OrderPage() {
   const { tier: initialTier } = Route.useSearch();
   const navigate = useNavigate();
   const [tier, setTier] = useState<TierId>(initialTier);
   const [step, setStep] = useState(1);
   const [data, setData] = useState<FormData>(empty);
-  const [submitted, setSubmitted] = useState(false);
-  const [orderId, setOrderId] = useState("");
-  const [uploadUrl, setUploadUrl] = useState("");
+  const [docs, setDocs] = useState<PendingDoc[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const submitOrderFn = useServerFn(submitOrder);
@@ -107,11 +142,39 @@ function OrderPage() {
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.yourEmail) &&
     data.orderValue;
 
+  const addFiles = (files: FileList | null) => {
+    if (!files) return;
+    setDocs((cur) => {
+      const out = [...cur];
+      for (const file of Array.from(files)) {
+        if (out.length >= MAX_FILES) break;
+        const ext = file.name.toLowerCase().split(".").pop() ?? "";
+        let error: string | undefined;
+        if (!ALLOWED_EXTS.includes(ext) && !ALLOWED_TYPES.includes(file.type)) {
+          error = "Only PDF, JPG, JPEG, PNG are accepted.";
+        } else if (file.size > MAX_BYTES) {
+          error = "Maximum 10 MB per file.";
+        }
+        out.push({ file, category: "business_licence", error });
+      }
+      return out;
+    });
+  };
+
   const handleSubmit = async () => {
     setSubmitError(null);
     setIsSubmitting(true);
     try {
-      // Stub payment success — real Stripe will replace this.
+      const docPayload = await Promise.all(
+        docs
+          .filter((d) => !d.error)
+          .map(async (d) => ({
+            filename: d.file.name,
+            category: d.category,
+            contentType: d.file.type || "application/octet-stream",
+            fileBase64: await fileToBase64(d.file),
+          })),
+      );
       const result = await submitOrderFn({
         data: {
           tier_selected: tier,
@@ -123,83 +186,25 @@ function OrderPage() {
           supplier_contact_person: data.supplierContact.trim(),
           product_category: data.productCategory.trim(),
           product_description: data.productDescription.trim(),
-          certificates_info: data.documents.trim(),
+          certificates_info: "",
           concerns_text: data.concerns.trim(),
           customer_name: data.yourName.trim(),
           customer_company: data.yourCompany.trim(),
           customer_email: data.yourEmail.trim(),
           estimated_order_value: data.orderValue,
           payment_confirmed: true,
+          documents: docPayload,
         },
       });
-      setOrderId(result.orderReference);
-      setUploadUrl(result.uploadUrl);
-      setSubmitted(true);
+      navigate({ to: "/order/status/$token", params: { token: result.statusToken } });
     } catch (e) {
       console.error(e);
       setSubmitError(
-        e instanceof Error
-          ? e.message
-          : "Something went wrong saving your order. Please try again.",
+        e instanceof Error ? e.message : "Something went wrong saving your order. Please try again.",
       );
-    } finally {
       setIsSubmitting(false);
     }
   };
-
-  if (submitted) {
-    return (
-      <div className="min-h-screen bg-background">
-        <SiteHeader />
-        <div className="mx-auto max-w-2xl px-4 py-16 sm:px-6">
-          <div className="rounded-2xl border border-success/30 bg-success/5 p-8 sm:p-12">
-            <div className="text-center">
-              <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-success text-success-foreground">
-                <Check className="h-7 w-7" />
-              </span>
-              <h1 className="mt-6 text-2xl font-bold text-navy sm:text-3xl">Order received — thank you.</h1>
-              <p className="mt-3 text-base leading-relaxed text-foreground">
-                A confirmation has been sent to <strong>{data.yourEmail}</strong>.
-              </p>
-              <div className="mt-5 inline-block rounded-md border border-border bg-card px-4 py-2 text-sm text-muted-foreground">
-                Order reference: <span className="font-mono font-semibold text-foreground">{orderId}</span>
-              </div>
-            </div>
-
-            <div className="mt-8 rounded-lg border border-border bg-card p-5 text-sm leading-relaxed text-foreground">
-              <p>
-                Your report will be delivered by email as a PDF. <strong>Delivery begins after payment
-                confirmation and receipt of the basic supplier information needed for the investigation.</strong>
-              </p>
-              <p className="mt-3">
-                Please upload any available business licence, quotation, invoice, payment details, certificates
-                or test reports using the secure link below. You do not need an account or dashboard — we will
-                contact you directly if anything essential is required.
-              </p>
-            </div>
-
-            <div className="mt-6 flex flex-col items-center gap-3">
-              <Button asChild size="lg" className="bg-navy text-navy-foreground hover:bg-navy/90">
-                <a href={uploadUrl}>
-                  <ShieldCheck className="mr-2 h-4 w-4" /> Upload supporting documents
-                </a>
-              </Button>
-              <div className="break-all rounded-md border border-border bg-muted/40 px-3 py-2 text-center text-xs text-muted-foreground">
-                {uploadUrl}
-              </div>
-            </div>
-
-            <div className="mt-8 text-center">
-              <Button asChild variant="ghost" size="sm">
-                <Link to="/">Back to home</Link>
-              </Button>
-            </div>
-          </div>
-        </div>
-        <SiteFooter />
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -212,15 +217,12 @@ function OrderPage() {
           <ArrowLeft className="h-4 w-4" /> Back
         </button>
 
-        {/* Stepper */}
         <div className="mb-8 flex items-center gap-2">
           {[1, 2, 3].map((n) => (
             <div key={n} className="flex flex-1 items-center gap-2">
               <span
                 className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm font-bold ${
-                  step >= n
-                    ? "bg-navy text-navy-foreground"
-                    : "bg-muted text-muted-foreground"
+                  step >= n ? "bg-navy text-navy-foreground" : "bg-muted text-muted-foreground"
                 }`}
               >
                 {step > n ? <Check className="h-4 w-4" /> : n}
@@ -238,7 +240,7 @@ function OrderPage() {
             <>
               <h2 className="text-2xl font-bold text-navy">Tell us about the supplier</h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                Whatever you have. We can work with partial information.
+                Whatever you have. Documents are optional — you can order without them.
               </p>
 
               <div className="mt-8 space-y-5">
@@ -250,7 +252,7 @@ function OrderPage() {
                   />
                 </Field>
 
-                <Field label="Supplier Chinese legal name" hint="Optional — if known (中文名称)">
+                <Field label="Supplier Chinese or Vietnamese legal name" hint="Optional — if known">
                   <Input
                     value={data.supplierChineseName}
                     onChange={(e) => update("supplierChineseName")(e.target.value)}
@@ -259,7 +261,7 @@ function OrderPage() {
                 </Field>
 
                 <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Country" required>
+                  <Field label="Supplier country" required>
                     <Select value={data.country} onValueChange={update("country")}>
                       <SelectTrigger><SelectValue placeholder="Select country" /></SelectTrigger>
                       <SelectContent>
@@ -305,7 +307,7 @@ function OrderPage() {
                   />
                 </Field>
 
-                <Field label="Exact product / model / material" hint="Specific model numbers, materials, sizes if known">
+                <Field label="Exact product / model / material" hint="Optional but helpful">
                   <Textarea
                     rows={3}
                     value={data.productDescription}
@@ -314,25 +316,93 @@ function OrderPage() {
                   />
                 </Field>
 
-                <Field
-                  label="Business license or certificates received"
-                  hint="Optional — paste filenames or links; you can upload files after ordering"
-                >
-                  <Input
-                    value={data.documents}
-                    onChange={(e) => update("documents")(e.target.value)}
-                    placeholder="e.g. ISO 9001 cert, business license PDF"
-                  />
-                </Field>
-
-                <Field label="Any concerns you already have" hint="Optional">
+                <Field label="Customer concerns" hint="Optional">
                   <Textarea
-                    rows={4}
+                    rows={3}
                     value={data.concerns}
                     onChange={(e) => update("concerns")(e.target.value)}
                     placeholder="e.g. asking for 50% deposit, factory address looks suspicious…"
                   />
                 </Field>
+
+                <div>
+                  <Label className="mb-2 block text-sm font-medium">
+                    Supporting documents{" "}
+                    <span className="text-xs font-normal text-muted-foreground">
+                      — Optional. Max {MAX_FILES} files, 10 MB each. PDF, JPG or PNG.
+                    </span>
+                  </Label>
+
+                  {docs.length < MAX_FILES && (
+                    <label
+                      htmlFor="doc-upload"
+                      className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground hover:border-navy/40 hover:bg-muted/50"
+                    >
+                      <Upload className="h-4 w-4" />
+                      Add document
+                      <input
+                        id="doc-upload"
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => {
+                          addFiles(e.target.files);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                  )}
+
+                  {docs.length > 0 && (
+                    <ul className="mt-3 space-y-2">
+                      {docs.map((d, idx) => (
+                        <li
+                          key={idx}
+                          className={`flex items-center gap-3 rounded-lg border bg-card p-3 ${
+                            d.error ? "border-destructive/40" : "border-border"
+                          }`}
+                        >
+                          <FileText className="h-5 w-5 shrink-0 text-navy" />
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium">{d.file.name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {(d.file.size / 1024 / 1024).toFixed(2)} MB
+                              {d.error && <span className="ml-2 text-destructive">— {d.error}</span>}
+                            </div>
+                          </div>
+                          <Select
+                            value={d.category}
+                            onValueChange={(v) =>
+                              setDocs((cur) =>
+                                cur.map((x, i) => (i === idx ? { ...x, category: v as DocCategory } : x)),
+                              )
+                            }
+                          >
+                            <SelectTrigger className="h-8 w-[180px] text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {DOC_CATEGORIES.map((c) => (
+                                <SelectItem key={c.value} value={c.value} className="text-xs">
+                                  {c.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <button
+                            type="button"
+                            onClick={() => setDocs((cur) => cur.filter((_, i) => i !== idx))}
+                            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                            aria-label="Remove"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
 
               <div className="mt-8 flex justify-end">
@@ -356,20 +426,14 @@ function OrderPage() {
               <div className="mt-8 space-y-5">
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Your name" required>
-                    <Input
-                      value={data.yourName}
-                      onChange={(e) => update("yourName")(e.target.value)}
-                    />
+                    <Input value={data.yourName} onChange={(e) => update("yourName")(e.target.value)} />
                   </Field>
                   <Field label="Company" required>
-                    <Input
-                      value={data.yourCompany}
-                      onChange={(e) => update("yourCompany")(e.target.value)}
-                    />
+                    <Input value={data.yourCompany} onChange={(e) => update("yourCompany")(e.target.value)} />
                   </Field>
                 </div>
 
-                <Field label="Email" required>
+                <Field label="Email" required hint="The report PDF will be sent here">
                   <Input
                     type="email"
                     value={data.yourEmail}
@@ -412,10 +476,9 @@ function OrderPage() {
             <>
               <h2 className="text-2xl font-bold text-navy">Review & pay</h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                Confirm your verification tier and complete payment.
+                Confirm your verification tier and complete payment. Our AI investigation starts immediately after payment.
               </p>
 
-              {/* Tier picker */}
               <div className="mt-6 grid gap-3 sm:grid-cols-3">
                 {(Object.keys(TIERS) as TierId[]).map((id) => (
                   <button
@@ -423,9 +486,7 @@ function OrderPage() {
                     type="button"
                     onClick={() => setTier(id)}
                     className={`rounded-lg border p-4 text-left transition-colors ${
-                      tier === id
-                        ? "border-navy bg-navy/5 ring-2 ring-navy"
-                        : "border-border hover:border-navy/40"
+                      tier === id ? "border-navy bg-navy/5 ring-2 ring-navy" : "border-border hover:border-navy/40"
                     }`}
                   >
                     <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -437,17 +498,15 @@ function OrderPage() {
                 ))}
               </div>
 
-              {/* Summary */}
               <div className="mt-8 rounded-lg border border-border bg-muted/40 p-5">
-                <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                  Order summary
-                </h3>
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Order summary</h3>
                 <dl className="mt-3 space-y-2 text-sm">
                   <SummaryRow label="Supplier" value={data.supplierName} />
                   <SummaryRow label="Country" value={data.country} />
                   <SummaryRow label="Product" value={data.productCategory} />
+                  <SummaryRow label="Documents" value={`${docs.filter((d) => !d.error).length} attached`} />
                   <SummaryRow label="Delivery to" value={data.yourEmail} />
-                  <SummaryRow label="Tier" value={`${tierInfo.name} — ${tierInfo.delivery}`} />
+                  <SummaryRow label="Tier" value={tierInfo.name} />
                 </dl>
                 <div className="mt-4 flex items-baseline justify-between border-t border-border pt-4">
                   <span className="text-sm font-semibold text-foreground">Total</span>
@@ -459,9 +518,8 @@ function OrderPage() {
                 <Lock className="mt-0.5 h-4 w-4 shrink-0 text-warning-foreground" />
                 <span>
                   <strong>Stripe payment is being set up.</strong> For now, clicking the button below
-                  simulates a successful payment, creates your order, and emails you a secure link to
-                  upload supporting documents. Delivery begins after payment confirmation and receipt of
-                  the basic supplier information needed for the investigation.
+                  simulates a successful payment, creates your order, and starts the AI investigation.
+                  Your report PDF will be emailed to you when it is ready.
                 </span>
               </div>
 
@@ -482,12 +540,16 @@ function OrderPage() {
                   className="bg-success text-success-foreground hover:bg-success/90"
                 >
                   <ShieldCheck className="mr-2 h-4 w-4" />
-                  {isSubmitting ? "Processing…" : `Pay €${tierInfo.price} (simulated) & continue`}
+                  {isSubmitting ? "Processing…" : `Pay €${tierInfo.price} (simulated) & start investigation`}
                 </Button>
               </div>
             </>
           )}
         </div>
+
+        <p className="mt-6 text-center text-xs text-muted-foreground">
+          Need help? <Link to="/" className="underline">Contact us</Link>
+        </p>
       </div>
       <SiteFooter />
     </div>
