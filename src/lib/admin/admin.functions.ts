@@ -90,7 +90,7 @@ export const getCase = createServerFn({ method: "GET" })
     if (error) throw new Error(error.message);
     if (!caseRow) throw new Error("Case not found");
 
-    const [sectionsRes, checksRes, evidenceRes, commsRes, docsRes, reportsRes, activityRes, analystsRes] = await Promise.all([
+    const [sectionsRes, checksRes, evidenceRes, commsRes, docsRes, reportsRes, activityRes, rolesRes] = await Promise.all([
       supabase.from("check_sections").select("*").order("display_order"),
       supabase.from("case_checks").select("*").eq("case_id", data.caseId).order("display_order"),
       supabase.from("evidence_items").select("*").eq("case_id", data.caseId).order("created_at", { ascending: false }),
@@ -98,8 +98,14 @@ export const getCase = createServerFn({ method: "GET" })
       supabase.from("case_documents").select("*").eq("case_id", data.caseId).order("created_at", { ascending: false }),
       supabase.from("report_versions").select("*").eq("case_id", data.caseId).order("version_number", { ascending: false }),
       supabase.from("case_activity_log").select("*").eq("case_id", data.caseId).order("created_at", { ascending: false }).limit(100),
-      supabase.from("user_roles").select("user_id, role, profile:profiles!user_roles_user_id_fkey(id, full_name, email)").in("role", ["analyst", "admin"]),
+      supabase.from("user_roles").select("user_id, role").in("role", ["analyst", "admin"]),
     ]);
+
+    const staffIds = Array.from(new Set((rolesRes.data ?? []).map((r: any) => r.user_id)));
+    const { data: analystsProfiles } = staffIds.length
+      ? await supabase.from("profiles").select("id, full_name, email").in("id", staffIds)
+      : { data: [] as any[] };
+
 
     let analystName: string | null = null;
     if (caseRow.assigned_analyst) {
