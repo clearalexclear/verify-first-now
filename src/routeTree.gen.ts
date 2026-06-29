@@ -18,6 +18,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedAdminRouteRouteImport } from './routes/_authenticated/admin/route'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
+import { Route as AuthenticatedAdminCasesCaseIdRouteImport } from './routes/_authenticated/admin/cases.$caseId'
 
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
@@ -63,6 +64,12 @@ const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedAdminRouteRoute,
 } as any)
+const AuthenticatedAdminCasesCaseIdRoute =
+  AuthenticatedAdminCasesCaseIdRouteImport.update({
+    id: '/cases/$caseId',
+    path: '/cases/$caseId',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -73,6 +80,7 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/admin': typeof AuthenticatedAdminRouteRouteWithChildren
   '/admin/': typeof AuthenticatedAdminIndexRoute
+  '/admin/cases/$caseId': typeof AuthenticatedAdminCasesCaseIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -82,6 +90,7 @@ export interface FileRoutesByTo {
   '/sample-report': typeof SampleReportRoute
   '/terms': typeof TermsRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
+  '/admin/cases/$caseId': typeof AuthenticatedAdminCasesCaseIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -94,6 +103,7 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRouteRouteWithChildren
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
+  '/_authenticated/admin/cases/$caseId': typeof AuthenticatedAdminCasesCaseIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -106,6 +116,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/admin'
     | '/admin/'
+    | '/admin/cases/$caseId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -115,6 +126,7 @@ export interface FileRouteTypes {
     | '/sample-report'
     | '/terms'
     | '/admin'
+    | '/admin/cases/$caseId'
   id:
     | '__root__'
     | '/'
@@ -126,6 +138,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/_authenticated/admin'
     | '/_authenticated/admin/'
+    | '/_authenticated/admin/cases/$caseId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -203,16 +216,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
+    '/_authenticated/admin/cases/$caseId': {
+      id: '/_authenticated/admin/cases/$caseId'
+      path: '/cases/$caseId'
+      fullPath: '/admin/cases/$caseId'
+      preLoaderRoute: typeof AuthenticatedAdminCasesCaseIdRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
   }
 }
 
 interface AuthenticatedAdminRouteRouteChildren {
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
+  AuthenticatedAdminCasesCaseIdRoute: typeof AuthenticatedAdminCasesCaseIdRoute
 }
 
 const AuthenticatedAdminRouteRouteChildren: AuthenticatedAdminRouteRouteChildren =
   {
     AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
+    AuthenticatedAdminCasesCaseIdRoute: AuthenticatedAdminCasesCaseIdRoute,
   }
 
 const AuthenticatedAdminRouteRouteWithChildren =
