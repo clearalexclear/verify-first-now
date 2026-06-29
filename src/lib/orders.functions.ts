@@ -119,6 +119,11 @@ export const submitOrder = createServerFn({ method: "POST" })
       });
     }
 
+    const orderReference = inserted.order_reference as string;
+    const tier = TIER_LABELS[data.tier_selected];
+
+
+
 
     // Best-effort email notification via Resend connector
     try {
