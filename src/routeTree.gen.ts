@@ -13,7 +13,14 @@ import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SampleReportRouteImport } from './routes/sample-report'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as OrderRouteImport } from './routes/order'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedAdminRouteRouteImport } from './routes/_authenticated/admin/route'
+import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
+import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
+import { Route as AuthenticatedAdminTemplatesRouteImport } from './routes/_authenticated/admin/templates'
+import { Route as AuthenticatedAdminCasesCaseIdRouteImport } from './routes/_authenticated/admin/cases.$caseId'
 
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
@@ -35,44 +42,134 @@ const OrderRoute = OrderRouteImport.update({
   path: '/order',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
+  id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedAdminRouteRoute = AuthenticatedAdminRouteRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthenticatedAdminRouteRoute,
+} as any)
+const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AuthenticatedAdminRouteRoute,
+} as any)
+const AuthenticatedAdminTemplatesRoute =
+  AuthenticatedAdminTemplatesRouteImport.update({
+    id: '/templates',
+    path: '/templates',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
+const AuthenticatedAdminCasesCaseIdRoute =
+  AuthenticatedAdminCasesCaseIdRouteImport.update({
+    id: '/cases/$caseId',
+    path: '/cases/$caseId',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
   '/order': typeof OrderRoute
   '/privacy': typeof PrivacyRoute
   '/sample-report': typeof SampleReportRoute
   '/terms': typeof TermsRoute
+  '/admin': typeof AuthenticatedAdminRouteRouteWithChildren
+  '/admin/templates': typeof AuthenticatedAdminTemplatesRoute
+  '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/admin/': typeof AuthenticatedAdminIndexRoute
+  '/admin/cases/$caseId': typeof AuthenticatedAdminCasesCaseIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
   '/order': typeof OrderRoute
   '/privacy': typeof PrivacyRoute
   '/sample-report': typeof SampleReportRoute
   '/terms': typeof TermsRoute
+  '/admin/templates': typeof AuthenticatedAdminTemplatesRoute
+  '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/admin': typeof AuthenticatedAdminIndexRoute
+  '/admin/cases/$caseId': typeof AuthenticatedAdminCasesCaseIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/auth': typeof AuthRoute
   '/order': typeof OrderRoute
   '/privacy': typeof PrivacyRoute
   '/sample-report': typeof SampleReportRoute
   '/terms': typeof TermsRoute
+  '/_authenticated/admin': typeof AuthenticatedAdminRouteRouteWithChildren
+  '/_authenticated/admin/templates': typeof AuthenticatedAdminTemplatesRoute
+  '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
+  '/_authenticated/admin/cases/$caseId': typeof AuthenticatedAdminCasesCaseIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/order' | '/privacy' | '/sample-report' | '/terms'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/order'
+    | '/privacy'
+    | '/sample-report'
+    | '/terms'
+    | '/admin'
+    | '/admin/templates'
+    | '/admin/users'
+    | '/admin/'
+    | '/admin/cases/$caseId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/order' | '/privacy' | '/sample-report' | '/terms'
-  id: '__root__' | '/' | '/order' | '/privacy' | '/sample-report' | '/terms'
+  to:
+    | '/'
+    | '/auth'
+    | '/order'
+    | '/privacy'
+    | '/sample-report'
+    | '/terms'
+    | '/admin/templates'
+    | '/admin/users'
+    | '/admin'
+    | '/admin/cases/$caseId'
+  id:
+    | '__root__'
+    | '/'
+    | '/_authenticated'
+    | '/auth'
+    | '/order'
+    | '/privacy'
+    | '/sample-report'
+    | '/terms'
+    | '/_authenticated/admin'
+    | '/_authenticated/admin/templates'
+    | '/_authenticated/admin/users'
+    | '/_authenticated/admin/'
+    | '/_authenticated/admin/cases/$caseId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
+  AuthRoute: typeof AuthRoute
   OrderRoute: typeof OrderRoute
   PrivacyRoute: typeof PrivacyRoute
   SampleReportRoute: typeof SampleReportRoute
@@ -109,6 +206,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrderRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -116,11 +227,79 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/admin': {
+      id: '/_authenticated/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AuthenticatedAdminRouteRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/admin/': {
+      id: '/_authenticated/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/admin/users': {
+      id: '/_authenticated/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AuthenticatedAdminUsersRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/admin/templates': {
+      id: '/_authenticated/admin/templates'
+      path: '/templates'
+      fullPath: '/admin/templates'
+      preLoaderRoute: typeof AuthenticatedAdminTemplatesRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/admin/cases/$caseId': {
+      id: '/_authenticated/admin/cases/$caseId'
+      path: '/cases/$caseId'
+      fullPath: '/admin/cases/$caseId'
+      preLoaderRoute: typeof AuthenticatedAdminCasesCaseIdRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
   }
 }
 
+interface AuthenticatedAdminRouteRouteChildren {
+  AuthenticatedAdminTemplatesRoute: typeof AuthenticatedAdminTemplatesRoute
+  AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
+  AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
+  AuthenticatedAdminCasesCaseIdRoute: typeof AuthenticatedAdminCasesCaseIdRoute
+}
+
+const AuthenticatedAdminRouteRouteChildren: AuthenticatedAdminRouteRouteChildren =
+  {
+    AuthenticatedAdminTemplatesRoute: AuthenticatedAdminTemplatesRoute,
+    AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
+    AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
+    AuthenticatedAdminCasesCaseIdRoute: AuthenticatedAdminCasesCaseIdRoute,
+  }
+
+const AuthenticatedAdminRouteRouteWithChildren =
+  AuthenticatedAdminRouteRoute._addFileChildren(
+    AuthenticatedAdminRouteRouteChildren,
+  )
+
+interface AuthenticatedRouteRouteChildren {
+  AuthenticatedAdminRouteRoute: typeof AuthenticatedAdminRouteRouteWithChildren
+}
+
+const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedAdminRouteRoute: AuthenticatedAdminRouteRouteWithChildren,
+}
+
+const AuthenticatedRouteRouteWithChildren =
+  AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  AuthRoute: AuthRoute,
   OrderRoute: OrderRoute,
   PrivacyRoute: PrivacyRoute,
   SampleReportRoute: SampleReportRoute,
