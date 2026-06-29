@@ -482,7 +482,7 @@ function OrderPage() {
                   className="bg-success text-success-foreground hover:bg-success/90"
                 >
                   <ShieldCheck className="mr-2 h-4 w-4" />
-                  {isSubmitting ? "Saving order…" : `Pay €${tierInfo.price} & start verification`}
+                  {isSubmitting ? "Processing…" : `Pay €${tierInfo.price} (simulated) & continue`}
                 </Button>
               </div>
             </>
