@@ -573,10 +573,13 @@ export type Database = {
           overall_risk_rating: Database["public"]["Enums"]["risk_rating"] | null
           package: string
           product_category: string | null
+          product_description: string | null
           status: Database["public"]["Enums"]["case_status"]
           suggested_outcome: Database["public"]["Enums"]["final_outcome"] | null
+          supplier_chinese_name: string | null
           supplier_id: string | null
           updated_at: string
+          upload_token: string | null
         }
         Insert: {
           assigned_analyst?: string | null
@@ -596,12 +599,15 @@ export type Database = {
             | null
           package: string
           product_category?: string | null
+          product_description?: string | null
           status?: Database["public"]["Enums"]["case_status"]
           suggested_outcome?:
             | Database["public"]["Enums"]["final_outcome"]
             | null
+          supplier_chinese_name?: string | null
           supplier_id?: string | null
           updated_at?: string
+          upload_token?: string | null
         }
         Update: {
           assigned_analyst?: string | null
@@ -621,12 +627,15 @@ export type Database = {
             | null
           package?: string
           product_category?: string | null
+          product_description?: string | null
           status?: Database["public"]["Enums"]["case_status"]
           suggested_outcome?:
             | Database["public"]["Enums"]["final_outcome"]
             | null
+          supplier_chinese_name?: string | null
           supplier_id?: string | null
           updated_at?: string
+          upload_token?: string | null
         }
         Relationships: [
           {
@@ -803,6 +812,9 @@ export type Database = {
         | "report_ready"
         | "delivered"
         | "cancelled"
+        | "payment_pending"
+        | "awaiting_documents"
+        | "ready_for_research"
       check_status:
         | "pass"
         | "caution"
@@ -986,6 +998,9 @@ export const Constants = {
         "report_ready",
         "delivered",
         "cancelled",
+        "payment_pending",
+        "awaiting_documents",
+        "ready_for_research",
       ],
       check_status: [
         "pass",
