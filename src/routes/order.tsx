@@ -44,10 +44,12 @@ export const Route = createFileRoute("/order")({
 type FormData = {
   // Step 1
   supplierName: string;
+  supplierChineseName: string;
   country: string;
   supplierUrl: string;
   supplierContact: string;
   productCategory: string;
+  productDescription: string;
   destinationMarket: string;
   documents: string;
   concerns: string;
@@ -60,10 +62,12 @@ type FormData = {
 
 const empty: FormData = {
   supplierName: "",
+  supplierChineseName: "",
   country: "",
   supplierUrl: "",
   supplierContact: "",
   productCategory: "",
+  productDescription: "",
   destinationMarket: "",
   documents: "",
   concerns: "",
