@@ -266,7 +266,8 @@ export async function runInvestigation(caseId: string): Promise<{ ok: true; shar
         testing_recommendation: synth.testing_recommendation,
         methodology: report.methodology,
         limitations: report.limitations,
-        snapshot: report as unknown as Record<string, unknown>,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        snapshot: report as any,
         share_token,
         finalised_at: new Date().toISOString(),
       })
