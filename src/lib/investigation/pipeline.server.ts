@@ -107,7 +107,8 @@ export async function runInvestigation(caseId: string): Promise<{ ok: true; shar
       });
       if (x) {
         extracted.push(x);
-        await supabaseAdmin.from("case_documents").update({ extracted_data: x }).eq("id", d.id);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await supabaseAdmin.from("case_documents").update({ extracted_data: x as any }).eq("id", d.id);
       }
     }
     await log("evidence_added", { stage: "document_extraction", count: extracted.length });
@@ -120,7 +121,8 @@ export async function runInvestigation(caseId: string): Promise<{ ok: true; shar
       website: order.website_marketplace_url,
       extracted,
     });
-    await supabaseAdmin.from("supplier_cases").update({ resolved_entity: resolved }).eq("id", caseId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await supabaseAdmin.from("supplier_cases").update({ resolved_entity: resolved as any }).eq("id", caseId);
     await log("evidence_added", { stage: "entity_resolution", matched: resolved.matched });
 
     const nameForScreening = resolved.legal_name_en || order.supplier_company_name;
@@ -162,8 +164,8 @@ export async function runInvestigation(caseId: string): Promise<{ ok: true; shar
         company: order.customer_company,
         email: order.customer_email,
         destination_market: order.destination_market,
-        estimated_order_value: caseRow.estimated_order_value,
-        product_category: caseRow.product_category,
+        estimated_order_value: caseRow.estimated_order_value ?? "",
+        product_category: caseRow.product_category ?? "",
         concerns: caseRow.customer_concerns ?? null,
       },
       resolved,
@@ -185,8 +187,8 @@ export async function runInvestigation(caseId: string): Promise<{ ok: true; shar
 
     const report: InvestigationReport = {
       generated_at: new Date().toISOString(),
-      order_reference: order.order_reference,
-      case_reference: caseRow.case_reference,
+      order_reference: order.order_reference ?? "",
+      case_reference: caseRow.case_reference ?? "",
       supplier_input: {
         name: order.supplier_company_name,
         chinese_name: caseRow.supplier_chinese_name ?? null,
@@ -199,8 +201,8 @@ export async function runInvestigation(caseId: string): Promise<{ ok: true; shar
         company: order.customer_company,
         email: order.customer_email,
         destination_market: order.destination_market,
-        estimated_order_value: caseRow.estimated_order_value,
-        product_category: caseRow.product_category,
+        estimated_order_value: caseRow.estimated_order_value ?? "",
+        product_category: caseRow.product_category ?? "",
         concerns: caseRow.customer_concerns ?? null,
       },
       resolved_entity: resolved,
