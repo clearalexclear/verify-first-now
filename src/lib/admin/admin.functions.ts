@@ -122,7 +122,7 @@ export const getCase = createServerFn({ method: "GET" })
       documents: docsRes.data ?? [],
       reports: reportsRes.data ?? [],
       activity: activityRes.data ?? [],
-      analysts: (analystsRes.data ?? []).map((r: any) => r.profile).filter(Boolean),
+      analysts: analystsProfiles ?? [],
     };
   });
 
