@@ -26,7 +26,7 @@ function Dashboard() {
   const [deadline, setDeadline] = useState<string>("any");
 
   const rows = q.data ?? [];
-  const analysts = useMemo(() => Array.from(new Set(rows.map(r => r.analyst_name).filter(Boolean))) as string[], [rows]);
+  const analysts = useMemo(() => Array.from(new Set(rows.map((r: any) => r.analyst_name).filter(Boolean))) as string[], [rows]);
   const countries = useMemo(() => Array.from(new Set(rows.map((r: any) => r.supplier?.country).filter(Boolean))) as string[], [rows]);
 
   const filtered = rows.filter((r: any) => {
