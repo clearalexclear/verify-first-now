@@ -17,8 +17,10 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as UploadTokenRouteImport } from './routes/upload.$token'
+import { Route as RShareTokenRouteImport } from './routes/r.$shareToken'
 import { Route as AuthenticatedAdminRouteRouteImport } from './routes/_authenticated/admin/route'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
+import { Route as OrderStatusTokenRouteImport } from './routes/order.status.$token'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
 import { Route as AuthenticatedAdminTemplatesRouteImport } from './routes/_authenticated/admin/templates'
 import { Route as ApiPublicInvestigateCaseIdRouteImport } from './routes/api/public/investigate.$caseId'
@@ -63,6 +65,11 @@ const UploadTokenRoute = UploadTokenRouteImport.update({
   path: '/upload/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RShareTokenRoute = RShareTokenRouteImport.update({
+  id: '/r/$shareToken',
+  path: '/r/$shareToken',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedAdminRouteRoute = AuthenticatedAdminRouteRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -72,6 +79,11 @@ const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthenticatedAdminRouteRoute,
+} as any)
+const OrderStatusTokenRoute = OrderStatusTokenRouteImport.update({
+  id: '/status/$token',
+  path: '/status/$token',
+  getParentRoute: () => OrderRoute,
 } as any)
 const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
   id: '/users',
@@ -100,14 +112,16 @@ const AuthenticatedAdminCasesCaseIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
-  '/order': typeof OrderRoute
+  '/order': typeof OrderRouteWithChildren
   '/privacy': typeof PrivacyRoute
   '/sample-report': typeof SampleReportRoute
   '/terms': typeof TermsRoute
   '/admin': typeof AuthenticatedAdminRouteRouteWithChildren
+  '/r/$shareToken': typeof RShareTokenRoute
   '/upload/$token': typeof UploadTokenRoute
   '/admin/templates': typeof AuthenticatedAdminTemplatesRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/order/status/$token': typeof OrderStatusTokenRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/admin/cases/$caseId': typeof AuthenticatedAdminCasesCaseIdRoute
   '/api/public/investigate/$caseId': typeof ApiPublicInvestigateCaseIdRoute
@@ -115,13 +129,15 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
-  '/order': typeof OrderRoute
+  '/order': typeof OrderRouteWithChildren
   '/privacy': typeof PrivacyRoute
   '/sample-report': typeof SampleReportRoute
   '/terms': typeof TermsRoute
+  '/r/$shareToken': typeof RShareTokenRoute
   '/upload/$token': typeof UploadTokenRoute
   '/admin/templates': typeof AuthenticatedAdminTemplatesRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/order/status/$token': typeof OrderStatusTokenRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/admin/cases/$caseId': typeof AuthenticatedAdminCasesCaseIdRoute
   '/api/public/investigate/$caseId': typeof ApiPublicInvestigateCaseIdRoute
@@ -131,14 +147,16 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
-  '/order': typeof OrderRoute
+  '/order': typeof OrderRouteWithChildren
   '/privacy': typeof PrivacyRoute
   '/sample-report': typeof SampleReportRoute
   '/terms': typeof TermsRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRouteRouteWithChildren
+  '/r/$shareToken': typeof RShareTokenRoute
   '/upload/$token': typeof UploadTokenRoute
   '/_authenticated/admin/templates': typeof AuthenticatedAdminTemplatesRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/order/status/$token': typeof OrderStatusTokenRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/admin/cases/$caseId': typeof AuthenticatedAdminCasesCaseIdRoute
   '/api/public/investigate/$caseId': typeof ApiPublicInvestigateCaseIdRoute
@@ -153,9 +171,11 @@ export interface FileRouteTypes {
     | '/sample-report'
     | '/terms'
     | '/admin'
+    | '/r/$shareToken'
     | '/upload/$token'
     | '/admin/templates'
     | '/admin/users'
+    | '/order/status/$token'
     | '/admin/'
     | '/admin/cases/$caseId'
     | '/api/public/investigate/$caseId'
@@ -167,9 +187,11 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/sample-report'
     | '/terms'
+    | '/r/$shareToken'
     | '/upload/$token'
     | '/admin/templates'
     | '/admin/users'
+    | '/order/status/$token'
     | '/admin'
     | '/admin/cases/$caseId'
     | '/api/public/investigate/$caseId'
@@ -183,9 +205,11 @@ export interface FileRouteTypes {
     | '/sample-report'
     | '/terms'
     | '/_authenticated/admin'
+    | '/r/$shareToken'
     | '/upload/$token'
     | '/_authenticated/admin/templates'
     | '/_authenticated/admin/users'
+    | '/order/status/$token'
     | '/_authenticated/admin/'
     | '/_authenticated/admin/cases/$caseId'
     | '/api/public/investigate/$caseId'
@@ -195,10 +219,11 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
-  OrderRoute: typeof OrderRoute
+  OrderRoute: typeof OrderRouteWithChildren
   PrivacyRoute: typeof PrivacyRoute
   SampleReportRoute: typeof SampleReportRoute
   TermsRoute: typeof TermsRoute
+  RShareTokenRoute: typeof RShareTokenRoute
   UploadTokenRoute: typeof UploadTokenRoute
   ApiPublicInvestigateCaseIdRoute: typeof ApiPublicInvestigateCaseIdRoute
 }
@@ -261,6 +286,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof UploadTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/r/$shareToken': {
+      id: '/r/$shareToken'
+      path: '/r/$shareToken'
+      fullPath: '/r/$shareToken'
+      preLoaderRoute: typeof RShareTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/admin': {
       id: '/_authenticated/admin'
       path: '/admin'
@@ -274,6 +306,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/'
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/order/status/$token': {
+      id: '/order/status/$token'
+      path: '/status/$token'
+      fullPath: '/order/status/$token'
+      preLoaderRoute: typeof OrderStatusTokenRouteImport
+      parentRoute: typeof OrderRoute
     }
     '/_authenticated/admin/users': {
       id: '/_authenticated/admin/users'
@@ -337,14 +376,25 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
 const AuthenticatedRouteRouteWithChildren =
   AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
 
+interface OrderRouteChildren {
+  OrderStatusTokenRoute: typeof OrderStatusTokenRoute
+}
+
+const OrderRouteChildren: OrderRouteChildren = {
+  OrderStatusTokenRoute: OrderStatusTokenRoute,
+}
+
+const OrderRouteWithChildren = OrderRoute._addFileChildren(OrderRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
-  OrderRoute: OrderRoute,
+  OrderRoute: OrderRouteWithChildren,
   PrivacyRoute: PrivacyRoute,
   SampleReportRoute: SampleReportRoute,
   TermsRoute: TermsRoute,
+  RShareTokenRoute: RShareTokenRoute,
   UploadTokenRoute: UploadTokenRoute,
   ApiPublicInvestigateCaseIdRoute: ApiPublicInvestigateCaseIdRoute,
 }
