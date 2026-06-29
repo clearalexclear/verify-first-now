@@ -458,7 +458,10 @@ function OrderPage() {
               <div className="mt-6 flex items-start gap-2 rounded-md border border-warning/30 bg-warning/5 p-4 text-xs leading-relaxed text-foreground">
                 <Lock className="mt-0.5 h-4 w-4 shrink-0 text-warning-foreground" />
                 <span>
-                  <strong>Test mode:</strong> Stripe is not yet wired in. Clicking "Pay" below records your order so we can process it manually and contact you. Enable Lovable Cloud + Stripe to take live payments.
+                  <strong>Stripe payment is being set up.</strong> For now, clicking the button below
+                  simulates a successful payment, creates your order, and emails you a secure link to
+                  upload supporting documents. Delivery begins after payment confirmation and receipt of
+                  the basic supplier information needed for the investigation.
                 </span>
               </div>
 
