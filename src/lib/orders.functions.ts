@@ -1,6 +1,17 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+const ALLOWED_EXTS = ["pdf", "jpg", "jpeg", "png"];
+const MAX_BYTES_PER_FILE = 10 * 1024 * 1024;
+const MAX_FILES = 3;
+
+const documentSchema = z.object({
+  filename: z.string().min(1).max(300),
+  category: z.enum(["business_licence", "certificate", "quotation"]).default("business_licence"),
+  contentType: z.string().min(1).max(200),
+  fileBase64: z.string().min(1),
+});
+
 const submitOrderSchema = z.object({
   tier_selected: z.enum(["standard", "priority", "onsite"]),
   supplier_company_name: z.string().min(1).max(500),
@@ -18,13 +29,14 @@ const submitOrderSchema = z.object({
   customer_email: z.string().email().max(320),
   estimated_order_value: z.string().min(1).max(50),
   payment_confirmed: z.boolean().optional().default(false),
+  documents: z.array(documentSchema).max(MAX_FILES).optional().default([]),
 });
 
 export type SubmitOrderInput = z.infer<typeof submitOrderSchema>;
 
 const TIER_LABELS: Record<string, { name: string; price: number; delivery: string; hours: number }> = {
-  standard: { name: "Standard", price: 490, delivery: "72 hours", hours: 72 },
-  priority: { name: "Priority", price: 690, delivery: "24 hours", hours: 24 },
+  standard: { name: "Standard", price: 490, delivery: "automated", hours: 72 },
+  priority: { name: "Priority", price: 690, delivery: "automated (priority queue)", hours: 24 },
   onsite:   { name: "On-Site",  price: 1290, delivery: "7 days",  hours: 24 * 7 },
 };
 
@@ -39,13 +51,20 @@ function randomToken(len = 40): string {
   return out;
 }
 
+function safeExt(filename: string): string {
+  const m = filename.toLowerCase().match(/\.([a-z0-9]+)$/);
+  return m ? m[1] : "";
+}
+
 export const submitOrder = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => submitOrderSchema.parse(input))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const paymentConfirmed = Boolean(data.payment_confirmed);
-    const caseStatus = paymentConfirmed ? "awaiting_documents" : "payment_pending";
+    // New flow: once payment is confirmed, queue the AI investigation.
+    // Documents are optional; we don't wait for them.
+    const caseStatus = paymentConfirmed ? "investigation_queued" : "payment_pending";
 
     // 1) Upsert customer
     const { data: customer } = await supabaseAdmin
@@ -100,9 +119,9 @@ export const submitOrder = createServerFn({ method: "POST" })
 
     const tier = TIER_LABELS[data.tier_selected];
     const deadline = new Date(Date.now() + tier.hours * 3600 * 1000).toISOString();
-    const uploadToken = randomToken(40);
+    const statusToken = randomToken(40);
 
-    // 5) Create supplier case
+    // 4) Create supplier case
     const { data: caseRow, error: caseErr } = await supabaseAdmin
       .from("supplier_cases")
       .insert({
@@ -117,7 +136,7 @@ export const submitOrder = createServerFn({ method: "POST" })
         package: data.tier_selected,
         deadline,
         customer_concerns: data.concerns_text || null,
-        upload_token: uploadToken,
+        upload_token: statusToken,
         status: caseStatus,
       })
       .select("id, case_reference")
@@ -125,28 +144,42 @@ export const submitOrder = createServerFn({ method: "POST" })
     if (caseErr) console.error("[submitOrder] case insert failed:", caseErr);
 
     if (caseRow) {
-      const { data: templates } = await supabaseAdmin
-        .from("check_templates")
-        .select("id, section_id, question, display_order, is_critical")
-        .eq("is_active", true)
-        .order("display_order");
-      if (templates && templates.length) {
-        const checks = templates.map((t: any) => ({
-          case_id: caseRow.id,
-          section_id: t.section_id,
-          template_id: t.id,
-          question: t.question,
-          display_order: t.display_order,
-          is_critical: t.is_critical,
-        }));
-        await supabaseAdmin.from("case_checks").insert(checks);
-      }
       await supabaseAdmin.from("orders").update({ case_id: caseRow.id }).eq("id", inserted.id);
       await supabaseAdmin.from("case_activity_log").insert({
         case_id: caseRow.id,
         action: "case_created",
-        payload: { order_id: inserted.id, payment_confirmed: paymentConfirmed },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        payload: { order_id: inserted.id, payment_confirmed: paymentConfirmed } as any,
       });
+
+      // 5) Inline document upload (max 3, validated per file)
+      for (const d of data.documents) {
+        const ext = safeExt(d.filename);
+        if (!ALLOWED_EXTS.includes(ext)) continue;
+        const bin = Buffer.from(d.fileBase64, "base64");
+        if (bin.byteLength === 0 || bin.byteLength > MAX_BYTES_PER_FILE) continue;
+        const safeName = d.filename.replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 200);
+        const path = `${caseRow.id}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}-${safeName}`;
+        const { error: upErr } = await supabaseAdmin.storage
+          .from("case-documents")
+          .upload(path, bin, { contentType: d.contentType, upsert: false });
+        if (upErr) {
+          console.warn("[submitOrder] doc upload failed:", upErr.message);
+          continue;
+        }
+        await supabaseAdmin.from("case_documents").insert({
+          case_id: caseRow.id,
+          filename: d.filename,
+          storage_path: path,
+          note: d.category,
+        });
+        await supabaseAdmin.from("case_activity_log").insert({
+          case_id: caseRow.id,
+          action: "document_uploaded",
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          payload: { filename: d.filename, category: d.category, bytes: bin.byteLength } as any,
+        });
+      }
     }
 
     const orderReference = inserted.order_reference as string;
@@ -154,73 +187,45 @@ export const submitOrder = createServerFn({ method: "POST" })
       process.env.PUBLIC_SITE_URL ||
       process.env.VITE_PUBLIC_SITE_URL ||
       "https://verify-first-now.lovable.app";
-    const uploadUrl = `${origin}/upload/${uploadToken}`;
+    const statusUrl = `${origin}/order/status/${statusToken}`;
 
-    // Best-effort emails
+    // 6) Customer confirmation email — spec wording.
+    try {
+      const { emailCustomerStarted } = await import("@/lib/investigation/email.server");
+      await emailCustomerStarted({
+        customerEmail: data.customer_email,
+        customerName: data.customer_name,
+        orderReference,
+        supplierName: data.supplier_company_name,
+      });
+    } catch (e) {
+      console.warn("[submitOrder] customer email failed:", (e as Error).message);
+    }
+
+    // 7) Internal notification
     try {
       const LOVABLE_API_KEY = process.env.LOVABLE_API_KEY;
       const RESEND_API_KEY = process.env.RESEND_API_KEY;
       if (LOVABLE_API_KEY && RESEND_API_KEY) {
-        // Customer confirmation
-        const customerHtml = `
-          <h2>VerifyFirst order received — ${orderReference}</h2>
-          <p>Thank you for your order.</p>
-          <p>Your supplier verification reference is <strong>${orderReference}</strong>.</p>
-          <p>Your report will be delivered by email as a PDF. Delivery begins after payment confirmation and receipt of the basic supplier information needed for the investigation.</p>
-          <p>Please upload any available business licence, quotation, pro forma invoice, contract, payment or bank instructions, certificates, test reports, product specifications or factory presentations using the secure link below:</p>
-          <p><a href="${uploadUrl}" style="display:inline-block;background:#0F2A43;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:600">Upload supporting documents</a></p>
-          <p style="font-size:12px;color:#555">Or paste this link into your browser:<br>${uploadUrl}</p>
-          <p>Send whatever you have. Missing documents are fine — we will contact you directly if anything essential is required. You do not need an account or dashboard.</p>
-          <p>— VerifyFirst</p>
-        `;
-        await fetch("https://connector-gateway.lovable.dev/resend/emails", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${LOVABLE_API_KEY}`,
-            "X-Connection-Api-Key": RESEND_API_KEY,
-          },
-          body: JSON.stringify({
-            from: "VerifyFirst <onboarding@resend.dev>",
-            to: [data.customer_email],
-            subject: `VerifyFirst order received — ${orderReference}`,
-            html: customerHtml,
-          }),
-        }).catch((e) => console.error("[submitOrder] customer email failed:", e));
-
-        // Internal team notification
         const internalHtml = `
           <h2>New VerifyFirst order — ${orderReference}</h2>
-          <p><strong>Payment:</strong> ${paymentConfirmed ? "Confirmed (stub — Stripe not yet wired)" : "Pending"}</p>
-          <p><strong>Tier:</strong> ${tier.name} (€${tier.price}, ${tier.delivery})</p>
-          <p><strong>Deadline:</strong> ${new Date(deadline).toUTCString()}</p>
+          <p><strong>Payment:</strong> ${paymentConfirmed ? "Confirmed (stub)" : "Pending"}</p>
+          <p><strong>Tier:</strong> ${tier.name} (€${tier.price})</p>
           <p><strong>Case reference:</strong> ${caseRow?.case_reference ?? "—"}</p>
-          <p><strong>Internal case ID:</strong> ${caseRow?.id ?? "—"}</p>
+          <p><strong>Status URL:</strong> <a href="${statusUrl}">${statusUrl}</a></p>
           <h3>Customer</h3>
           <ul>
-            <li>Name: ${escapeHtml(data.customer_name)}</li>
-            <li>Company: ${escapeHtml(data.customer_company)}</li>
-            <li>Email: ${escapeHtml(data.customer_email)}</li>
-            <li>Estimated order value: ${escapeHtml(data.estimated_order_value)}</li>
+            <li>${escapeHtml(data.customer_name)} — ${escapeHtml(data.customer_company)} — ${escapeHtml(data.customer_email)}</li>
+            <li>Order value: ${escapeHtml(data.estimated_order_value)}</li>
           </ul>
           <h3>Supplier</h3>
           <ul>
-            <li>Company: ${escapeHtml(data.supplier_company_name)}</li>
-            <li>Chinese legal name: ${escapeHtml(data.supplier_chinese_name || "—")}</li>
-            <li>Country: ${escapeHtml(data.supplier_country)}</li>
-            <li>Website / marketplace: ${escapeHtml(data.website_marketplace_url)}</li>
-            <li>Contact: ${escapeHtml(data.supplier_contact_person || "—")}</li>
+            <li>${escapeHtml(data.supplier_company_name)} (${escapeHtml(data.supplier_chinese_name || "no local name")})</li>
+            <li>Country: ${escapeHtml(data.supplier_country)} → Destination: ${escapeHtml(data.destination_market)}</li>
+            <li>URL: ${escapeHtml(data.website_marketplace_url)}</li>
+            <li>Product: ${escapeHtml(data.product_category)}</li>
           </ul>
-          <h3>Product</h3>
-          <ul>
-            <li>Category: ${escapeHtml(data.product_category)}</li>
-            <li>Description: ${escapeHtml(data.product_description || "—")}</li>
-            <li>Destination market: ${escapeHtml(data.destination_market)}</li>
-          </ul>
-          <h3>Customer concerns</h3>
-          <p>${escapeHtml(data.concerns_text || "—")}</p>
-          <h3>Document upload link</h3>
-          <p><a href="${uploadUrl}">${uploadUrl}</a></p>
+          <p>${data.documents.length} document(s) uploaded with order.</p>
         `;
         await fetch("https://connector-gateway.lovable.dev/resend/emails", {
           method: "POST",
@@ -232,18 +237,16 @@ export const submitOrder = createServerFn({ method: "POST" })
           body: JSON.stringify({
             from: "VerifyFirst <onboarding@resend.dev>",
             to: [NOTIFY_EMAIL],
-            subject: `New VerifyFirst order — ${orderReference}${paymentConfirmed ? " (PAID)" : " (UNPAID)"}`,
+            subject: `New VerifyFirst order — ${orderReference}${paymentConfirmed ? " (paid)" : " (unpaid)"}`,
             html: internalHtml,
           }),
-        }).catch((e) => console.error("[submitOrder] internal email failed:", e));
-      } else {
-        console.warn("[submitOrder] email skipped: Resend connector not linked.");
+        }).catch((e) => console.warn("[submitOrder] internal email failed:", (e as Error).message));
       }
     } catch (e) {
-      console.error("[submitOrder] email error:", e);
+      console.warn("[submitOrder] internal email error:", (e as Error).message);
     }
 
-    return { orderReference, uploadToken, uploadUrl };
+    return { orderReference, statusToken, statusUrl };
   });
 
 function escapeHtml(s: string): string {

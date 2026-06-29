@@ -147,6 +147,7 @@ export type Database = {
         Row: {
           case_id: string
           created_at: string
+          extracted_data: Json | null
           filename: string
           id: string
           note: string | null
@@ -157,6 +158,7 @@ export type Database = {
         Insert: {
           case_id: string
           created_at?: string
+          extracted_data?: Json | null
           filename: string
           id?: string
           note?: string | null
@@ -167,6 +169,7 @@ export type Database = {
         Update: {
           case_id?: string
           created_at?: string
+          extracted_data?: Json | null
           filename?: string
           id?: string
           note?: string | null
@@ -485,6 +488,7 @@ export type Database = {
           pdf_storage_path: string | null
           recommended_safeguards: string | null
           section_summaries: Json | null
+          share_token: string | null
           snapshot: Json | null
           status: Database["public"]["Enums"]["report_status"]
           testing_recommendation: string | null
@@ -513,6 +517,7 @@ export type Database = {
           pdf_storage_path?: string | null
           recommended_safeguards?: string | null
           section_summaries?: Json | null
+          share_token?: string | null
           snapshot?: Json | null
           status?: Database["public"]["Enums"]["report_status"]
           testing_recommendation?: string | null
@@ -541,6 +546,7 @@ export type Database = {
           pdf_storage_path?: string | null
           recommended_safeguards?: string | null
           section_summaries?: Json | null
+          share_token?: string | null
           snapshot?: Json | null
           status?: Database["public"]["Enums"]["report_status"]
           testing_recommendation?: string | null
@@ -569,11 +575,15 @@ export type Database = {
           estimated_order_value: string | null
           final_outcome: Database["public"]["Enums"]["final_outcome"] | null
           id: string
+          investigation_completed_at: string | null
+          investigation_error: string | null
+          investigation_started_at: string | null
           order_id: string | null
           overall_risk_rating: Database["public"]["Enums"]["risk_rating"] | null
           package: string
           product_category: string | null
           product_description: string | null
+          resolved_entity: Json | null
           status: Database["public"]["Enums"]["case_status"]
           suggested_outcome: Database["public"]["Enums"]["final_outcome"] | null
           supplier_chinese_name: string | null
@@ -593,6 +603,9 @@ export type Database = {
           estimated_order_value?: string | null
           final_outcome?: Database["public"]["Enums"]["final_outcome"] | null
           id?: string
+          investigation_completed_at?: string | null
+          investigation_error?: string | null
+          investigation_started_at?: string | null
           order_id?: string | null
           overall_risk_rating?:
             | Database["public"]["Enums"]["risk_rating"]
@@ -600,6 +613,7 @@ export type Database = {
           package: string
           product_category?: string | null
           product_description?: string | null
+          resolved_entity?: Json | null
           status?: Database["public"]["Enums"]["case_status"]
           suggested_outcome?:
             | Database["public"]["Enums"]["final_outcome"]
@@ -621,6 +635,9 @@ export type Database = {
           estimated_order_value?: string | null
           final_outcome?: Database["public"]["Enums"]["final_outcome"] | null
           id?: string
+          investigation_completed_at?: string | null
+          investigation_error?: string | null
+          investigation_started_at?: string | null
           order_id?: string | null
           overall_risk_rating?:
             | Database["public"]["Enums"]["risk_rating"]
@@ -628,6 +645,7 @@ export type Database = {
           package?: string
           product_category?: string | null
           product_description?: string | null
+          resolved_entity?: Json | null
           status?: Database["public"]["Enums"]["case_status"]
           suggested_outcome?:
             | Database["public"]["Enums"]["final_outcome"]
@@ -815,6 +833,9 @@ export type Database = {
         | "payment_pending"
         | "awaiting_documents"
         | "ready_for_research"
+        | "investigation_queued"
+        | "investigating"
+        | "investigation_failed"
       check_status:
         | "pass"
         | "caution"
@@ -1001,6 +1022,9 @@ export const Constants = {
         "payment_pending",
         "awaiting_documents",
         "ready_for_research",
+        "investigation_queued",
+        "investigating",
+        "investigation_failed",
       ],
       check_status: [
         "pass",
