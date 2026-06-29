@@ -32,10 +32,38 @@ export const submitOrder = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
+    // 1) Upsert customer
+    const { data: customer, error: custErr } = await supabaseAdmin
+      .from("customers")
+      .upsert(
+        { full_name: data.customer_name, company: data.customer_company, email: data.customer_email },
+        { onConflict: "email,company" },
+      )
+      .select("id")
+      .single();
+    if (custErr || !customer) {
+      console.error("[submitOrder] customer upsert failed:", custErr);
+    }
+
+    // 2) Insert supplier
+    const { data: supplier, error: supErr } = await supabaseAdmin
+      .from("suppliers")
+      .insert({
+        stated_name: data.supplier_company_name,
+        country: data.supplier_country,
+        website: data.website_marketplace_url,
+        marketplace_url: data.website_marketplace_url,
+        contact_person: data.supplier_contact_person || null,
+      })
+      .select("id")
+      .single();
+    if (supErr) console.error("[submitOrder] supplier insert failed:", supErr);
+
+    // 3) Insert order
     const { data: inserted, error } = await supabaseAdmin
       .from("orders")
-      .insert([data])
-      .select("order_reference, created_at")
+      .insert([{ ...data, customer_id: customer?.id ?? null, supplier_id: supplier?.id ?? null }])
+      .select("id, order_reference, created_at")
       .single();
 
     if (error || !inserted) {
@@ -43,8 +71,54 @@ export const submitOrder = createServerFn({ method: "POST" })
       throw new Error("Failed to save your order. Please try again or contact support.");
     }
 
-    const orderReference = inserted.order_reference as string;
-    const tier = TIER_LABELS[data.tier_selected];
+    // 4) Compute deadline by tier
+    const tierHours: Record<string, number> = { standard: 72, priority: 24, onsite: 24 * 7 };
+    const deadline = new Date(Date.now() + (tierHours[data.tier_selected] ?? 72) * 3600 * 1000).toISOString();
+
+    // 5) Create supplier case
+    const { data: caseRow, error: caseErr } = await supabaseAdmin
+      .from("supplier_cases")
+      .insert({
+        customer_id: customer?.id ?? null,
+        supplier_id: supplier?.id ?? null,
+        order_id: inserted.id,
+        product_category: data.product_category,
+        destination_market: data.destination_market,
+        estimated_order_value: data.estimated_order_value,
+        package: data.tier_selected,
+        deadline,
+        customer_concerns: data.concerns_text || null,
+        status: "new",
+      })
+      .select("id, case_reference")
+      .single();
+    if (caseErr) console.error("[submitOrder] case insert failed:", caseErr);
+
+    // 6) Copy active template questions into case_checks
+    if (caseRow) {
+      const { data: templates } = await supabaseAdmin
+        .from("check_templates")
+        .select("id, section_id, question, display_order, is_critical")
+        .eq("is_active", true)
+        .order("display_order");
+      if (templates && templates.length) {
+        const checks = templates.map((t: any) => ({
+          case_id: caseRow.id,
+          section_id: t.section_id,
+          template_id: t.id,
+          question: t.question,
+          display_order: t.display_order,
+          is_critical: t.is_critical,
+        }));
+        await supabaseAdmin.from("case_checks").insert(checks);
+      }
+      // Link order back to case
+      await supabaseAdmin.from("orders").update({ case_id: caseRow.id }).eq("id", inserted.id);
+      await supabaseAdmin.from("case_activity_log").insert({
+        case_id: caseRow.id, action: "case_created", payload: { order_id: inserted.id },
+      });
+    }
+
 
     // Best-effort email notification via Resend connector
     try {
