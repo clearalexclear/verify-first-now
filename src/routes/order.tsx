@@ -44,10 +44,12 @@ export const Route = createFileRoute("/order")({
 type FormData = {
   // Step 1
   supplierName: string;
+  supplierChineseName: string;
   country: string;
   supplierUrl: string;
   supplierContact: string;
   productCategory: string;
+  productDescription: string;
   destinationMarket: string;
   documents: string;
   concerns: string;
@@ -60,10 +62,12 @@ type FormData = {
 
 const empty: FormData = {
   supplierName: "",
+  supplierChineseName: "",
   country: "",
   supplierUrl: "",
   supplierContact: "",
   productCategory: "",
+  productDescription: "",
   destinationMarket: "",
   documents: "",
   concerns: "",
@@ -81,6 +85,7 @@ function OrderPage() {
   const [data, setData] = useState<FormData>(empty);
   const [submitted, setSubmitted] = useState(false);
   const [orderId, setOrderId] = useState("");
+  const [uploadUrl, setUploadUrl] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const submitOrderFn = useServerFn(submitOrder);
@@ -106,24 +111,29 @@ function OrderPage() {
     setSubmitError(null);
     setIsSubmitting(true);
     try {
+      // Stub payment success — real Stripe will replace this.
       const result = await submitOrderFn({
         data: {
           tier_selected: tier,
           supplier_company_name: data.supplierName.trim(),
+          supplier_chinese_name: data.supplierChineseName.trim(),
           supplier_country: data.country,
           destination_market: data.destinationMarket,
           website_marketplace_url: data.supplierUrl.trim(),
           supplier_contact_person: data.supplierContact.trim(),
           product_category: data.productCategory.trim(),
+          product_description: data.productDescription.trim(),
           certificates_info: data.documents.trim(),
           concerns_text: data.concerns.trim(),
           customer_name: data.yourName.trim(),
           customer_company: data.yourCompany.trim(),
           customer_email: data.yourEmail.trim(),
           estimated_order_value: data.orderValue,
+          payment_confirmed: true,
         },
       });
       setOrderId(result.orderReference);
+      setUploadUrl(result.uploadUrl);
       setSubmitted(true);
     } catch (e) {
       console.error(e);
@@ -141,21 +151,46 @@ function OrderPage() {
     return (
       <div className="min-h-screen bg-background">
         <SiteHeader />
-        <div className="mx-auto max-w-2xl px-4 py-20 sm:px-6">
-          <div className="rounded-2xl border border-success/30 bg-success/5 p-8 text-center sm:p-12">
-            <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-success text-success-foreground">
-              <Check className="h-7 w-7" />
-            </span>
-            <h1 className="mt-6 text-2xl font-bold text-navy sm:text-3xl">Order received.</h1>
-            <p className="mt-4 text-base leading-relaxed text-foreground">
-              Your report will be delivered to <strong>{data.yourEmail}</strong> within{" "}
-              <strong>{tierInfo.delivery}</strong>. We'll email you if we need anything.
-            </p>
-            <div className="mt-6 inline-block rounded-md border border-border bg-card px-4 py-2 text-sm text-muted-foreground">
-              Order reference: <span className="font-mono font-semibold text-foreground">{orderId}</span>
+        <div className="mx-auto max-w-2xl px-4 py-16 sm:px-6">
+          <div className="rounded-2xl border border-success/30 bg-success/5 p-8 sm:p-12">
+            <div className="text-center">
+              <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-success text-success-foreground">
+                <Check className="h-7 w-7" />
+              </span>
+              <h1 className="mt-6 text-2xl font-bold text-navy sm:text-3xl">Order received — thank you.</h1>
+              <p className="mt-3 text-base leading-relaxed text-foreground">
+                A confirmation has been sent to <strong>{data.yourEmail}</strong>.
+              </p>
+              <div className="mt-5 inline-block rounded-md border border-border bg-card px-4 py-2 text-sm text-muted-foreground">
+                Order reference: <span className="font-mono font-semibold text-foreground">{orderId}</span>
+              </div>
             </div>
-            <div className="mt-8">
-              <Button asChild variant="outline">
+
+            <div className="mt-8 rounded-lg border border-border bg-card p-5 text-sm leading-relaxed text-foreground">
+              <p>
+                Your report will be delivered by email as a PDF. <strong>Delivery begins after payment
+                confirmation and receipt of the basic supplier information needed for the investigation.</strong>
+              </p>
+              <p className="mt-3">
+                Please upload any available business licence, quotation, invoice, payment details, certificates
+                or test reports using the secure link below. You do not need an account or dashboard — we will
+                contact you directly if anything essential is required.
+              </p>
+            </div>
+
+            <div className="mt-6 flex flex-col items-center gap-3">
+              <Button asChild size="lg" className="bg-navy text-navy-foreground hover:bg-navy/90">
+                <a href={uploadUrl}>
+                  <ShieldCheck className="mr-2 h-4 w-4" /> Upload supporting documents
+                </a>
+              </Button>
+              <div className="break-all rounded-md border border-border bg-muted/40 px-3 py-2 text-center text-xs text-muted-foreground">
+                {uploadUrl}
+              </div>
+            </div>
+
+            <div className="mt-8 text-center">
+              <Button asChild variant="ghost" size="sm">
                 <Link to="/">Back to home</Link>
               </Button>
             </div>
@@ -215,6 +250,14 @@ function OrderPage() {
                   />
                 </Field>
 
+                <Field label="Supplier Chinese legal name" hint="Optional — if known (中文名称)">
+                  <Input
+                    value={data.supplierChineseName}
+                    onChange={(e) => update("supplierChineseName")(e.target.value)}
+                    placeholder="e.g. 宁波光辉工贸有限公司"
+                  />
+                </Field>
+
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Country" required>
                     <Select value={data.country} onValueChange={update("country")}>
@@ -262,9 +305,18 @@ function OrderPage() {
                   />
                 </Field>
 
+                <Field label="Exact product / model / material" hint="Specific model numbers, materials, sizes if known">
+                  <Textarea
+                    rows={3}
+                    value={data.productDescription}
+                    onChange={(e) => update("productDescription")(e.target.value)}
+                    placeholder="e.g. 304 stainless steel mixing bowls, 24 cm, model BX-240"
+                  />
+                </Field>
+
                 <Field
                   label="Business license or certificates received"
-                  hint="Optional — paste filenames or links; you'll email files after ordering"
+                  hint="Optional — paste filenames or links; you can upload files after ordering"
                 >
                   <Input
                     value={data.documents}
@@ -406,7 +458,10 @@ function OrderPage() {
               <div className="mt-6 flex items-start gap-2 rounded-md border border-warning/30 bg-warning/5 p-4 text-xs leading-relaxed text-foreground">
                 <Lock className="mt-0.5 h-4 w-4 shrink-0 text-warning-foreground" />
                 <span>
-                  <strong>Test mode:</strong> Stripe is not yet wired in. Clicking "Pay" below records your order so we can process it manually and contact you. Enable Lovable Cloud + Stripe to take live payments.
+                  <strong>Stripe payment is being set up.</strong> For now, clicking the button below
+                  simulates a successful payment, creates your order, and emails you a secure link to
+                  upload supporting documents. Delivery begins after payment confirmation and receipt of
+                  the basic supplier information needed for the investigation.
                 </span>
               </div>
 
@@ -427,7 +482,7 @@ function OrderPage() {
                   className="bg-success text-success-foreground hover:bg-success/90"
                 >
                   <ShieldCheck className="mr-2 h-4 w-4" />
-                  {isSubmitting ? "Saving order…" : `Pay €${tierInfo.price} & start verification`}
+                  {isSubmitting ? "Processing…" : `Pay €${tierInfo.price} (simulated) & continue`}
                 </Button>
               </div>
             </>

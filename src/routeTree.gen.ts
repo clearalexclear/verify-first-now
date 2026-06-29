@@ -16,6 +16,7 @@ import { Route as OrderRouteImport } from './routes/order'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as UploadTokenRouteImport } from './routes/upload.$token'
 import { Route as AuthenticatedAdminRouteRouteImport } from './routes/_authenticated/admin/route'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
@@ -56,6 +57,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const UploadTokenRoute = UploadTokenRouteImport.update({
+  id: '/upload/$token',
+  path: '/upload/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedAdminRouteRoute = AuthenticatedAdminRouteRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -92,6 +98,7 @@ export interface FileRoutesByFullPath {
   '/sample-report': typeof SampleReportRoute
   '/terms': typeof TermsRoute
   '/admin': typeof AuthenticatedAdminRouteRouteWithChildren
+  '/upload/$token': typeof UploadTokenRoute
   '/admin/templates': typeof AuthenticatedAdminTemplatesRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
@@ -104,6 +111,7 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/sample-report': typeof SampleReportRoute
   '/terms': typeof TermsRoute
+  '/upload/$token': typeof UploadTokenRoute
   '/admin/templates': typeof AuthenticatedAdminTemplatesRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
@@ -119,6 +127,7 @@ export interface FileRoutesById {
   '/sample-report': typeof SampleReportRoute
   '/terms': typeof TermsRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRouteRouteWithChildren
+  '/upload/$token': typeof UploadTokenRoute
   '/_authenticated/admin/templates': typeof AuthenticatedAdminTemplatesRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
@@ -134,6 +143,7 @@ export interface FileRouteTypes {
     | '/sample-report'
     | '/terms'
     | '/admin'
+    | '/upload/$token'
     | '/admin/templates'
     | '/admin/users'
     | '/admin/'
@@ -146,6 +156,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/sample-report'
     | '/terms'
+    | '/upload/$token'
     | '/admin/templates'
     | '/admin/users'
     | '/admin'
@@ -160,6 +171,7 @@ export interface FileRouteTypes {
     | '/sample-report'
     | '/terms'
     | '/_authenticated/admin'
+    | '/upload/$token'
     | '/_authenticated/admin/templates'
     | '/_authenticated/admin/users'
     | '/_authenticated/admin/'
@@ -174,6 +186,7 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   SampleReportRoute: typeof SampleReportRoute
   TermsRoute: typeof TermsRoute
+  UploadTokenRoute: typeof UploadTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -225,6 +238,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/upload/$token': {
+      id: '/upload/$token'
+      path: '/upload/$token'
+      fullPath: '/upload/$token'
+      preLoaderRoute: typeof UploadTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/admin': {
@@ -304,6 +324,7 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   SampleReportRoute: SampleReportRoute,
   TermsRoute: TermsRoute,
+  UploadTokenRoute: UploadTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
