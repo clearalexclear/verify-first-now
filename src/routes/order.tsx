@@ -250,6 +250,14 @@ function OrderPage() {
                   />
                 </Field>
 
+                <Field label="Supplier Chinese legal name" hint="Optional — if known (中文名称)">
+                  <Input
+                    value={data.supplierChineseName}
+                    onChange={(e) => update("supplierChineseName")(e.target.value)}
+                    placeholder="e.g. 宁波光辉工贸有限公司"
+                  />
+                </Field>
+
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Country" required>
                     <Select value={data.country} onValueChange={update("country")}>
@@ -297,9 +305,18 @@ function OrderPage() {
                   />
                 </Field>
 
+                <Field label="Exact product / model / material" hint="Specific model numbers, materials, sizes if known">
+                  <Textarea
+                    rows={3}
+                    value={data.productDescription}
+                    onChange={(e) => update("productDescription")(e.target.value)}
+                    placeholder="e.g. 304 stainless steel mixing bowls, 24 cm, model BX-240"
+                  />
+                </Field>
+
                 <Field
                   label="Business license or certificates received"
-                  hint="Optional — paste filenames or links; you'll email files after ordering"
+                  hint="Optional — paste filenames or links; you can upload files after ordering"
                 >
                   <Input
                     value={data.documents}
