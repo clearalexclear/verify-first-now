@@ -1,124 +1,112 @@
-## VerifyFirst Internal Case Management — Build Plan
+# AI investigation pipeline
 
-A protected `/admin` workspace for analysts and admins to manage supplier verification cases generated from the public order form, with full investigation workflow, evidence handling, and versioned reports.
+## What we're building
 
----
+After Stripe (stubbed for now) confirms payment, the system automatically runs a research-and-reasoning pipeline, generates a sourced report, and emails the customer both a PDF attachment and a signed link to the styled report page. No accounts, no dashboards.
 
-### 1. Auth & Roles
+## Prerequisite the user will need to approve
 
-- Enable Supabase email/password auth (no signup from UI — admins invite/create users; signup disabled).
-- `app_role` enum: `admin`, `analyst`.
-- `user_roles` table (separate from profiles) + `has_role(uuid, app_role)` security-definer function.
-- `profiles` table (id → auth.users, full_name, email).
-- Protected route subtree: `src/routes/_authenticated/admin/*` using the integration-managed `_authenticated` gate.
-- `/auth` public page for sign-in. Server-side role checks in every protected server fn via `requireSupabaseAuth` + `has_role`.
+**Link Firecrawl connector** (one form click). It provides web search, page scrape, and (optional) JSON extraction with one connection key. Without it, the AI agent has no eyes on the public web. I'll trigger the connect dialog as the first step.
 
-### 2. Database schema (one migration)
+If a Firecrawl connection already exists in the workspace, I'll reuse it.
 
-Tables (all with RLS + GRANTs, timestamps, update triggers):
+## Customer flow (rewritten)
 
-- `profiles` — user profile data
-- `user_roles` — role assignments
-- `customers` — derived from order form (name, company, email)
-- `orders` — extends existing table OR new; link to customer + case
-- `suppliers` — supplier master (stated_name, registered_legal_name, cn_vn_legal_name, country, website, marketplace_url, contact)
-- `supplier_cases` — main case entity; FKs to customer, supplier, order; package, deadline, assigned_analyst, status enum, overall_risk_rating enum, final_outcome enum, completion_pct, suggested_outcome
-- `check_sections` — 15 fixed investigation sections (seeded)
-- `check_templates` — reusable question templates per section (active flag, order)
-- `case_checks` — per-case copy of template at case creation; finding, status enum, confidence enum, evidence_summary, source_name/url/date, buyer_impact, recommended_action, internal_notes, include_in_report, reviewer_approved
-- `case_documents` — uploaded customer docs at intake
-- `evidence_items` — storage_path or url, evidence_type enum, source, retrieval_date, related_entity, related_check_id, comments, client_visible
-- `supplier_communications` — date, question, response, docs_received, analyst_assessment, response_status enum
-- `report_versions` — case_id, version_number, status (draft/final/delivered), overall_risk_rating, executive_summary, key_findings (jsonb), section_summaries (jsonb), buyer_implications, recommended_safeguards, payment_recommendation, inspection_recommendation, testing_recommendation, methodology, limitations, independence_statement, generated_pdf_path, created_by, created_at
-- `case_activity_log` — case_id, actor_id, action enum, payload jsonb, created_at
+1. `/order` — same form, refined to spec:
+   - Required: supplier name, country (China/Vietnam), URL, product category, destination, order value, customer name/company/email.
+   - Optional: Chinese/Vietnamese legal name, supplier contact, customer concerns.
+   - **Document upload moved inline into the form**, max 3 files, ≤10 MB each, PDF/JPG/JPEG/PNG only. Each file has a category dropdown: business licence · certificate/test report · quotation/payment instructions.
+   - "Documents are optional. We can start without them."
+2. Step 3 = stub payment (as today). On click:
+   - Order + `supplier_case` created with `status = investigation_queued`.
+   - Files uploaded into private bucket `case-documents`.
+   - **Customer confirmation email** sent immediately with spec text: "Your VerifyFirst investigation has started…"
+   - Browser is redirected to `/order/status/$token` which kicks the pipeline and polls for completion.
+3. `/order/status/$token` — public, no auth. Triggers `POST /api/public/investigate/$caseId` (HMAC-signed) once, then polls `case.status` every 5 s. Shows a clean "AI investigation in progress" progress UI (steps: Document analysis → Legal entity → Risk screening → Report generation → Delivery), updates from `case_activity_log`. If the customer closes the tab, the pipeline keeps running server-side (it's a separate HTTP request, not bound to their connection).
+4. On completion, the page shows the order ID + "We've emailed your report to *email*" + the signed report link.
 
-Enums: `case_status`, `check_status` (PASS/CAUTION/FAIL/NOT_VERIFIED/NOT_APPLICABLE), `confidence_level`, `risk_rating`, `final_outcome`, `evidence_type`, `response_status`, `activity_action`, `app_role`.
+## Public, no-auth routes
 
-Storage buckets: `case-documents` (private), `evidence` (private), `reports` (private).
+- `/order/status/$token` — investigation progress + final outcome.
+- `/r/$token` — styled HTML report page (reuses the existing `sample-report.tsx` layout). 30-day signed token stored on `report_versions`. Includes "Save as PDF" button using the existing print CSS.
+- `/upload/$token` — kept for legacy orders; new flow uses inline upload.
+- `/api/public/investigate/$caseId` — HMAC-protected pipeline trigger.
 
-RLS: only authenticated admins/analysts can read; admins can write everything; analysts can write to cases they're assigned to OR any case (configurable — default: any analyst can edit any case but only admin can delete/finalize outcomes).
+## Removed / hidden
 
-### 3. Public order integration
+- Inline "delivered within 72 h / 24 h" copy gets the spec-required wording: "delivered as a PDF to this email address" (no fixed timing promise — tier just informs internal priority).
 
-When a customer submits the existing order form (`src/lib/orders.functions.ts`):
+## AI investigation pipeline (server-side, single `runInvestigation(caseId)` server function)
 
-- Upsert customer
-- Insert supplier (stated_name from form)
-- Insert order
-- Insert supplier_case with status `New`, deadline computed from tier
-- Copy all `check_templates WHERE is_active` into `case_checks` for this case
-- Log `case_created` activity
+Runs in a server route `/api/public/investigate/$caseId` (HMAC-verified) so it isn't tied to the customer's browser session.
 
-All inside the existing server fn using `supabaseAdmin` (already does this for orders).
+Stage 1 — **Document extraction.** Each uploaded file fetched from Storage. PDFs/images sent to `google/gemini-2.5-flash` (multimodal) with structured-output `Output.object` schema → `{ doc_type, extracted_entities: { company_name_en, company_name_zh, usci_number, registered_address, contact, dates, amounts, certificate_authority, certificate_number, validity_dates }, summary }`. Persisted to `case_documents.extracted_data` (new JSONB column).
 
-### 4. Admin UI
+Stage 2 — **Legal-entity resolution.** Firecrawl `search` against:
+- `site:gsxt.gov.cn` and `site:qcc.com` + supplier name + Chinese name
+- Generic search for the English name + "limited" + country
+- Customer-provided website (Firecrawl `scrape` → markdown + branding) to extract footer registration info.
+LLM agent then proposes one or more candidate legal entities, each with a `match_confidence` and source list. Chosen candidate stored on `supplier_cases.resolved_entity` (JSONB).
 
-Routes (all under `_authenticated/admin/`):
+Stage 3 — **Risk screening.** Parallel:
+- **Sanctions / restricted-party**: fetch the public OpenSanctions consolidated dataset (`https://data.opensanctions.org/datasets/latest/sanctions/entities.ftm.json` filtered, or their free `/match/sanctions` API endpoint with no auth). Name + country matched, score recorded.
+- **UFLPA Entity List**: bundled JSON snapshot of the U.S. CBP UFLPA Entity List (committed in `src/lib/risk-data/uflpa.json`, refresh date noted in report). Exact and fuzzy name match.
+- **Adverse media**: Firecrawl `search` "<entity name>" + ("fraud" OR "scam" OR "complaint" OR "lawsuit") with `tbs: 'qdr:y'`. Top 5 results scraped, summarised, classified.
+- **Domain / website consistency**: Firecrawl `scrape` with `formats: ['markdown','branding','links']`; LLM compares site claims against extracted-doc claims and registry data.
+- **Export history / manufacturer-vs-trader**: Firecrawl search on shipping aggregators (importyeti.com, panjiva.com snippets) — best-effort; flagged "Not independently verified" when only behind paywalls. Plug-in seam: a `searchExportHistory()` helper with a TODO stub for ImportYeti/Sayari API.
+- **Litigation / enforcement**: Firecrawl search on Chinese judgment sites + the entity name. Best-effort; marked accordingly.
+- **Certificate validity**: per extracted certificate, Firecrawl search on the issuing body + cert number.
 
-- `/admin` — dashboard table of cases with filters (status, analyst, deadline range, country, risk rating), sortable columns, search by Case ID/customer/supplier
-- `/admin/cases/$caseId` — case detail with tabs:
-  - **Overview** — all header fields, editable
-  - **Investigation** — 15 sections (accordion), each lists `case_checks` with inline editing for finding/status/confidence/etc., evidence drawer
-  - **Evidence** — all evidence items for the case, upload form
-  - **Communications** — supplier comms log
-  - **Risk summary** — live counts, hard-stop warnings, suggested outcome, final outcome selector (gated to admin/analyst), completion %
-  - **Report** — report builder, version list, preview, PDF generation, deliver
-  - **Activity** — activity log timeline
-- `/admin/templates` — admin-only management of `check_sections` + `check_templates`
-- `/admin/users` — admin-only role management
+Each screening returns a structured `Finding { item, status: PASS|CAUTION|FAIL|NOT_VERIFIED|NOT_APPLICABLE, confidence: high|medium_high|medium|low, source_name, source_url, retrieval_date, evidence_excerpt, buyer_impact, recommended_action }`. **Hard rule in the system prompt and validated in code**: any finding whose `evidence_excerpt` is empty must be downgraded to `NOT_VERIFIED`; the model is never permitted to invent registry numbers, dates, or addresses.
 
-Sticky top header with VerifyFirst branding (navy), sidebar nav, breadcrumbs.
+Stage 4 — **Risk synthesis.** Reuses the existing `risk-engine.ts` to compute overall outcome. The LLM is asked only for executive summary, buyer-impact prose, and the recommended actions — *not* for the outcome calculation (which stays deterministic and explainable).
 
-### 5. Risk engine (client-side derivation)
+Stage 5 — **Report assembly.** All findings + outcome → a new `report_versions` row (status `final`) with the full structured JSON. A unique 40-char `share_token` is stored on the row.
 
-Pure function takes `case_checks[]` → `{ pass, caution, fail, not_verified, completion_pct, hard_stops[], suggested_outcome }`.
+Stage 6 — **PDF generation.** `pdf-lib` server-side. A `renderReportPdf(report)` helper lays out the report with the brand colours (#0F2A43 navy, #16A34A green, amber, red), sectioned exactly per the spec: Executive summary, overall risk, key findings, legal-entity, factory-vs-trader, ownership, product fit, export history, certificates, regulatory, litigation, sanctions, digital footprint, payment safeguards, final recommendation, sources/methodology/limitations. Embedded into Storage bucket `reports` at `cases/$caseId/$reportId.pdf`.
 
-Hard-stop rules per spec. Missing finding ≠ PASS. Suggested outcome:
-- Any hard-stop → `NO_GO`
-- Any FAIL → `PAUSE_PENDING_CLARIFICATION`
-- Any CAUTION or NOT_VERIFIED on critical sections → `PROCEED_WITH_SAFEGUARDS`
-- Else → `GO`
+Stage 7 — **Delivery email.** Resend (already wired) with:
+- Subject: `Your VerifyFirst report is ready — <ORDER_REF> — <OVERALL_RATING>`
+- Body: spec text + Order ID + Supplier + Rating + signed link + contact email.
+- PDF attached (Resend supports base64 attachments up to 40 MB).
+- Internal email to ops with the same.
+- Case status → `report_delivered`, `case_activity_log` rows for each stage.
 
-### 6. Report builder
+If any stage fails: case status → `investigation_failed`, internal alert email sent, customer is *not* emailed a broken report.
 
-Form-driven; on "Create version" snapshots a `report_versions` row. PDF generation reuses existing print CSS from `sample-report.tsx` against a server-rendered (or window.print) report view. Past versions immutable. "Mark delivered" updates case status to `Delivered` + activity log.
+## Schema additions
 
-### 7. Design system
+One migration:
+- `case_documents.extracted_data JSONB`
+- `supplier_cases.resolved_entity JSONB`, `investigation_started_at`, `investigation_completed_at`, `investigation_error TEXT`
+- Enum `case_status` values: `investigation_queued`, `investigating`, `investigation_failed` (add only if missing)
+- `report_versions.share_token TEXT UNIQUE`, `report_versions.pdf_storage_path TEXT`
+- Storage bucket `reports` (already exists, just confirm RLS deny-all public)
 
-- Reuse existing tokens (navy `--primary`, green `--success`, amber `--warning`, red `--danger`).
-- Status badges via `RiskBadge` pattern + new `CaseStatusBadge`, `ConfidenceBadge`.
-- Inter typography (already loaded).
-- Tables: shadcn `Table` with sticky header.
-- No decorative imagery in admin area — dense, information-first layout.
+## Where API/plug-in seams live
 
----
+`src/lib/investigation/sources/` — one file per data source. Each exports a `lookup({entity, country}) → Finding[]`. Today: `web-search.ts` (Firecrawl), `opensanctions.ts` (free API), `uflpa.ts` (bundled JSON), `adverse-media.ts`. Tomorrow you drop in `opencorporates.ts`, `importyeti.ts`, `sayari.ts` and they get composed automatically by `runInvestigation`.
 
-### Technical notes
+## Front-end touch points
 
-- **Server functions** under `src/lib/admin/*.functions.ts` with `requireSupabaseAuth` middleware + `has_role` check at the top of every handler.
-- **Default order tiers → deadline**: Basic 5d, Standard 3d, Premium 24h (configurable later).
-- **Activity log** written from inside each mutating server fn — single helper `logActivity(supabase, { case_id, action, payload })`.
-- **PDF**: first version uses browser print of `/admin/cases/$id/report/$versionId/print` (no extra deps). Upload to `reports` bucket on "finalize".
-- **Seed data**: migration inserts 15 sections and a starter set of 3-5 template questions per section so the first case has something to work with.
-- **No external data automation** — all findings entered manually by analysts, per spec.
+- `src/routes/order.tsx` — slimmer form, inline 3-file upload, refined confirmation copy.
+- `src/routes/order.status.$token.tsx` — new progress + outcome screen.
+- `src/routes/r.$token.tsx` — new signed report view (reuses `sample-report.tsx` layout, fed by `getReportByToken` server fn).
+- `src/components/InvestigationProgress.tsx` — step list + spinner.
+- Public landing page copy gets a small adjustment: "AI-powered supplier investigation, delivered as a PDF" — no other landing changes.
 
-### Out of scope (this iteration)
+## What I'm intentionally NOT building
 
-- Automated OSINT / sanctions API integration
-- Email notifications to customers
-- In-app chat
-- Analytics dashboards beyond the case table
-- Multi-tenancy
+- Customer dashboards, accounts, login, multi-tenancy.
+- Real Stripe charge (still stubbed; same flag flips real when Stripe is enabled).
+- Real-time chat / SLA timers.
+- Paid-API integrations (left as seams).
+- Editor for ops to amend a generated report (the existing hidden `/admin` views still work for that).
 
-### Build order
+## Open dependencies on you
 
-1. Migration (schema + enums + RLS + seed sections/templates) → wait for approval
-2. Auth pages + role middleware + admin shell layout
-3. Patch order server fn to create case + copy templates
-4. Dashboard + filters
-5. Case detail (overview, investigation, evidence, comms)
-6. Risk engine + summary panel
-7. Report builder + versioning + PDF
-8. Templates admin + users admin + activity log view
+1. Approve the Firecrawl connector dialog when it appears.
+2. The first investigation will burn ~50 k–150 k Lovable AI tokens (cents) + a handful of Firecrawl credits. Confirm you're OK with that per order.
+3. You said earlier to keep `/admin` files hidden — confirmed, no admin UI work in this scope.
 
-This is a large build — I'll ship it in sequential turns starting with the migration once you approve this plan.
+After you approve I'll execute in this order: migration → Firecrawl link → schema/types → source modules → pipeline orchestrator → PDF renderer → report route → status route → form refactor → wire success page → verify a synthetic case end-to-end.
