@@ -56,7 +56,10 @@ function enforceEvidence(findings: Finding[]): Finding[] {
 export async function runInvestigation(caseId: string): Promise<{ ok: true; share_token: string } | { ok: false; error: string }> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const log = async (action: string, payload: unknown) => {
-    await supabaseAdmin.from("case_activity_log").insert({ case_id: caseId, action, payload });
+    await supabaseAdmin
+      .from("case_activity_log")
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .insert({ case_id: caseId, action: action as any, payload: payload as any });
   };
 
   // 1) Load case context
