@@ -58,7 +58,7 @@ export const getOrderStatusByToken = createServerFn({ method: "POST" })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       activity: (activity ?? []).map((a: any) => ({
         action: a.action as string,
-        payload: a.payload as Record<string, unknown> | null,
+        payload: JSON.stringify(a.payload ?? null),
         created_at: a.created_at as string,
       })),
     };
@@ -83,7 +83,7 @@ export const getReportByShareToken = createServerFn({ method: "POST" })
       pdfUrl = signed?.signedUrl ?? null;
     }
     return {
-      report: rv.snapshot as unknown,
+      reportJson: JSON.stringify(rv.snapshot ?? null),
       pdfUrl,
       finalised_at: rv.finalised_at as string | null,
     };

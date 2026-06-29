@@ -21,6 +21,7 @@ import { Route as AuthenticatedAdminRouteRouteImport } from './routes/_authentic
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
 import { Route as AuthenticatedAdminTemplatesRouteImport } from './routes/_authenticated/admin/templates'
+import { Route as ApiPublicInvestigateCaseIdRouteImport } from './routes/api/public/investigate.$caseId'
 import { Route as AuthenticatedAdminCasesCaseIdRouteImport } from './routes/_authenticated/admin/cases.$caseId'
 
 const TermsRoute = TermsRouteImport.update({
@@ -83,6 +84,12 @@ const AuthenticatedAdminTemplatesRoute =
     path: '/templates',
     getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
+const ApiPublicInvestigateCaseIdRoute =
+  ApiPublicInvestigateCaseIdRouteImport.update({
+    id: '/api/public/investigate/$caseId',
+    path: '/api/public/investigate/$caseId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AuthenticatedAdminCasesCaseIdRoute =
   AuthenticatedAdminCasesCaseIdRouteImport.update({
     id: '/cases/$caseId',
@@ -103,6 +110,7 @@ export interface FileRoutesByFullPath {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/admin/cases/$caseId': typeof AuthenticatedAdminCasesCaseIdRoute
+  '/api/public/investigate/$caseId': typeof ApiPublicInvestigateCaseIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -116,6 +124,7 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/admin/cases/$caseId': typeof AuthenticatedAdminCasesCaseIdRoute
+  '/api/public/investigate/$caseId': typeof ApiPublicInvestigateCaseIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -132,6 +141,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/admin/cases/$caseId': typeof AuthenticatedAdminCasesCaseIdRoute
+  '/api/public/investigate/$caseId': typeof ApiPublicInvestigateCaseIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -148,6 +158,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/admin/'
     | '/admin/cases/$caseId'
+    | '/api/public/investigate/$caseId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -161,6 +172,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/admin'
     | '/admin/cases/$caseId'
+    | '/api/public/investigate/$caseId'
   id:
     | '__root__'
     | '/'
@@ -176,6 +188,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/users'
     | '/_authenticated/admin/'
     | '/_authenticated/admin/cases/$caseId'
+    | '/api/public/investigate/$caseId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -187,6 +200,7 @@ export interface RootRouteChildren {
   SampleReportRoute: typeof SampleReportRoute
   TermsRoute: typeof TermsRoute
   UploadTokenRoute: typeof UploadTokenRoute
+  ApiPublicInvestigateCaseIdRoute: typeof ApiPublicInvestigateCaseIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -275,6 +289,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminTemplatesRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
+    '/api/public/investigate/$caseId': {
+      id: '/api/public/investigate/$caseId'
+      path: '/api/public/investigate/$caseId'
+      fullPath: '/api/public/investigate/$caseId'
+      preLoaderRoute: typeof ApiPublicInvestigateCaseIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/admin/cases/$caseId': {
       id: '/_authenticated/admin/cases/$caseId'
       path: '/cases/$caseId'
@@ -325,6 +346,7 @@ const rootRouteChildren: RootRouteChildren = {
   SampleReportRoute: SampleReportRoute,
   TermsRoute: TermsRoute,
   UploadTokenRoute: UploadTokenRoute,
+  ApiPublicInvestigateCaseIdRoute: ApiPublicInvestigateCaseIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
