@@ -68,6 +68,11 @@ function wrap(text: string, font: PDFFont, size: number, maxWidth: number): stri
   return lines;
 }
 
+function isPdfSafeAscii(char: string): boolean {
+  const code = char.charCodeAt(0);
+  return code === 9 || code === 10 || code === 13 || (code >= 32 && code <= 126);
+}
+
 // pdf-lib's standard fonts (WinAnsi) don't support CJK / curly quotes / em-dash.
 // Down-translate so glyphs render; CJK becomes [non-Latin].
 function asciiSafe(s: string): string {
@@ -76,7 +81,10 @@ function asciiSafe(s: string): string {
     .replace(/[“”]/g, '"')
     .replace(/–|—/g, "-")
     .replace(/…/g, "...")
-    .replace(/[^\x09\x0A\x0D\x20-\x7E]+/g, (m) => `[${m.length}-char non-Latin]`);
+    .replace(/[^\x20-\x7E]+/g, (m) => {
+      if ([...m].every(isPdfSafeAscii)) return m;
+      return `[${m.length}-char non-Latin]`;
+    });
 }
 
 function drawWrapped(ctx: Ctx, text: string, opts: { size?: number; bold?: boolean; color?: ReturnType<typeof rgb>; gap?: number } = {}) {
