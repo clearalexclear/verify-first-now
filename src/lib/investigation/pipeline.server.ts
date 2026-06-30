@@ -4,6 +4,7 @@ import { screenSanctions } from "./sources/opensanctions.server";
 import { screenUflpa } from "./sources/uflpa.server";
 import { screenAdverseMedia, screenLitigation } from "./sources/adverse-media.server";
 import { probeExportHistory, screenCertificates, screenWebsiteConsistency } from "./sources/web-research.server";
+import { runConnectorEvidenceChecks } from "./connectors/findings.server";
 import { computeOutcome, synthesiseNarrative } from "./synthesis.server";
 import { renderReportPdf } from "./pdf.server";
 import { emailReport, emailInvestigationFailed } from "./email.server";
@@ -32,7 +33,7 @@ function mapOutcome(outcome: string) {
 
 export async function runInvestigation(
   caseId: string,
-  opts: { jobId?: string | null; deliver?: boolean } = {},
+  opts: { jobId?: string | null; deliver?: boolean; allowRerun?: boolean } = {},
 ): Promise<{ ok: true; share_token: string } | { ok: false; error: string }> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const db = supabaseAdmin as any;
@@ -56,7 +57,9 @@ export async function runInvestigation(
 
   const order = Array.isArray(caseRow.orders) ? caseRow.orders[0] : caseRow.orders;
   if (!order) return { ok: false, error: "No order attached to case" };
-  if (["report_ready", "delivered"].includes(String(caseRow.status))) return { ok: false, error: "Already completed" };
+  if (!opts.allowRerun && ["report_ready", "delivered"].includes(String(caseRow.status))) {
+    return { ok: false, error: "Already completed" };
+  }
 
   await db.from("supplier_cases").update({
     status: "investigating",
@@ -111,6 +114,12 @@ export async function runInvestigation(
       screenWebsiteConsistency({ statedName: nameForScreening, website: order.website_marketplace_url, resolved }),
       screenCertificates({ extracted }),
       probeExportHistory({ name: nameForScreening, destinationMarket: order.destination_market }),
+      runConnectorEvidenceChecks({
+        caseId,
+        jobId: opts.jobId ?? null,
+        website: order.website_marketplace_url,
+        productQuery: caseRow.product_category ?? "",
+      }),
     ]);
 
     const findings: Finding[] = [];
@@ -240,12 +249,19 @@ export async function runInvestigation(
       .single();
     if (rvErr || !rv) throw new Error("Could not persist report: " + rvErr?.message);
 
+    const jsonPath = `cases/${caseId}/${rv.id}.json`;
+    const { error: jsonErr } = await db.storage
+      .from("reports")
+      .upload(jsonPath, JSON.stringify(report, null, 2), { contentType: "application/json", upsert: true });
+    if (jsonErr) throw new Error("Could not store structured report JSON: " + jsonErr.message);
+
     await db.from("report_artifacts").insert({
       case_id: caseId,
       report_version_id: rv.id,
       artifact_type: "structured_json",
+      storage_path: jsonPath,
       status: "generated",
-      metadata: { report },
+      metadata: { finding_count: report.findings.length },
     });
 
     const pdfBytes = await renderReportPdf(report);
@@ -262,7 +278,7 @@ export async function runInvestigation(
       storage_path: pdfPath,
       status: "generated",
     });
-    await log("report_generated", { version: nextVersion, outcome: report.final_outcome });
+    await log("report_generated", { version: nextVersion, outcome: report.final_outcome, delivered: deliver });
 
     if (deliver) {
       const reportUrl = `${siteOrigin()}/r/${share_token}`;
@@ -305,11 +321,13 @@ export async function runInvestigation(
       investigation_completed_at: new Date().toISOString(),
     }).eq("id", caseId);
     await log("status_changed", { to: "investigation_failed", error: errorMessage });
-    await emailInvestigationFailed({
-      orderReference: order.order_reference,
-      customerEmail: order.customer_email,
-      errorMessage,
-    }).catch(() => {});
+    if (deliver) {
+      await emailInvestigationFailed({
+        orderReference: order.order_reference,
+        customerEmail: order.customer_email,
+        errorMessage,
+      }).catch(() => {});
+    }
     return { ok: false, error: errorMessage };
   }
 }
