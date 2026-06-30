@@ -60,6 +60,7 @@ export async function runInvestigation(
   if (!opts.allowRerun && ["report_ready", "delivered"].includes(String(caseRow.status))) {
     return { ok: false, error: "Already completed" };
   }
+  const destinationMarket = caseRow.destination_market ?? "";
 
   await db.from("supplier_cases").update({
     status: "investigating",
@@ -108,12 +109,12 @@ export async function runInvestigation(
 
     const settled = await Promise.allSettled([
       screenSanctions({ name: nameForScreening, country: order.supplier_country }),
-      screenUflpa({ name: nameForScreening, destinationMarket: order.destination_market }),
+      screenUflpa({ name: nameForScreening, destinationMarket }),
       screenAdverseMedia({ name: nameForScreening, chineseName: chineseForScreening }),
       screenLitigation({ name: nameForScreening, chineseName: chineseForScreening }),
       screenWebsiteConsistency({ statedName: nameForScreening, website: order.website_marketplace_url, resolved }),
       screenCertificates({ extracted }),
-      probeExportHistory({ name: nameForScreening, destinationMarket: order.destination_market }),
+      probeExportHistory({ name: nameForScreening, destinationMarket }),
       runConnectorEvidenceChecks({
         caseId,
         jobId: opts.jobId ?? null,
@@ -157,7 +158,7 @@ export async function runInvestigation(
         name: order.customer_name,
         company: order.customer_company,
         email: order.customer_email,
-        destination_market: order.destination_market,
+        destination_market: destinationMarket,
         estimated_order_value: caseRow.estimated_order_value ?? "",
         product_category: caseRow.product_category ?? "",
         concerns: caseRow.customer_concerns ?? null,
@@ -192,7 +193,7 @@ export async function runInvestigation(
         name: order.customer_name,
         company: order.customer_company,
         email: order.customer_email,
-        destination_market: order.destination_market,
+        destination_market: destinationMarket,
         estimated_order_value: caseRow.estimated_order_value ?? "",
         product_category: caseRow.product_category ?? "",
         concerns: caseRow.customer_concerns ?? null,
