@@ -1,4 +1,4 @@
-import { notConfiguredResult, type ConnectorContext, type ConnectorResult, type InvestigationConnector } from "./types";
+import { notConfiguredResult, type ConnectorResult, type InvestigationConnector } from "./types";
 
 function hasAll(env: Record<string, string | undefined>, keys: string[]) {
   return keys.every((key) => Boolean(env[key]));
@@ -12,15 +12,20 @@ function disabledPaidConnector(args: {
   sourceUrl: string;
   notes: string;
 }): InvestigationConnector {
-  return {
-    ...args,
+  const connector: InvestigationConnector = {
+    id: args.id,
+    name: args.name,
+    category: args.category,
+    requiredEnv: args.requiredEnv,
+    sourceUrl: args.sourceUrl,
     mode: "paid_disabled",
     rawResponseStorageAllowed: false,
     isEnabled: () => false,
     async run() {
-      return notConfiguredResult(this, args.notes);
+      return notConfiguredResult(connector, args.notes);
     },
   };
+  return connector;
 }
 
 const qccCorporateRegistry = disabledPaidConnector({
@@ -72,12 +77,12 @@ const domainRdap: InvestigationConnector<{ domain: string }> = {
     const retrievedAt = new Date().toISOString();
     if (!input.domain) {
       return {
-        connectorId: this.id,
+        connectorId: domainRdap.id,
         status: "skipped",
-        mode: this.mode,
+        mode: domainRdap.mode,
         retrievedAt,
         confidence: "low",
-        sourceUrl: this.sourceUrl,
+        sourceUrl: domainRdap.sourceUrl,
         evidence: [],
         rawResponseStorageAllowed: false,
         error: "No domain supplied",
@@ -88,9 +93,9 @@ const domainRdap: InvestigationConnector<{ domain: string }> = {
       const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
       if (res.status === 404) {
         return {
-          connectorId: this.id,
+          connectorId: domainRdap.id,
           status: "not_found",
-          mode: this.mode,
+          mode: domainRdap.mode,
           retrievedAt,
           confidence: "medium",
           sourceUrl: url,
@@ -109,9 +114,9 @@ const domainRdap: InvestigationConnector<{ domain: string }> = {
       }
       const raw = await res.json();
       return {
-        connectorId: this.id,
+        connectorId: domainRdap.id,
         status: res.ok ? "success" : "error",
-        mode: this.mode,
+        mode: domainRdap.mode,
         retrievedAt,
         confidence: res.ok ? "medium_high" : "low",
         sourceUrl: url,
@@ -130,12 +135,12 @@ const domainRdap: InvestigationConnector<{ domain: string }> = {
       };
     } catch (error) {
       return {
-        connectorId: this.id,
+        connectorId: domainRdap.id,
         status: "error",
-        mode: this.mode,
+        mode: domainRdap.mode,
         retrievedAt,
         confidence: "low",
-        sourceUrl: this.sourceUrl,
+        sourceUrl: domainRdap.sourceUrl,
         evidence: [],
         rawResponseStorageAllowed: false,
         error: error instanceof Error ? error.message : String(error),
@@ -155,16 +160,16 @@ const cpscRecalls: InvestigationConnector<{ query: string }> = {
   isEnabled: () => true,
   async run(input) {
     const retrievedAt = new Date().toISOString();
-    if (!input.query) return notConfiguredResult(this, "No product query supplied for CPSC recall screening.");
+    if (!input.query) return notConfiguredResult(cpscRecalls, "No product query supplied for CPSC recall screening.");
     try {
-      const url = `${this.sourceUrl}?format=json&RecallTitle=${encodeURIComponent(input.query)}`;
+      const url = `${cpscRecalls.sourceUrl}?format=json&RecallTitle=${encodeURIComponent(input.query)}`;
       const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
       const raw = await res.json().catch(() => []);
       const count = Array.isArray(raw) ? raw.length : 0;
       return {
-        connectorId: this.id,
+        connectorId: cpscRecalls.id,
         status: res.ok ? "success" : "error",
-        mode: this.mode,
+        mode: cpscRecalls.mode,
         retrievedAt,
         confidence: res.ok ? "medium_high" : "low",
         sourceUrl: url,
@@ -185,12 +190,12 @@ const cpscRecalls: InvestigationConnector<{ query: string }> = {
       };
     } catch (error) {
       return {
-        connectorId: this.id,
+        connectorId: cpscRecalls.id,
         status: "error",
-        mode: this.mode,
+        mode: cpscRecalls.mode,
         retrievedAt,
         confidence: "low",
-        sourceUrl: this.sourceUrl,
+        sourceUrl: cpscRecalls.sourceUrl,
         evidence: [],
         rawResponseStorageAllowed: false,
         error: error instanceof Error ? error.message : String(error),
@@ -209,7 +214,7 @@ const firecrawlWebIntelligence: InvestigationConnector = {
   rawResponseStorageAllowed: false,
   isEnabled: (env) => hasAll(env, ["FIRECRAWL_API_KEY", "LOVABLE_API_KEY"]),
   async run() {
-    return notConfiguredResult(this, "Firecrawl remains classified as web intelligence only and cannot independently verify corporate registration, shipment history, certificate validity, or litigation.");
+    return notConfiguredResult(firecrawlWebIntelligence, "Firecrawl remains classified as web intelligence only and cannot independently verify corporate registration, shipment history, certificate validity, or litigation.");
   },
 };
 
