@@ -66,22 +66,34 @@ export async function aiJson<T>(
   return parseJsonLoose<T>(out);
 }
 
+function tryParseJson<T>(candidate: string): T | null {
+  try {
+    return JSON.parse(candidate) as T;
+  } catch {
+    return null;
+  }
+}
+
 export function parseJsonLoose<T>(raw: string): T {
   if (!raw) throw new Error("AI returned empty response");
   // Strip ```json fences if present
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
   const candidate = (fenced ? fenced[1] : raw).trim();
-  // Fall back to first { ... last }
-  try { return JSON.parse(candidate) as T; } catch {}
+  const direct = tryParseJson<T>(candidate);
+  if (direct !== null) return direct;
+
   const first = candidate.indexOf("{");
   const last = candidate.lastIndexOf("}");
   if (first >= 0 && last > first) {
-    try { return JSON.parse(candidate.slice(first, last + 1)) as T; } catch {}
+    const objectCandidate = tryParseJson<T>(candidate.slice(first, last + 1));
+    if (objectCandidate !== null) return objectCandidate;
   }
+
   const firstA = candidate.indexOf("[");
   const lastA = candidate.lastIndexOf("]");
   if (firstA >= 0 && lastA > firstA) {
-    try { return JSON.parse(candidate.slice(firstA, lastA + 1)) as T; } catch {}
+    const arrayCandidate = tryParseJson<T>(candidate.slice(firstA, lastA + 1));
+    if (arrayCandidate !== null) return arrayCandidate;
   }
   throw new Error("AI did not return valid JSON: " + candidate.slice(0, 200));
 }
