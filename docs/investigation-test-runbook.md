@@ -39,7 +39,13 @@ The command checks that the investigation tables exist, required connector seed 
 
 ## 4. Refresh Official UFLPA Snapshot
 
-The UFLPA checker needs a stored source snapshot. Run the snapshot refresh from a trusted server-side shell before the first test. The investigation report treats a missing snapshot as `NOT_VERIFIED`, never as a pass.
+The UFLPA checker needs a stored source snapshot. Run the snapshot refresh from a trusted server-side shell before the first test:
+
+```bash
+npm run uflpa:refresh
+```
+
+The investigation report treats a missing snapshot as `NOT_VERIFIED`, never as a pass.
 
 ## 5. Run Jiangmen Changwen Test
 
