@@ -28,16 +28,15 @@ const submitOrderSchema = z.object({
   customer_company: z.string().min(1).max(200),
   customer_email: z.string().email().max(320),
   estimated_order_value: z.string().min(1).max(50),
-  payment_confirmed: z.boolean().optional().default(false),
   documents: z.array(documentSchema).max(MAX_FILES).optional().default([]),
 });
 
 export type SubmitOrderInput = z.infer<typeof submitOrderSchema>;
 
-const TIER_LABELS: Record<string, { name: string; price: number; delivery: string; hours: number }> = {
-  standard: { name: "Standard", price: 490, delivery: "automated", hours: 72 },
-  priority: { name: "Priority", price: 690, delivery: "automated (priority queue)", hours: 24 },
-  onsite:   { name: "On-Site",  price: 1290, delivery: "7 days",  hours: 24 * 7 },
+const TIER_LABELS: Record<string, { name: string; price: number; hours: number }> = {
+  standard: { name: "Standard", price: 490, hours: 72 },
+  priority: { name: "Priority", price: 690, hours: 24 },
+  onsite: { name: "On-Site", price: 1290, hours: 24 * 7 },
 };
 
 const NOTIFY_EMAIL = "masseyalexandre@gmail.com";
@@ -61,12 +60,9 @@ export const submitOrder = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    const paymentConfirmed = Boolean(data.payment_confirmed);
-    // New flow: once payment is confirmed, queue the AI investigation.
-    // Documents are optional; we don't wait for them.
-    const caseStatus = paymentConfirmed ? "investigation_queued" : "payment_pending";
+    const caseStatus = "payment_pending";
+    const paymentStatus = "pending";
 
-    // 1) Upsert customer
     const { data: customer } = await supabaseAdmin
       .from("customers")
       .upsert(
@@ -76,11 +72,11 @@ export const submitOrder = createServerFn({ method: "POST" })
       .select("id")
       .single();
 
-    // 2) Insert supplier
     const { data: supplier } = await supabaseAdmin
       .from("suppliers")
       .insert({
         stated_name: data.supplier_company_name,
+        cn_vn_legal_name: data.supplier_chinese_name || null,
         country: data.supplier_country,
         website: data.website_marketplace_url,
         marketplace_url: data.website_marketplace_url,
@@ -89,7 +85,6 @@ export const submitOrder = createServerFn({ method: "POST" })
       .select("id")
       .single();
 
-    // 3) Insert order
     const { data: inserted, error } = await supabaseAdmin
       .from("orders")
       .insert([{
@@ -106,6 +101,7 @@ export const submitOrder = createServerFn({ method: "POST" })
         customer_company: data.customer_company,
         customer_email: data.customer_email,
         estimated_order_value: data.estimated_order_value,
+        payment_status: paymentStatus,
         customer_id: customer?.id ?? null,
         supplier_id: supplier?.id ?? null,
       }])
@@ -121,7 +117,6 @@ export const submitOrder = createServerFn({ method: "POST" })
     const deadline = new Date(Date.now() + tier.hours * 3600 * 1000).toISOString();
     const statusToken = randomToken(40);
 
-    // 4) Create supplier case
     const { data: caseRow, error: caseErr } = await supabaseAdmin
       .from("supplier_cases")
       .insert({
@@ -148,11 +143,9 @@ export const submitOrder = createServerFn({ method: "POST" })
       await supabaseAdmin.from("case_activity_log").insert({
         case_id: caseRow.id,
         action: "case_created",
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        payload: { order_id: inserted.id, payment_confirmed: paymentConfirmed } as any,
+        payload: { order_id: inserted.id, payment_status: paymentStatus, job_created: false } as any,
       });
 
-      // 5) Inline document upload (max 3, validated per file)
       for (const d of data.documents) {
         const ext = safeExt(d.filename);
         if (!ALLOWED_EXTS.includes(ext)) continue;
@@ -176,7 +169,6 @@ export const submitOrder = createServerFn({ method: "POST" })
         await supabaseAdmin.from("case_activity_log").insert({
           case_id: caseRow.id,
           action: "document_uploaded",
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           payload: { filename: d.filename, category: d.category, bytes: bin.byteLength } as any,
         });
       }
@@ -189,27 +181,13 @@ export const submitOrder = createServerFn({ method: "POST" })
       "https://verify-first-now.lovable.app";
     const statusUrl = `${origin}/order/status/${statusToken}`;
 
-    // 6) Customer confirmation email — spec wording.
-    try {
-      const { emailCustomerStarted } = await import("@/lib/investigation/email.server");
-      await emailCustomerStarted({
-        customerEmail: data.customer_email,
-        customerName: data.customer_name,
-        orderReference,
-        supplierName: data.supplier_company_name,
-      });
-    } catch (e) {
-      console.warn("[submitOrder] customer email failed:", (e as Error).message);
-    }
-
-    // 7) Internal notification
     try {
       const LOVABLE_API_KEY = process.env.LOVABLE_API_KEY;
       const RESEND_API_KEY = process.env.RESEND_API_KEY;
       if (LOVABLE_API_KEY && RESEND_API_KEY) {
         const internalHtml = `
-          <h2>New VerifyFirst order — ${orderReference}</h2>
-          <p><strong>Payment:</strong> ${paymentConfirmed ? "Confirmed (stub)" : "Pending"}</p>
+          <h2>New VerifyFirst pending order — ${orderReference}</h2>
+          <p><strong>Payment:</strong> Pending Stripe confirmation. No investigation job has been created.</p>
           <p><strong>Tier:</strong> ${tier.name} (€${tier.price})</p>
           <p><strong>Case reference:</strong> ${caseRow?.case_reference ?? "—"}</p>
           <p><strong>Status URL:</strong> <a href="${statusUrl}">${statusUrl}</a></p>
@@ -237,7 +215,7 @@ export const submitOrder = createServerFn({ method: "POST" })
           body: JSON.stringify({
             from: "VerifyFirst <onboarding@resend.dev>",
             to: [NOTIFY_EMAIL],
-            subject: `New VerifyFirst order — ${orderReference}${paymentConfirmed ? " (paid)" : " (unpaid)"}`,
+            subject: `New VerifyFirst pending order — ${orderReference}`,
             html: internalHtml,
           }),
         }).catch((e) => console.warn("[submitOrder] internal email failed:", (e as Error).message));

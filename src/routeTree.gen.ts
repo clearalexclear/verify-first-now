@@ -23,6 +23,7 @@ import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authentic
 import { Route as OrderStatusTokenRouteImport } from './routes/order.status.$token'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
 import { Route as AuthenticatedAdminTemplatesRouteImport } from './routes/_authenticated/admin/templates'
+import { Route as ApiStripeWebhookRouteImport } from './routes/api/stripe/webhook'
 import { Route as ApiPublicInvestigateCaseIdRouteImport } from './routes/api/public/investigate.$caseId'
 import { Route as AuthenticatedAdminCasesCaseIdRouteImport } from './routes/_authenticated/admin/cases.$caseId'
 
@@ -96,6 +97,11 @@ const AuthenticatedAdminTemplatesRoute =
     path: '/templates',
     getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
+const ApiStripeWebhookRoute = ApiStripeWebhookRouteImport.update({
+  id: '/api/stripe/webhook',
+  path: '/api/stripe/webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicInvestigateCaseIdRoute =
   ApiPublicInvestigateCaseIdRouteImport.update({
     id: '/api/public/investigate/$caseId',
@@ -125,6 +131,7 @@ export interface FileRoutesByFullPath {
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/admin/cases/$caseId': typeof AuthenticatedAdminCasesCaseIdRoute
   '/api/public/investigate/$caseId': typeof ApiPublicInvestigateCaseIdRoute
+  '/api/stripe/webhook': typeof ApiStripeWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -141,6 +148,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/admin/cases/$caseId': typeof AuthenticatedAdminCasesCaseIdRoute
   '/api/public/investigate/$caseId': typeof ApiPublicInvestigateCaseIdRoute
+  '/api/stripe/webhook': typeof ApiStripeWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -160,6 +168,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/admin/cases/$caseId': typeof AuthenticatedAdminCasesCaseIdRoute
   '/api/public/investigate/$caseId': typeof ApiPublicInvestigateCaseIdRoute
+  '/api/stripe/webhook': typeof ApiStripeWebhookRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -179,6 +188,7 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/admin/cases/$caseId'
     | '/api/public/investigate/$caseId'
+    | '/api/stripe/webhook'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -195,6 +205,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/admin/cases/$caseId'
     | '/api/public/investigate/$caseId'
+    | '/api/stripe/webhook'
   id:
     | '__root__'
     | '/'
@@ -213,6 +224,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/'
     | '/_authenticated/admin/cases/$caseId'
     | '/api/public/investigate/$caseId'
+    | '/api/stripe/webhook'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -225,6 +237,7 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   RShareTokenRoute: typeof RShareTokenRoute
   UploadTokenRoute: typeof UploadTokenRoute
+  ApiStripeWebhookRoute: typeof ApiStripeWebhookRoute
   ApiPublicInvestigateCaseIdRoute: typeof ApiPublicInvestigateCaseIdRoute
 }
 
@@ -328,6 +341,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminTemplatesRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
+    '/api/stripe/webhook': {
+      id: '/api/stripe/webhook'
+      path: '/api/stripe/webhook'
+      fullPath: '/api/stripe/webhook'
+      preLoaderRoute: typeof ApiStripeWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/investigate/$caseId': {
       id: '/api/public/investigate/$caseId'
       path: '/api/public/investigate/$caseId'
@@ -396,6 +416,7 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   RShareTokenRoute: RShareTokenRoute,
   UploadTokenRoute: UploadTokenRoute,
+  ApiStripeWebhookRoute: ApiStripeWebhookRoute,
   ApiPublicInvestigateCaseIdRoute: ApiPublicInvestigateCaseIdRoute,
 }
 export const routeTree = rootRouteImport

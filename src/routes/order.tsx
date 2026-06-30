@@ -105,7 +105,6 @@ function fileToBase64(file: File): Promise<string> {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
-      // strip the "data:...;base64," prefix
       const i = result.indexOf(",");
       resolve(i >= 0 ? result.slice(i + 1) : result);
     };
@@ -192,7 +191,6 @@ function OrderPage() {
           customer_company: data.yourCompany.trim(),
           customer_email: data.yourEmail.trim(),
           estimated_order_value: data.orderValue,
-          payment_confirmed: true,
           documents: docPayload,
         },
       });
@@ -256,7 +254,7 @@ function OrderPage() {
                   <Input
                     value={data.supplierChineseName}
                     onChange={(e) => update("supplierChineseName")(e.target.value)}
-                    placeholder="e.g. 宁波光辉工贸有限公司"
+                    placeholder="e.g. Ningbo Brightway Industry & Trade Co., Ltd."
                   />
                 </Field>
 
@@ -321,7 +319,7 @@ function OrderPage() {
                     rows={3}
                     value={data.concerns}
                     onChange={(e) => update("concerns")(e.target.value)}
-                    placeholder="e.g. asking for 50% deposit, factory address looks suspicious…"
+                    placeholder="e.g. asking for 50% deposit, factory address looks suspicious..."
                   />
                 </Field>
 
@@ -446,11 +444,11 @@ function OrderPage() {
                   <Select value={data.orderValue} onValueChange={update("orderValue")}>
                     <SelectTrigger><SelectValue placeholder="Select range" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="under_10k">Under €10K</SelectItem>
-                      <SelectItem value="10_50k">€10K – €50K</SelectItem>
-                      <SelectItem value="50_150k">€50K – €150K</SelectItem>
-                      <SelectItem value="150_500k">€150K – €500K</SelectItem>
-                      <SelectItem value="over_500k">Over €500K</SelectItem>
+                      <SelectItem value="under_10k">Under EUR10K</SelectItem>
+                      <SelectItem value="10_50k">EUR10K - EUR50K</SelectItem>
+                      <SelectItem value="50_150k">EUR50K - EUR150K</SelectItem>
+                      <SelectItem value="150_500k">EUR150K - EUR500K</SelectItem>
+                      <SelectItem value="over_500k">Over EUR500K</SelectItem>
                     </SelectContent>
                   </Select>
                 </Field>
@@ -474,9 +472,9 @@ function OrderPage() {
 
           {step === 3 && (
             <>
-              <h2 className="text-2xl font-bold text-navy">Review & pay</h2>
+              <h2 className="text-2xl font-bold text-navy">Review & payment setup</h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                Confirm your verification tier and complete payment. Our AI investigation starts immediately after payment.
+                Confirm your verification tier. The investigation will only start after Stripe confirms payment server-side.
               </p>
 
               <div className="mt-6 grid gap-3 sm:grid-cols-3">
@@ -492,7 +490,7 @@ function OrderPage() {
                     <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       {TIERS[id].name}
                     </div>
-                    <div className="mt-1 text-xl font-bold text-navy">€{TIERS[id].price}</div>
+                    <div className="mt-1 text-xl font-bold text-navy">EUR{TIERS[id].price}</div>
                     <div className="text-xs text-muted-foreground">{TIERS[id].delivery}</div>
                   </button>
                 ))}
@@ -510,16 +508,15 @@ function OrderPage() {
                 </dl>
                 <div className="mt-4 flex items-baseline justify-between border-t border-border pt-4">
                   <span className="text-sm font-semibold text-foreground">Total</span>
-                  <span className="text-2xl font-bold text-navy">€{tierInfo.price}</span>
+                  <span className="text-2xl font-bold text-navy">EUR{tierInfo.price}</span>
                 </div>
               </div>
 
               <div className="mt-6 flex items-start gap-2 rounded-md border border-warning/30 bg-warning/5 p-4 text-xs leading-relaxed text-foreground">
                 <Lock className="mt-0.5 h-4 w-4 shrink-0 text-warning-foreground" />
                 <span>
-                  <strong>Stripe payment is being set up.</strong> For now, clicking the button below
-                  simulates a successful payment, creates your order, and starts the AI investigation.
-                  Your report PDF will be emailed to you when it is ready.
+                  <strong>Payment is verified by Stripe on the server.</strong> Submitting this form creates a pending order only.
+                  No investigation job can start until VerifyFirst receives a valid Stripe webhook for this order.
                 </span>
               </div>
 
@@ -540,7 +537,7 @@ function OrderPage() {
                   className="bg-success text-success-foreground hover:bg-success/90"
                 >
                   <ShieldCheck className="mr-2 h-4 w-4" />
-                  {isSubmitting ? "Processing…" : `Pay €${tierInfo.price} (simulated) & start investigation`}
+                  {isSubmitting ? "Creating pending order..." : `Create pending order - EUR${tierInfo.price}`}
                 </Button>
               </div>
             </>

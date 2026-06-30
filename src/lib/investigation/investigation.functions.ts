@@ -41,7 +41,7 @@ export const getOrderStatusByToken = createServerFn({ method: "POST" })
       shareToken = (rv?.share_token as string) ?? null;
     }
 
-    // Sign caseId so the browser can trigger the investigation route
+    // Keep signed case metadata available for legacy status-page display only.
     const { signCaseId } = await import("@/lib/investigation/hmac.server");
     const signature = await signCaseId(c.id as string);
 
@@ -55,7 +55,6 @@ export const getOrderStatusByToken = createServerFn({ method: "POST" })
       error: (c.investigation_error as string) ?? null,
       shareToken,
       signature,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       activity: (activity ?? []).map((a: any) => ({
         action: a.action as string,
         payload: JSON.stringify(a.payload ?? null),
@@ -78,7 +77,6 @@ export const getReportByShareToken = createServerFn({ method: "POST" })
     if (rv.pdf_storage_path) {
       const { data: signed } = await supabaseAdmin.storage
         .from("reports")
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .createSignedUrl(rv.pdf_storage_path as string, 60 * 60 * 24);
       pdfUrl = signed?.signedUrl ?? null;
     }

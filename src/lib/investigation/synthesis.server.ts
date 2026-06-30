@@ -17,12 +17,9 @@ export function computeOutcome(findings: Finding[]): {
   const caution = findings.filter((f) => f.status === "CAUTION").length;
   const notVerified = findings.filter((f) => f.status === "NOT_VERIFIED").length;
 
-  // Hard fail anywhere => NO_GO
   if (fail > 0) return { overall: "critical", outcome: "NO_GO" };
-  // Many cautions => pause; some => proceed with safeguards
   if (caution >= 3) return { overall: "high", outcome: "PAUSE_PENDING_CLARIFICATION" };
   if (caution >= 1) return { overall: "medium", outcome: "PROCEED_WITH_SAFEGUARDS" };
-  // No fails or cautions, but lots of NOT_VERIFIED => still proceed-with-safeguards
   if (notVerified >= 5) return { overall: "medium", outcome: "PROCEED_WITH_SAFEGUARDS" };
   return { overall: "low", outcome: "GO" };
 }
@@ -59,10 +56,10 @@ export async function synthesiseNarrative(args: {
         {
           role: "system",
           content:
-            "You write the executive prose for an independent supplier-verification report. " +
-            "STRICT rules: never invent corporate, shipment, certification or legal facts that are not in the findings. " +
-            "Refer to findings by their content, not by inventing new data. The overall outcome is given and must not " +
-            "be re-argued. Keep tone factual, concise, and suitable for a senior buyer at a SME. Return ONLY JSON.",
+            "You write executive prose for an independent supplier-verification report. " +
+            "STRICT rules: never invent corporate, shipment, certification, sanctions, litigation or legal facts. " +
+            "You may only discuss findings that include one or more evidence_ids. If a finding is NOT_VERIFIED, say it is not independently verified. " +
+            "Do not convert missing data or no-result searches into a clean pass. The deterministic outcome is given and must not be changed. Return ONLY JSON.",
         },
         {
           role: "user",
@@ -76,14 +73,16 @@ export async function synthesiseNarrative(args: {
               .map(
                 (f, i) =>
                   `${i + 1}. [${f.section}] ${f.item} — ${f.status} (${f.confidence}). ` +
+                  `classification=${f.evidence_classification ?? "NOT_INDEPENDENTLY_VERIFIED"}; ` +
+                  `evidence_ids=${(f.evidence_ids ?? []).join(",") || "NONE"}; ` +
                   `Evidence: ${f.evidence_excerpt.slice(0, 240)}`,
               )
               .join("\n") +
             `\n\nReturn ONLY:\n` +
-            `{"executive_summary":"6–10 sentence summary","key_findings":["…","…","…"],` +
-            `"buyer_implications":"3–5 sentences","recommended_safeguards":"3–5 sentences",` +
-            `"payment_recommendation":"1–3 sentences","inspection_recommendation":"1–3 sentences",` +
-            `"testing_recommendation":"1–3 sentences"}`,
+            `{"executive_summary":"6-10 sentence summary","key_findings":["...","...","..."],` +
+            `"buyer_implications":"3-5 sentences","recommended_safeguards":"3-5 sentences",` +
+            `"payment_recommendation":"1-3 sentences","inspection_recommendation":"1-3 sentences",` +
+            `"testing_recommendation":"1-3 sentences"}`,
         },
       ],
       { model: "google/gemini-2.5-flash" },

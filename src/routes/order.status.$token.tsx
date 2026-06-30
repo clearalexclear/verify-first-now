@@ -10,7 +10,7 @@ import { CheckCircle2, Loader2, AlertTriangle, FileText } from "lucide-react";
 export const Route = createFileRoute("/order/status/$token")({
   head: () => ({
     meta: [
-      { title: "Investigation in progress — VerifyFirst" },
+      { title: "Investigation status — VerifyFirst" },
       { name: "robots", content: "noindex,nofollow" },
     ],
   }),
@@ -20,7 +20,7 @@ export const Route = createFileRoute("/order/status/$token")({
 const STAGES = [
   { key: "document_extraction", label: "Reading uploaded documents" },
   { key: "entity_resolution", label: "Resolving registered legal entity" },
-  { key: "risk_screening", label: "Screening sanctions, UFLPA, adverse media, certificates" },
+  { key: "risk_screening", label: "Screening connected evidence sources" },
   { key: "report_generated", label: "Generating sourced report" },
   { key: "report_delivered", label: "Emailing PDF to you" },
 ] as const;
@@ -32,7 +32,6 @@ function StatusPage() {
   const fetchStatus = useServerFn(getOrderStatusByToken);
   const [status, setStatus] = useState<Status | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [triggered, setTriggered] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -42,17 +41,6 @@ function StatusPage() {
         const s = await fetchStatus({ data: { token } });
         if (!alive) return;
         setStatus(s);
-        // Kick the pipeline once if it's queued.
-        if (!triggered && s.status === "investigation_queued") {
-          setTriggered(true);
-          // Fire-and-forget; the route keeps running server-side even if we
-          // navigate away.
-          fetch(`/api/public/investigate/${s.caseId}`, {
-            method: "POST",
-            headers: { "x-investigation-signature": s.signature },
-            keepalive: true,
-          }).catch(() => {});
-        }
         if (s.status !== "delivered" && s.status !== "report_ready" && s.status !== "investigation_failed") {
           timer = setTimeout(tick, 5000);
         }
@@ -65,11 +53,11 @@ function StatusPage() {
       alive = false;
       if (timer) clearTimeout(timer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [fetchStatus, token]);
 
   const isDone = status?.status === "delivered" || status?.status === "report_ready";
   const isFailed = status?.status === "investigation_failed";
+  const isPaymentPending = status?.status === "payment_pending";
 
   const completedStages = new Set(
     (status?.activity ?? [])
@@ -93,7 +81,7 @@ function StatusPage() {
       <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
         <div className="rounded-2xl border border-border bg-card p-8 sm:p-10">
           <h1 className="text-2xl font-bold text-navy">
-            {isDone ? "Your report is ready" : isFailed ? "Investigation paused" : "Investigation in progress"}
+            {isDone ? "Your report is ready" : isFailed ? "Investigation paused" : isPaymentPending ? "Payment pending" : "Investigation in progress"}
           </h1>
           {status?.orderReference && (
             <p className="mt-2 text-sm text-muted-foreground">
@@ -106,44 +94,41 @@ function StatusPage() {
 
           {!isDone && !isFailed && (
             <div className="mt-6 rounded-lg border border-border bg-muted/30 p-5 text-sm leading-relaxed">
-              Your investigation is running. You can safely close this page — the report will arrive by email at{" "}
-              <strong>{status?.customerEmail || "the address you provided"}</strong>. Typical run time is 2–5 minutes.
+              {isPaymentPending ? (
+                <>
+                  Your order is saved, but the investigation has not started. It will begin only after Stripe confirms payment server-side.
+                </>
+              ) : (
+                <>
+                  Your investigation is running in the background. You can safely close this page — the report will arrive by email at{" "}
+                  <strong>{status?.customerEmail || "the address you provided"}</strong>.
+                </>
+              )}
             </div>
           )}
 
-          <ul className="mt-6 space-y-3">
-            {STAGES.map((s) => {
-              const done = completedStages.has(s.key) || isDone;
-              const current =
-                !done &&
-                !isFailed &&
-                ((s.key === "document_extraction" && !completedStages.has("document_extraction")) ||
-                  (s.key === "entity_resolution" &&
-                    completedStages.has("document_extraction") &&
-                    !completedStages.has("entity_resolution")) ||
-                  (s.key === "risk_screening" &&
-                    completedStages.has("entity_resolution") &&
-                    !completedStages.has("risk_screening")) ||
-                  (s.key === "report_generated" &&
-                    completedStages.has("risk_screening") &&
-                    !completedStages.has("report_generated")) ||
-                  (s.key === "report_delivered" && completedStages.has("report_generated")));
-              return (
-                <li key={s.key} className="flex items-center gap-3 text-sm">
-                  {done ? (
-                    <CheckCircle2 className="h-5 w-5 text-success" />
-                  ) : current ? (
-                    <Loader2 className="h-5 w-5 animate-spin text-navy" />
-                  ) : (
-                    <span className="block h-5 w-5 rounded-full border-2 border-border" />
-                  )}
-                  <span className={done ? "text-foreground" : current ? "font-semibold text-navy" : "text-muted-foreground"}>
-                    {s.label}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
+          {!isPaymentPending && (
+            <ul className="mt-6 space-y-3">
+              {STAGES.map((s) => {
+                const done = completedStages.has(s.key) || isDone;
+                const current = !done && !isFailed;
+                return (
+                  <li key={s.key} className="flex items-center gap-3 text-sm">
+                    {done ? (
+                      <CheckCircle2 className="h-5 w-5 text-success" />
+                    ) : current ? (
+                      <Loader2 className="h-5 w-5 animate-spin text-navy" />
+                    ) : (
+                      <span className="block h-5 w-5 rounded-full border-2 border-border" />
+                    )}
+                    <span className={done ? "text-foreground" : current ? "font-semibold text-navy" : "text-muted-foreground"}>
+                      {s.label}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
 
           {isDone && status?.shareToken && (
             <div className="mt-8 rounded-lg border border-success/30 bg-success/5 p-5">
@@ -179,9 +164,7 @@ function StatusPage() {
             </div>
           )}
 
-          {err && (
-            <p className="mt-6 text-sm text-destructive">{err}</p>
-          )}
+          {err && <p className="mt-6 text-sm text-destructive">{err}</p>}
         </div>
         <div className="mt-6 text-center">
           <Button asChild variant="ghost" size="sm">
