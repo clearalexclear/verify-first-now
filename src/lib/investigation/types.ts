@@ -15,6 +15,14 @@ export type FindingConfidence =
   | "medium"
   | "low";
 
+export type EvidenceClassification =
+  | "VERIFIED"
+  | "CORROBORATED"
+  | "SUPPLIER_CLAIMED"
+  | "INFERRED"
+  | "NOT_INDEPENDENTLY_VERIFIED"
+  | "CONTRADICTED";
+
 export type FinalOutcome =
   | "GO"
   | "PROCEED_WITH_SAFEGUARDS"
@@ -44,6 +52,8 @@ export interface Finding {
   source_url: string | null;
   retrieval_date: string; // ISO
   evidence_excerpt: string; // empty string => downgraded to NOT_VERIFIED
+  evidence_ids: string[];
+  evidence_classification: EvidenceClassification;
   buyer_impact: string;
   recommended_action: string;
 }
@@ -140,4 +150,13 @@ export const CONFIDENCE_LABEL: Record<FindingConfidence, string> = {
   medium_high: "Medium-High",
   medium: "Medium",
   low: "Low",
+};
+
+export const CLASSIFICATION_LABEL: Record<EvidenceClassification, string> = {
+  VERIFIED: "Verified",
+  CORROBORATED: "Corroborated",
+  SUPPLIER_CLAIMED: "Supplier claimed",
+  INFERRED: "Inferred",
+  NOT_INDEPENDENTLY_VERIFIED: "Not independently verified",
+  CONTRADICTED: "Contradicted",
 };
