@@ -12,6 +12,7 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "supabase:validate-investigation": "node scripts/validate-investigation-foundation.mjs",
+    "uflpa:refresh": "tsx scripts/refresh-uflpa-snapshot.ts",
     "investigation:test": "tsx scripts/run-investigation-test.ts"
   },
   "dependencies": {
