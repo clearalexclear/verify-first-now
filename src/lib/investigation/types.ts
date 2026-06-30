@@ -52,8 +52,8 @@ export interface Finding {
   source_url: string | null;
   retrieval_date: string; // ISO
   evidence_excerpt: string; // empty string => downgraded to NOT_VERIFIED
-  evidence_ids: string[];
-  evidence_classification: EvidenceClassification;
+  evidence_ids?: string[];
+  evidence_classification?: EvidenceClassification;
   buyer_impact: string;
   recommended_action: string;
 }
