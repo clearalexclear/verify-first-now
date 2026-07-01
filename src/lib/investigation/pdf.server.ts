@@ -1,7 +1,3 @@
-// PDF renderer using pdf-lib. Lays out a branded VerifyFirst report with
-// brand colours, sectioned per the customer spec. Runs in a Cloudflare
-// Worker — no fonts beyond the standard 14, no images, no system access.
-
 import {
   PDFDocument,
   StandardFonts,
@@ -10,10 +6,13 @@ import {
   type PDFPage,
 } from "pdf-lib";
 import {
+  CLASSIFICATION_LABEL,
+  CONFIDENCE_LABEL,
   OUTCOME_LABEL,
   SECTION_TITLES,
   STATUS_LABEL,
-  type Finding,
+  type ChecklistReportResult,
+  type FindingStatus,
   type InvestigationReport,
   type ReportSectionKey,
 } from "./types";
@@ -68,23 +67,13 @@ function wrap(text: string, font: PDFFont, size: number, maxWidth: number): stri
   return lines;
 }
 
-function isPdfSafeAscii(char: string): boolean {
-  const code = char.charCodeAt(0);
-  return code === 9 || code === 10 || code === 13 || (code >= 32 && code <= 126);
-}
-
-// pdf-lib's standard fonts (WinAnsi) don't support CJK / curly quotes / em-dash.
-// Down-translate so glyphs render; CJK becomes [non-Latin].
 function asciiSafe(s: string): string {
   return (s || "")
     .replace(/[‘’]/g, "'")
     .replace(/[“”]/g, '"')
     .replace(/–|—/g, "-")
     .replace(/…/g, "...")
-    .replace(/[^\x20-\x7E]+/g, (m) => {
-      if ([...m].every(isPdfSafeAscii)) return m;
-      return `[${m.length}-char non-Latin]`;
-    });
+    .replace(/[^\x20-\x7E]+/g, (m) => `[${m.length}-char non-Latin]`);
 }
 
 function drawWrapped(ctx: Ctx, text: string, opts: { size?: number; bold?: boolean; color?: ReturnType<typeof rgb>; gap?: number } = {}) {
@@ -93,7 +82,7 @@ function drawWrapped(ctx: Ctx, text: string, opts: { size?: number; bold?: boole
   const color = opts.color ?? TEXT;
   const lines = wrap(asciiSafe(text), font, size, CONTENT_W);
   const lh = size * 1.35;
-  ensureSpace(ctx, lh * lines.length);
+  ensureSpace(ctx, lh * lines.length + 2);
   for (const line of lines) {
     if (ctx.y - lh < MARGIN + 30) newPage(ctx);
     ctx.page.drawText(line, { x: MARGIN, y: ctx.y - size, size, font, color });
@@ -116,7 +105,7 @@ function drawSectionHeader(ctx: Ctx, title: string) {
   ctx.y -= 32;
 }
 
-function statusColor(status: Finding["status"]): ReturnType<typeof rgb> {
+function statusColor(status: FindingStatus): ReturnType<typeof rgb> {
   switch (status) {
     case "PASS": return GREEN;
     case "CAUTION": return AMBER;
@@ -126,64 +115,49 @@ function statusColor(status: Finding["status"]): ReturnType<typeof rgb> {
   }
 }
 
-function drawStatusBadge(ctx: Ctx, status: Finding["status"], x: number, y: number) {
+function drawStatusBadge(ctx: Ctx, status: FindingStatus, x: number, y: number) {
   const label = STATUS_LABEL[status].toUpperCase();
-  const w = ctx.bold.widthOfTextAtSize(label, 8) + 10;
+  const w = Math.min(ctx.bold.widthOfTextAtSize(label, 8) + 10, 120);
   ctx.page.drawRectangle({ x, y: y - 2, width: w, height: 12, color: statusColor(status) });
   ctx.page.drawText(label, { x: x + 5, y, size: 8, font: ctx.bold, color: rgb(1, 1, 1) });
 }
 
-function drawFinding(ctx: Ctx, f: Finding) {
-  const titleSize = 10;
-  ensureSpace(ctx, 70);
-  // Title row
-  const titleLines = wrap(asciiSafe(f.item), ctx.bold, titleSize, CONTENT_W - 90);
-  ctx.page.drawText(titleLines[0], {
-    x: MARGIN,
-    y: ctx.y - titleSize,
-    size: titleSize,
-    font: ctx.bold,
-    color: NAVY,
-  });
-  drawStatusBadge(ctx, f.status, MARGIN + CONTENT_W - 88, ctx.y - 10);
-  ctx.y -= titleSize * 1.4;
+function checklistForReport(r: InvestigationReport): ChecklistReportResult[] {
+  return r.checklist_results ?? [];
+}
+
+function drawChecklistItem(ctx: Ctx, item: ChecklistReportResult) {
+  ensureSpace(ctx, 92);
+  const titleLines = wrap(asciiSafe(`${item.id}: ${item.title}`), ctx.bold, 10, CONTENT_W - 120);
+  ctx.page.drawText(titleLines[0], { x: MARGIN, y: ctx.y - 10, size: 10, font: ctx.bold, color: NAVY });
+  drawStatusBadge(ctx, item.status, MARGIN + CONTENT_W - 118, ctx.y - 10);
+  ctx.y -= 14;
   for (let i = 1; i < titleLines.length; i++) {
-    ctx.page.drawText(titleLines[i], {
-      x: MARGIN,
-      y: ctx.y - titleSize,
-      size: titleSize,
-      font: ctx.bold,
-      color: NAVY,
-    });
-    ctx.y -= titleSize * 1.4;
+    ctx.page.drawText(titleLines[i], { x: MARGIN, y: ctx.y - 10, size: 10, font: ctx.bold, color: NAVY });
+    ctx.y -= 14;
   }
 
-  const meta = `Confidence: ${f.confidence.replace("_", "-")}  •  Source: ${f.source_name}  •  Retrieved: ${f.retrieval_date.slice(0, 10)}`;
+  const meta = [
+    `Classification: ${CLASSIFICATION_LABEL[item.evidence_classification]}`,
+    `Confidence: ${CONFIDENCE_LABEL[item.confidence]}`,
+    `Retrieved: ${item.last_retrieval_date ? item.last_retrieval_date.slice(0, 10) : "not retrieved"}`,
+  ].join("  |  ");
   drawWrapped(ctx, meta, { size: 8.5, color: GREY });
-  if (f.source_url) drawWrapped(ctx, f.source_url, { size: 8.5, color: GREY });
-
-  if (f.evidence_excerpt) {
-    drawWrapped(ctx, "Evidence: " + f.evidence_excerpt, { size: 9.5 });
-  } else {
-    drawWrapped(ctx, "Evidence: (none independently retrieved — finding marked accordingly)", {
-      size: 9.5,
-      color: GREY,
-    });
+  drawWrapped(ctx, `Sources: ${item.source_names.length ? item.source_names.join("; ") : "No independent source evidence"}`, { size: 8.5, color: GREY });
+  if (item.source_urls.length) drawWrapped(ctx, `Source URLs: ${item.source_urls.join("; ")}`, { size: 8.5, color: GREY });
+  if (item.paid_connector_dependency) drawWrapped(ctx, `Paid connector dependency: ${item.paid_connector_dependency}`, { size: 8.5, color: GREY });
+  drawWrapped(ctx, "Explanation: " + item.explanation, { size: 9.5 });
+  if (item.missing_information_required.length) {
+    drawWrapped(ctx, "Missing information required: " + item.missing_information_required.join("; "), { size: 9.5, color: RED });
   }
-  if (f.buyer_impact) drawWrapped(ctx, "Buyer impact: " + f.buyer_impact, { size: 9.5 });
-  if (f.recommended_action) drawWrapped(ctx, "Recommended action: " + f.recommended_action, { size: 9.5 });
+  if (item.buyer_impact) drawWrapped(ctx, "Buyer impact: " + item.buyer_impact, { size: 9.5 });
+  if (item.recommended_action) drawWrapped(ctx, "Recommended action: " + item.recommended_action, { size: 9.5 });
   ctx.y -= 6;
-  ctx.page.drawLine({
-    start: { x: MARGIN, y: ctx.y },
-    end: { x: MARGIN + CONTENT_W, y: ctx.y },
-    thickness: 0.5,
-    color: LIGHT,
-  });
+  ctx.page.drawLine({ start: { x: MARGIN, y: ctx.y }, end: { x: MARGIN + CONTENT_W, y: ctx.y }, thickness: 0.5, color: LIGHT });
   ctx.y -= 10;
 }
 
 function drawCover(ctx: Ctx, r: InvestigationReport) {
-  // Top navy band
   ctx.page.drawRectangle({ x: 0, y: PAGE_H - 110, width: PAGE_W, height: 110, color: NAVY });
   ctx.page.drawText("VerifyFirst", { x: MARGIN, y: PAGE_H - 55, size: 26, font: ctx.bold, color: rgb(1, 1, 1) });
   ctx.page.drawText("Independent supplier verification report", {
@@ -194,18 +168,16 @@ function drawCover(ctx: Ctx, r: InvestigationReport) {
   if (r.resolved_entity.legal_name_en && r.resolved_entity.legal_name_en !== r.supplier_input.name) {
     drawWrapped(ctx, "Resolved entity: " + r.resolved_entity.legal_name_en, { size: 11, color: GREY });
   }
-  if (r.supplier_input.chinese_name)
-    drawWrapped(ctx, "Local name: " + r.supplier_input.chinese_name, { size: 11, color: GREY });
+  if (r.supplier_input.chinese_name) drawWrapped(ctx, "Local name: " + r.supplier_input.chinese_name, { size: 11, color: GREY });
 
   ctx.y -= 10;
-  // Outcome card
   const outcomeText = OUTCOME_LABEL[r.final_outcome];
   const outcomeColor =
     r.final_outcome === "GO" ? GREEN :
     r.final_outcome === "PROCEED_WITH_SAFEGUARDS" ? AMBER :
     r.final_outcome === "PAUSE_PENDING_CLARIFICATION" ? AMBER : RED;
   ctx.page.drawRectangle({ x: MARGIN, y: ctx.y - 70, width: CONTENT_W, height: 70, color: outcomeColor });
-  ctx.page.drawText("FINAL RECOMMENDATION", { x: MARGIN + 14, y: ctx.y - 22, size: 9, font: ctx.bold, color: rgb(1, 1, 1) });
+  ctx.page.drawText("COMMERCIAL RECOMMENDATION", { x: MARGIN + 14, y: ctx.y - 22, size: 9, font: ctx.bold, color: rgb(1, 1, 1) });
   ctx.page.drawText(outcomeText, { x: MARGIN + 14, y: ctx.y - 50, size: 22, font: ctx.bold, color: rgb(1, 1, 1) });
   ctx.page.drawText(`Overall risk: ${r.overall_risk_rating.toUpperCase()}`, {
     x: MARGIN + CONTENT_W - ctx.bold.widthOfTextAtSize(`Overall risk: ${r.overall_risk_rating.toUpperCase()}`, 11) - 14,
@@ -225,10 +197,7 @@ function drawCover(ctx: Ctx, r: InvestigationReport) {
 
   drawSectionHeader(ctx, "Executive summary");
   drawWrapped(ctx, r.executive_summary || "(not generated)", { gap: 8 });
-  if (r.key_findings.length) {
-    drawWrapped(ctx, "Key findings", { size: 11, bold: true, color: NAVY });
-    for (const k of r.key_findings) drawWrapped(ctx, "• " + k);
-  }
+  drawWrapped(ctx, `Canonical checklist items: ${checklistForReport(r).length}`, { size: 10, bold: true, color: NAVY });
 }
 
 export async function renderReportPdf(r: InvestigationReport): Promise<Uint8Array> {
@@ -239,64 +208,39 @@ export async function renderReportPdf(r: InvestigationReport): Promise<Uint8Arra
 
   drawCover(ctx, r);
 
-  // Resolved entity section
-  newPage(ctx);
-  drawSectionHeader(ctx, SECTION_TITLES.legal_entity);
-  const re = r.resolved_entity;
-  const pair = (k: string, v: string | null) =>
-    drawWrapped(ctx, `${k}: ${v && v.length ? v : "Not independently verified"}`, { size: 10 });
-  pair("Legal name (English)", re.legal_name_en);
-  pair("Legal name (local)", re.legal_name_local);
-  pair("Registration number", re.registration_number);
-  pair("Country", re.registration_country);
-  pair("Registration status", re.registration_status);
-  pair("Registration date", re.registration_date);
-  pair("Registered capital", re.registered_capital);
-  pair("Registered address", re.registered_address);
-  pair("Legal representative", re.legal_representative);
-  pair("Business scope", re.business_scope);
-  drawWrapped(ctx, `Shareholders: ${re.shareholders.length ? re.shareholders.join("; ") : "Not independently verified"}`);
-  drawWrapped(ctx, `Related companies: ${re.related_companies.length ? re.related_companies.join("; ") : "Not independently verified"}`);
-  drawWrapped(ctx, `Manufacturer indicators: ${re.manufacturer_indicators.length ? re.manufacturer_indicators.join("; ") : "None identified"}`);
-  drawWrapped(ctx, `Trading-company indicators: ${re.trading_indicators.length ? re.trading_indicators.join("; ") : "None identified"}`);
-  drawWrapped(ctx, `Confidence in resolution: ${re.confidence.replace("_", "-")}`, { gap: 6 });
-  if (re.notes) drawWrapped(ctx, "Notes: " + re.notes, { size: 9.5, color: GREY, gap: 6 });
-
-  // Findings grouped by section
   const order: ReportSectionKey[] = [
     "legal_entity",
-    "entity_payment_match",
-    "factory_vs_trader",
     "ownership",
-    "product_capacity_fit",
-    "export_history",
-    "certificates_documents",
-    "regulatory",
-    "litigation_enforcement",
-    "sanctions_forced_labour",
+    "factory_vs_trader",
     "digital_footprint",
+    "certificates_documents",
+    "sanctions_forced_labour",
+    "litigation_enforcement",
+    "export_history",
+    "regulatory",
     "payment_safeguards",
   ];
-  for (const key of order) {
-    if (key === "legal_entity") continue; // handled above
-    const section = r.findings.filter((f) => f.section === key);
-    if (section.length === 0) continue;
+  const checklist = checklistForReport(r);
+  for (const sectionKey of order) {
+    const items = checklist.filter((item) => item.section === sectionKey);
+    if (items.length === 0) continue;
     newPage(ctx);
-    drawSectionHeader(ctx, SECTION_TITLES[key]);
-    for (const f of section) drawFinding(ctx, f);
+    const title = sectionKey === "payment_safeguards"
+      ? "Contradictions, missing information and next actions"
+      : SECTION_TITLES[sectionKey];
+    drawSectionHeader(ctx, title);
+    for (const item of items) drawChecklistItem(ctx, item);
   }
 
-  // Buyer implications + safeguards
   newPage(ctx);
   drawSectionHeader(ctx, "Buyer implications");
-  drawWrapped(ctx, r.buyer_implications);
+  drawWrapped(ctx, r.buyer_implications || "Item-level checklist results are authoritative.");
   drawSectionHeader(ctx, "Recommended safeguards");
-  drawWrapped(ctx, r.recommended_safeguards);
+  drawWrapped(ctx, r.recommended_safeguards || "Review unresolved checklist items before payment.");
   drawWrapped(ctx, "Payment: " + r.payment_recommendation);
   drawWrapped(ctx, "Pre-shipment inspection: " + r.inspection_recommendation);
   drawWrapped(ctx, "Product testing: " + r.testing_recommendation);
 
-  // Sources, methodology, limitations
   newPage(ctx);
   drawSectionHeader(ctx, "Sources, methodology and limitations");
   drawWrapped(ctx, "Methodology", { size: 11, bold: true, color: NAVY });
@@ -305,21 +249,15 @@ export async function renderReportPdf(r: InvestigationReport): Promise<Uint8Arra
   drawWrapped(ctx, r.limitations);
   drawWrapped(ctx, "Sources consulted", { size: 11, bold: true, color: NAVY });
   for (const s of r.sources_used) {
-    drawWrapped(ctx, `• ${s.name}${s.url ? " — " + s.url : ""}  (retrieved ${s.retrieved_at.slice(0, 10)})`, { size: 9 });
+    drawWrapped(ctx, `- ${s.name}${s.url ? " - " + s.url : ""} (retrieved ${s.retrieved_at.slice(0, 10)})`, { size: 9 });
   }
 
-  // Footer on every page
   const pages = doc.getPages();
   for (let i = 0; i < pages.length; i++) {
     const p = pages[i];
-    p.drawText("VerifyFirst — independent supplier verification", {
-      x: MARGIN, y: 20, size: 8, font: regular, color: GREY,
-    });
+    p.drawText("VerifyFirst - independent supplier verification", { x: MARGIN, y: 20, size: 8, font: regular, color: GREY });
     const pageLabel = `Page ${i + 1} of ${pages.length}`;
-    p.drawText(pageLabel, {
-      x: PAGE_W - MARGIN - regular.widthOfTextAtSize(pageLabel, 8),
-      y: 20, size: 8, font: regular, color: GREY,
-    });
+    p.drawText(pageLabel, { x: PAGE_W - MARGIN - regular.widthOfTextAtSize(pageLabel, 8), y: 20, size: 8, font: regular, color: GREY });
   }
 
   return await doc.save();
