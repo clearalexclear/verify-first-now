@@ -1,6 +1,6 @@
 // Adverse media + litigation/enforcement screening via Firecrawl web search.
-// Best-effort; classifies hits via the LLM. Returns CAUTION/PASS plus the
-// excerpts/URLs that drove the decision so the report stays sourced.
+// Best-effort; classifies hits via the LLM. Firecrawl output is web
+// intelligence only and must not be treated as official verification.
 
 import { aiJson } from "../ai.server";
 import { fcSearch } from "../firecrawl.server";
@@ -47,14 +47,16 @@ export async function screenAdverseMedia(args: {
     return [{
       section: "digital_footprint",
       item: "Adverse media screening",
-      status: "PASS",
-      confidence: "medium",
+      status: "NOT_VERIFIED",
+      confidence: "low",
       source_name: "Public web search (Firecrawl)",
       source_url: null,
       retrieval_date: now,
-      evidence_excerpt: `Searched ${queries.length} adverse-media queries against the public web; no relevant results within the past 12 months.`,
-      buyer_impact: "No public adverse media indicators within search scope.",
-      recommended_action: "Re-screen quarterly or before next purchase order.",
+      evidence_excerpt: "",
+      evidence_ids: [],
+      evidence_classification: "NOT_INDEPENDENTLY_VERIFIED",
+      buyer_impact: "No adverse-media search result was returned, but no-result searches must not be treated as proof that no adverse media exists.",
+      recommended_action: "Re-screen with additional spellings, Chinese legal name, and official/commercial sources before relying on this item.",
     }];
   }
 
@@ -67,7 +69,7 @@ export async function screenAdverseMedia(args: {
           content:
             "You triage adverse-media search results about a Chinese/Vietnamese supplier. " +
             "Return ONLY JSON. Mark CAUTION only if the hits credibly describe wrongdoing by THIS exact entity " +
-            "(not a similarly-named one). Mark PASS otherwise. Quote the strongest sentence from the snippets in evidence_excerpt. " +
+            "(not a similarly-named one). Mark NOT_VERIFIED when snippets are weak or ambiguous. " +
             "Never invent details that aren't in the snippets.",
         },
         {
@@ -99,10 +101,11 @@ export async function screenAdverseMedia(args: {
     item: "Adverse media screening",
     status: classification.status,
     confidence: classification.confidence,
-    source_name: "Public web search (Firecrawl) — top adverse-media hits",
+    source_name: "Public web search (Firecrawl) - top adverse-media hits",
     source_url: allHits[0]?.url ?? null,
     retrieval_date: now,
     evidence_excerpt: classification.evidence_excerpt || "",
+    evidence_classification: classification.status === "NOT_VERIFIED" ? "NOT_INDEPENDENTLY_VERIFIED" : "INFERRED",
     buyer_impact: classification.buyer_impact,
     recommended_action: classification.recommended_action,
   }];
@@ -136,6 +139,7 @@ export async function screenLitigation(args: {
       source_url: null,
       retrieval_date: now,
       evidence_excerpt: "",
+      evidence_classification: "NOT_INDEPENDENTLY_VERIFIED",
       buyer_impact:
         "Coverage of Chinese court judgments and enforcement is limited via public search; absence of hits does not mean no record exists.",
       recommended_action:
@@ -151,7 +155,7 @@ export async function screenLitigation(args: {
           role: "system",
           content:
             "Classify whether the following search hits show genuine litigation or enforcement action against the named entity. " +
-            "Return ONLY JSON. Be conservative — mark NOT_VERIFIED unless the snippet clearly references the same entity.",
+            "Return ONLY JSON. Be conservative - mark NOT_VERIFIED unless the snippet clearly references the same entity.",
         },
         {
           role: "user",
@@ -178,10 +182,11 @@ export async function screenLitigation(args: {
     item: "Litigation and enforcement screening",
     status: cls.status,
     confidence: cls.confidence,
-    source_name: "Public web search (Firecrawl) — court / enforcement results",
+    source_name: "Public web search (Firecrawl) - court / enforcement results",
     source_url: hits[0]?.url ?? null,
     retrieval_date: now,
     evidence_excerpt: cls.evidence_excerpt,
+    evidence_classification: "NOT_INDEPENDENTLY_VERIFIED",
     buyer_impact: cls.buyer_impact,
     recommended_action: cls.recommended_action,
   }];
