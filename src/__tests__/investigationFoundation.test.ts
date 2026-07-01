@@ -4,7 +4,14 @@ import { connectorRegistry } from "../lib/investigation/connectors/registry.serv
 import { jobIdempotencyKey, nextBackoff, testJobIdempotencyKey } from "../lib/investigation/job-queue.server";
 import { assertTestInvestigationEnabled } from "../lib/investigation/test-runner.server";
 import { verifyStripeSignature } from "../lib/payments/stripe-webhook.server";
-import type { Finding } from "../lib/investigation/types";
+import {
+  buildCanonicalChecklist,
+  CANONICAL_CHECKLIST,
+  CHECKLIST_COUNT,
+  detectChecklistContradictions,
+} from "../lib/investigation/checklist";
+import { renderReportPdf } from "../lib/investigation/pdf.server";
+import type { Finding, InvestigationReport, ResolvedEntity } from "../lib/investigation/types";
 
 async function stripeSignature(raw: string, secret: string, timestamp = Math.floor(Date.now() / 1000)) {
   const key = await crypto.subtle.importKey(
@@ -31,6 +38,67 @@ const baseFinding: Finding = {
   buyer_impact: "Potential shipment history.",
   recommended_action: "Use licensed shipment data.",
 };
+
+const baseResolvedEntity: ResolvedEntity = {
+  matched: false,
+  legal_name_en: null,
+  legal_name_local: null,
+  registration_number: null,
+  registration_country: "China",
+  registration_status: null,
+  registration_date: null,
+  registered_capital: null,
+  registered_address: null,
+  legal_representative: null,
+  business_scope: null,
+  shareholders: [],
+  related_companies: [],
+  manufacturer_indicators: [],
+  trading_indicators: [],
+  confidence: "low",
+  sources: [],
+  notes: "No official registry connector configured.",
+};
+
+function mockReport(overrides: Partial<InvestigationReport> = {}): InvestigationReport {
+  return {
+    generated_at: "2026-07-01T00:00:00.000Z",
+    order_reference: "VF-TEST-001",
+    case_reference: "CASE-TEST-001",
+    supplier_input: {
+      name: "Jiangmen Changwen Trading Co., Ltd.",
+      chinese_name: "江门昌文贸易有限公司",
+      country: "China",
+      url: "https://example-supplier.test",
+      contact: "Ms Chen",
+    },
+    customer_input: {
+      name: "Alex Buyer",
+      company: "Buyer Ltd",
+      email: "buyer@example.test",
+      destination_market: "United States",
+      estimated_order_value: "50000",
+      product_category: "stainless steel kitchenware",
+      concerns: "Factory status and certificate validity",
+    },
+    resolved_entity: baseResolvedEntity,
+    findings: [],
+    checklist_results: [],
+    overall_risk_rating: "medium",
+    final_outcome: "PROCEED_WITH_SAFEGUARDS",
+    executive_summary: "Structured checklist test report.",
+    key_findings: [],
+    buyer_implications: "Unverified items require follow-up.",
+    recommended_safeguards: "Verify registry, shipment and certificate data before payment.",
+    payment_recommendation: "Use staged payment terms.",
+    inspection_recommendation: "Commission pre-shipment inspection.",
+    testing_recommendation: "Test production samples where applicable.",
+    methodology: "Canonical checklist test methodology.",
+    limitations: "Missing evidence remains not verified.",
+    sources_used: [],
+    ...overrides,
+  };
+}
 
 describe("payment security", () => {
   it("does not model frontend payment confirmation as a job idempotency key", () => {
@@ -120,6 +188,142 @@ describe("evidence enforcement", () => {
     }]);
     expect(finding.status).toBe("FAIL");
     expect(finding.evidence_ids).toEqual(["ev_hard_stop"]);
+  });
+});
+
+describe("canonical checklist", () => {
+  it("defines exactly 32 stable checklist items and emits none missing", () => {
+    expect(CHECKLIST_COUNT).toBe(32);
+    expect(CANONICAL_CHECKLIST).toHaveLength(32);
+    const results = buildCanonicalChecklist(mockReport());
+    expect(results).toHaveLength(32);
+    expect(results.map((r) => r.id)).toEqual(CANONICAL_CHECKLIST.map((r) => r.id));
+  });
+
+  it("turns no evidence into NOT_VERIFIED", () => {
+    const result = buildCanonicalChecklist(mockReport()).find((item) => item.id === "legal_company_existence");
+    expect(result?.status).toBe("NOT_VERIFIED");
+    expect(result?.evidence_classification).toBe("NOT_INDEPENDENTLY_VERIFIED");
+  });
+
+  it("displays missing required inputs", () => {
+    const results = buildCanonicalChecklist(mockReport({
+      supplier_input: { name: "", chinese_name: null, country: "China", url: "", contact: null },
+      customer_input: { name: "Buyer", company: "Buyer Ltd", email: "buyer@example.test", destination_market: "", estimated_order_value: "", product_category: "", concerns: null },
+    }));
+    const missing = results.find((item) => item.id === "missing_information_required");
+    expect(missing?.status).toBe("NOT_VERIFIED");
+    expect(missing?.missing_information_required).toContain("Supplier company name");
+    expect(missing?.explanation).toMatch(/Missing information required/);
+  });
+
+  it("keeps zero Firecrawl adverse-media results NOT_VERIFIED rather than PASS", () => {
+    const results = buildCanonicalChecklist(mockReport({
+      findings: [{
+        ...baseFinding,
+        section: "digital_footprint",
+        item: "Adverse media screening",
+        status: "PASS",
+        source_name: "Public web search (Firecrawl)",
+        evidence_excerpt: "",
+        evidence_ids: [],
+      }],
+    }));
+    const adverse = results.find((item) => item.id === "adverse_media");
+    expect(adverse?.status).toBe("NOT_VERIFIED");
+    expect(adverse?.evidence_classification).toBe("NOT_INDEPENDENTLY_VERIFIED");
+  });
+
+  it("prevents Firecrawl from verifying official registry, shipment, litigation or certificates", () => {
+    const results = buildCanonicalChecklist(mockReport({
+      findings: [
+        { ...baseFinding, section: "export_history", item: "Export and shipment history", source_name: "Public web search (Firecrawl)", evidence_ids: ["ev_ship"] },
+        { ...baseFinding, section: "litigation_enforcement", item: "Litigation and enforcement screening", source_name: "Public web search (Firecrawl)", evidence_ids: ["ev_lit"] },
+        { ...baseFinding, section: "certificates_documents", item: "Certificate authenticity", source_name: "Public web search (Firecrawl)", evidence_ids: ["ev_cert"] },
+      ],
+      resolved_entity: {
+        ...baseResolvedEntity,
+        matched: true,
+        legal_name_en: "Jiangmen Changwen Trading Co., Ltd.",
+        sources: [{ name: "Public web search (Firecrawl)", url: "https://example.test" }],
+      },
+    }));
+    for (const id of ["legal_company_existence", "us_shipment_export_history", "litigation_court_records", "certificate_authenticity"] as const) {
+      const item = results.find((r) => r.id === id);
+      expect(item?.status).toBe("NOT_VERIFIED");
+      expect(item?.evidence_classification).toBe("NOT_INDEPENDENTLY_VERIFIED");
+    }
+  });
+
+  it("detects contradictions and classifies them as CONTRADICTED", () => {
+    const contradictions = detectChecklistContradictions({
+      supplierInput: mockReport().supplier_input,
+      resolvedEntity: { ...baseResolvedEntity, legal_name_en: "Different Factory Co., Ltd.", legal_name_local: "不同工厂有限公司" },
+      findings: [{ ...baseFinding, item: "Certificate holder name mismatch", evidence_ids: ["ev_1"] }],
+    });
+    expect(contradictions.length).toBeGreaterThan(0);
+
+    const results = buildCanonicalChecklist(mockReport({
+      resolved_entity: { ...baseResolvedEntity, legal_name_en: "Different Factory Co., Ltd.", legal_name_local: "不同工厂有限公司" },
+      findings: [{ ...baseFinding, item: "Certificate holder name mismatch", evidence_ids: ["ev_1"] }],
+    }));
+    const item = results.find((r) => r.id === "red_flags_contradictions");
+    expect(item?.status).toBe("CAUTION");
+    expect(item?.evidence_classification).toBe("CONTRADICTED");
+  });
+
+  it("keeps paid-disabled checklist items NOT_VERIFIED", () => {
+    const results = buildCanonicalChecklist(mockReport());
+    for (const id of ["legal_company_existence", "us_shipment_export_history", "iso_management_certificates", "sanctions_restricted_party"] as const) {
+      const item = results.find((r) => r.id === id);
+      expect(item?.status).toBe("NOT_VERIFIED");
+    }
+  });
+
+  it("puts all checklist items into report JSON and PDF input", async () => {
+    const report = mockReport();
+    report.checklist_results = buildCanonicalChecklist(report);
+    const json = JSON.stringify(report);
+    for (const item of CANONICAL_CHECKLIST) expect(json).toContain(item.id);
+    const pdf = await renderReportPdf(report);
+    expect(pdf.byteLength).toBeGreaterThan(1000);
+    expect(report.checklist_results).toHaveLength(32);
+  });
+
+  it("Jiangmen Changwen mock report contains all 32 items", () => {
+    const report = mockReport({
+      resolved_entity: {
+        ...baseResolvedEntity,
+        legal_name_en: "Jiangmen Changwen Trading Co., Ltd.",
+        legal_name_local: "江门昌文贸易有限公司",
+        trading_indicators: ["Website markets export trading services"],
+        sources: [{ name: "Firecrawl web intelligence", url: "https://example.test" }],
+      },
+      findings: [
+        {
+          ...baseFinding,
+          section: "sanctions_forced_labour",
+          item: "Stored official UFLPA snapshot screening",
+          status: "PASS",
+          source_name: "DHS UFLPA Entity List snapshot",
+          evidence_ids: ["ev_uflpa"],
+          evidence_classification: "VERIFIED",
+        },
+        {
+          ...baseFinding,
+          section: "regulatory",
+          item: "U.S. CPSC recall screening",
+          status: "NOT_VERIFIED",
+          source_name: "U.S. CPSC recalls API",
+          evidence_ids: ["ev_cpsc"],
+          evidence_classification: "NOT_INDEPENDENTLY_VERIFIED",
+        },
+      ],
+    });
+    const results = buildCanonicalChecklist(report);
+    expect(results).toHaveLength(32);
+    expect(results.find((item) => item.id === "uflpa_forced_labour")?.evidence_classification).toBe("VERIFIED");
+    expect(results.find((item) => item.id === "factory_vs_trader")?.evidence_classification).toBe("INFERRED");
   });
 });
 
