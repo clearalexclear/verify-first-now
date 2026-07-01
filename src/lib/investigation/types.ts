@@ -1,6 +1,6 @@
 // Shared types for the AI investigation pipeline.
 // Used by source modules, the orchestrator, the PDF renderer, and the
-// public report view. Keep this client-safe — no server-only imports here.
+// public report view. Keep this client-safe - no server-only imports here.
 
 export type FindingStatus =
   | "PASS"
@@ -79,6 +79,24 @@ export interface ResolvedEntity {
   notes: string;
 }
 
+export interface ChecklistReportResult {
+  id: string;
+  title: string;
+  section: ReportSectionKey;
+  status: FindingStatus;
+  evidence_classification: EvidenceClassification;
+  confidence: FindingConfidence;
+  source_names: string[];
+  source_urls: string[];
+  evidence_ids: string[];
+  explanation: string;
+  buyer_impact: string;
+  recommended_action: string;
+  missing_information_required: string[];
+  paid_connector_dependency: string | null;
+  last_retrieval_date: string | null;
+}
+
 export interface InvestigationReport {
   generated_at: string;
   order_reference: string;
@@ -101,6 +119,7 @@ export interface InvestigationReport {
   };
   resolved_entity: ResolvedEntity;
   findings: Finding[];
+  checklist_results: ChecklistReportResult[];
   overall_risk_rating: "low" | "medium" | "high" | "critical";
   final_outcome: FinalOutcome;
   executive_summary: string;
