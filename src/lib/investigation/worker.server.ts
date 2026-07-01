@@ -7,7 +7,10 @@ import {
 } from "./job-queue.server";
 import { runInvestigation } from "./pipeline.server";
 
-export async function runInvestigationWorkerOnce(workerId = `worker-${crypto.randomUUID()}`) {
+export async function runInvestigationWorkerOnce(
+  workerId = `worker-${crypto.randomUUID()}`,
+  opts: { deliver?: boolean; allowRerun?: boolean } = {},
+) {
   const job = await claimNextInvestigationJob(workerId);
   if (!job) return { claimed: false };
 
@@ -40,7 +43,12 @@ export async function runInvestigationWorkerOnce(workerId = `worker-${crypto.ran
       jobId: job.id,
       caseId: job.case_id,
       stepKey: "report_generation",
-      fn: async () => runInvestigation(job.case_id, { jobId: job.id, deliver: true }),
+      fn: async () =>
+        runInvestigation(job.case_id, {
+          jobId: job.id,
+          deliver: opts.deliver ?? true,
+          allowRerun: opts.allowRerun ?? false,
+        }),
     });
     await markJobSucceeded(job.id);
     return { claimed: true, jobId: job.id, status: "succeeded" as const };

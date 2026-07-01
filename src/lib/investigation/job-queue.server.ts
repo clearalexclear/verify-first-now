@@ -24,31 +24,35 @@ export function jobIdempotencyKey(orderId: string): string {
   return `stripe-paid:${orderId}`;
 }
 
-export async function createInvestigationJobForOrder(args: {
+export function testJobIdempotencyKey(orderId: string, caseId: string): string {
+  return `test-investigation:${orderId}:${caseId}`;
+}
+
+async function createInvestigationJob(args: {
   orderId: string;
   caseId: string;
-  sourceEventId?: string | null;
+  idempotencyKey: string;
+  metadata?: Record<string, unknown>;
 }) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const db = supabaseAdmin as any;
-  const idempotencyKey = jobIdempotencyKey(args.orderId);
 
   const { data: existing } = await db
     .from("investigation_jobs")
     .select("id, status")
-    .eq("idempotency_key", idempotencyKey)
+    .eq("idempotency_key", args.idempotencyKey)
     .maybeSingle();
 
-  if (existing) return { jobId: existing.id as string, created: false };
+  if (existing) return { jobId: existing.id as string, created: false, status: existing.status as JobStatus };
 
   const { data: job, error } = await db
     .from("investigation_jobs")
     .insert({
       order_id: args.orderId,
       case_id: args.caseId,
-      idempotency_key: idempotencyKey,
+      idempotency_key: args.idempotencyKey,
       status: "queued",
-      metadata: { source_event_id: args.sourceEventId ?? null },
+      metadata: args.metadata ?? {},
     })
     .select("id")
     .single();
@@ -71,7 +75,37 @@ export async function createInvestigationJobForOrder(args: {
     payload: { to: "investigation_queued", job_id: job.id } as any,
   });
 
-  return { jobId: job.id as string, created: true };
+  return { jobId: job.id as string, created: true, status: "queued" as JobStatus };
+}
+
+export async function createInvestigationJobForOrder(args: {
+  orderId: string;
+  caseId: string;
+  sourceEventId?: string | null;
+}) {
+  return createInvestigationJob({
+    orderId: args.orderId,
+    caseId: args.caseId,
+    idempotencyKey: jobIdempotencyKey(args.orderId),
+    metadata: { source_event_id: args.sourceEventId ?? null },
+  });
+}
+
+export async function createTestInvestigationJobForOrder(args: {
+  orderId: string;
+  caseId: string;
+  reason?: string | null;
+}) {
+  return createInvestigationJob({
+    orderId: args.orderId,
+    caseId: args.caseId,
+    idempotencyKey: testJobIdempotencyKey(args.orderId, args.caseId),
+    metadata: {
+      source: "test_only_manual_trigger",
+      reason: args.reason ?? null,
+      deliver: false,
+    },
+  });
 }
 
 export async function claimNextInvestigationJob(workerId: string) {

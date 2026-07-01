@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { enforceEvidenceIds } from "../lib/investigation/evidence.server";
 import { connectorRegistry } from "../lib/investigation/connectors/registry.server";
-import { jobIdempotencyKey, nextBackoff } from "../lib/investigation/job-queue.server";
+import { jobIdempotencyKey, nextBackoff, testJobIdempotencyKey } from "../lib/investigation/job-queue.server";
+import { assertTestInvestigationEnabled } from "../lib/investigation/test-runner.server";
 import { verifyStripeSignature } from "../lib/payments/stripe-webhook.server";
 import type { Finding } from "../lib/investigation/types";
 
@@ -34,6 +35,27 @@ const baseFinding: Finding = {
 describe("payment security", () => {
   it("does not model frontend payment confirmation as a job idempotency key", () => {
     expect(jobIdempotencyKey("order-123")).toBe("stripe-paid:order-123");
+  });
+
+  it("keeps manual test investigation idempotency separate from Stripe", () => {
+    expect(testJobIdempotencyKey("order-123", "case-456")).toBe("test-investigation:order-123:case-456");
+  });
+
+  it("requires explicit flags for manual investigation tests", () => {
+    expect(() => assertTestInvestigationEnabled({ NODE_ENV: "development" })).toThrow(/disabled/i);
+    expect(() =>
+      assertTestInvestigationEnabled({
+        NODE_ENV: "production",
+        VERIFYFIRST_ENABLE_TEST_INVESTIGATION: "true",
+      }),
+    ).toThrow(/Production test investigation trigger is disabled/);
+    expect(() =>
+      assertTestInvestigationEnabled({
+        NODE_ENV: "production",
+        VERIFYFIRST_ENABLE_TEST_INVESTIGATION: "true",
+        VERIFYFIRST_ALLOW_PRODUCTION_TEST_INVESTIGATION: "true",
+      }),
+    ).not.toThrow();
   });
 
   it("verifies valid Stripe signatures and rejects forged signatures", async () => {
