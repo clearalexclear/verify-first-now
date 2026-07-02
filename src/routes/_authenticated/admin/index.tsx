@@ -59,6 +59,8 @@ function Dashboard() {
         </div>
       </div>
 
+      <JiangmenDiagnosticPanel />
+
       <div className="grid grid-cols-2 md:grid-cols-6 gap-2 p-3 border rounded-lg bg-card">
         <Input placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} className="md:col-span-2" />
         <FilterSelect value={status} onChange={setStatus} placeholder="Status" options={[{value:"any",label:"All statuses"}, ...CASE_STATUS_OPTIONS]} />
