@@ -21,9 +21,9 @@ import { Route as RShareTokenRouteImport } from './routes/r.$shareToken'
 import { Route as AuthenticatedAdminRouteRouteImport } from './routes/_authenticated/admin/route'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
 import { Route as OrderStatusTokenRouteImport } from './routes/order.status.$token'
+import { Route as ApiStripeWebhookRouteImport } from './routes/api/stripe/webhook'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
 import { Route as AuthenticatedAdminTemplatesRouteImport } from './routes/_authenticated/admin/templates'
-import { Route as ApiStripeWebhookRouteImport } from './routes/api/stripe/webhook'
 import { Route as ApiPublicInvestigateCaseIdRouteImport } from './routes/api/public/investigate.$caseId'
 import { Route as AuthenticatedAdminCasesCaseIdRouteImport } from './routes/_authenticated/admin/cases.$caseId'
 
@@ -86,6 +86,11 @@ const OrderStatusTokenRoute = OrderStatusTokenRouteImport.update({
   path: '/status/$token',
   getParentRoute: () => OrderRoute,
 } as any)
+const ApiStripeWebhookRoute = ApiStripeWebhookRouteImport.update({
+  id: '/api/stripe/webhook',
+  path: '/api/stripe/webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
   id: '/users',
   path: '/users',
@@ -97,11 +102,6 @@ const AuthenticatedAdminTemplatesRoute =
     path: '/templates',
     getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
-const ApiStripeWebhookRoute = ApiStripeWebhookRouteImport.update({
-  id: '/api/stripe/webhook',
-  path: '/api/stripe/webhook',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiPublicInvestigateCaseIdRoute =
   ApiPublicInvestigateCaseIdRouteImport.update({
     id: '/api/public/investigate/$caseId',
@@ -127,11 +127,11 @@ export interface FileRoutesByFullPath {
   '/upload/$token': typeof UploadTokenRoute
   '/admin/templates': typeof AuthenticatedAdminTemplatesRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/api/stripe/webhook': typeof ApiStripeWebhookRoute
   '/order/status/$token': typeof OrderStatusTokenRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/admin/cases/$caseId': typeof AuthenticatedAdminCasesCaseIdRoute
   '/api/public/investigate/$caseId': typeof ApiPublicInvestigateCaseIdRoute
-  '/api/stripe/webhook': typeof ApiStripeWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -144,11 +144,11 @@ export interface FileRoutesByTo {
   '/upload/$token': typeof UploadTokenRoute
   '/admin/templates': typeof AuthenticatedAdminTemplatesRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/api/stripe/webhook': typeof ApiStripeWebhookRoute
   '/order/status/$token': typeof OrderStatusTokenRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/admin/cases/$caseId': typeof AuthenticatedAdminCasesCaseIdRoute
   '/api/public/investigate/$caseId': typeof ApiPublicInvestigateCaseIdRoute
-  '/api/stripe/webhook': typeof ApiStripeWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -164,11 +164,11 @@ export interface FileRoutesById {
   '/upload/$token': typeof UploadTokenRoute
   '/_authenticated/admin/templates': typeof AuthenticatedAdminTemplatesRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/api/stripe/webhook': typeof ApiStripeWebhookRoute
   '/order/status/$token': typeof OrderStatusTokenRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/admin/cases/$caseId': typeof AuthenticatedAdminCasesCaseIdRoute
   '/api/public/investigate/$caseId': typeof ApiPublicInvestigateCaseIdRoute
-  '/api/stripe/webhook': typeof ApiStripeWebhookRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -184,11 +184,11 @@ export interface FileRouteTypes {
     | '/upload/$token'
     | '/admin/templates'
     | '/admin/users'
+    | '/api/stripe/webhook'
     | '/order/status/$token'
     | '/admin/'
     | '/admin/cases/$caseId'
     | '/api/public/investigate/$caseId'
-    | '/api/stripe/webhook'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -201,11 +201,11 @@ export interface FileRouteTypes {
     | '/upload/$token'
     | '/admin/templates'
     | '/admin/users'
+    | '/api/stripe/webhook'
     | '/order/status/$token'
     | '/admin'
     | '/admin/cases/$caseId'
     | '/api/public/investigate/$caseId'
-    | '/api/stripe/webhook'
   id:
     | '__root__'
     | '/'
@@ -220,11 +220,11 @@ export interface FileRouteTypes {
     | '/upload/$token'
     | '/_authenticated/admin/templates'
     | '/_authenticated/admin/users'
+    | '/api/stripe/webhook'
     | '/order/status/$token'
     | '/_authenticated/admin/'
     | '/_authenticated/admin/cases/$caseId'
     | '/api/public/investigate/$caseId'
-    | '/api/stripe/webhook'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -327,6 +327,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrderStatusTokenRouteImport
       parentRoute: typeof OrderRoute
     }
+    '/api/stripe/webhook': {
+      id: '/api/stripe/webhook'
+      path: '/api/stripe/webhook'
+      fullPath: '/api/stripe/webhook'
+      preLoaderRoute: typeof ApiStripeWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/admin/users': {
       id: '/_authenticated/admin/users'
       path: '/users'
@@ -340,13 +347,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/templates'
       preLoaderRoute: typeof AuthenticatedAdminTemplatesRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
-    }
-    '/api/stripe/webhook': {
-      id: '/api/stripe/webhook'
-      path: '/api/stripe/webhook'
-      fullPath: '/api/stripe/webhook'
-      preLoaderRoute: typeof ApiStripeWebhookRouteImport
-      parentRoute: typeof rootRouteImport
     }
     '/api/public/investigate/$caseId': {
       id: '/api/public/investigate/$caseId'

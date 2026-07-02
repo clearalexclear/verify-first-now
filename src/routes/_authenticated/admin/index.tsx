@@ -4,7 +4,9 @@ import { useServerFn } from "@tanstack/react-start";
 import { useMemo, useState } from "react";
 import { formatDistanceToNow, format } from "date-fns";
 import { listCases } from "@/lib/admin/admin.functions";
+import { runVerifyFirstJiangmen } from "@/lib/admin/run-verifyfirst.functions";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CaseStatusBadge, RiskRatingBadge } from "@/components/admin/badges";
 import { CASE_STATUS_OPTIONS, RISK_RATING_OPTIONS, PACKAGE_LABELS } from "@/lib/admin/constants";
@@ -56,6 +58,8 @@ function Dashboard() {
           <p className="text-sm text-muted-foreground">{filtered.length} of {rows.length} cases</p>
         </div>
       </div>
+
+      <JiangmenDiagnosticPanel />
 
       <div className="grid grid-cols-2 md:grid-cols-6 gap-2 p-3 border rounded-lg bg-card">
         <Input placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} className="md:col-span-2" />
@@ -137,5 +141,102 @@ function FilterSelect({ value, onChange, placeholder, options }: { value: string
         {options.map(o => <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>)}
       </SelectContent>
     </Select>
+  );
+}
+
+function JiangmenDiagnosticPanel() {
+  const run = useServerFn(runVerifyFirstJiangmen);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onRun() {
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await run({ data: { reason: "Admin diagnostic (Jiangmen Changwen)" } });
+      setResult(res);
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="border rounded-lg bg-card p-4 space-y-3">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-sm font-semibold">VerifyFirst diagnostic — Jiangmen Changwen</h2>
+          <p className="text-xs text-muted-foreground">
+            Admin-only. Validates foundation tables + reports bucket, refreshes the DHS UFLPA snapshot,
+            then runs the investigation pipeline end-to-end with email delivery disabled.
+          </p>
+        </div>
+        <Button size="sm" onClick={onRun} disabled={busy}>
+          {busy ? "Running…" : "Run investigation now"}
+        </Button>
+      </div>
+
+      {error && <p className="text-xs text-destructive">Error: {error}</p>}
+
+      {result && (
+        <div className="grid gap-3 text-xs md:grid-cols-2">
+          <Field label="Case ID" value={result.caseId} mono />
+          <Field label="Order ID" value={result.orderId} mono />
+          <Field label="Order reference" value={result.orderReference} />
+          <Field label="Supplier" value={result.supplierName} />
+          <Field label="Report version ID" value={result.report?.versionId} mono />
+          <Field label="Final recommendation" value={result.report?.finalOutcome} />
+          <Field label="Overall risk rating" value={result.report?.overallRiskRating} />
+          <Field label="Structured JSON path" value={`${result.report?.jsonStoragePath}`} mono />
+          <Field label="PDF path" value={result.report?.pdfStoragePath} mono />
+          <Field label="Share token" value={result.report?.shareToken} mono />
+          <Field
+            label="Checklist items"
+            value={`${result.checklistCount} ${result.checklistExactly32 ? "✓ (exactly 32)" : "✗ (expected 32)"}`}
+          />
+          <Field label="Reports bucket" value={result.reportsBucket?.name} />
+          <Field
+            label="UFLPA snapshot"
+            value={
+              "error" in (result.uflpa ?? {})
+                ? `error: ${result.uflpa.error}`
+                : `${result.uflpa?.snapshotVersion} • ${result.uflpa?.entityCount} entities`
+            }
+          />
+          <Field label="Job" value={`${result.job?.id} (${result.job?.created ? "new" : "reused"})`} mono />
+
+          <div className="md:col-span-2 space-y-1">
+            <div className="font-medium">Checklist status counts</div>
+            <pre className="bg-muted rounded p-2 overflow-x-auto">
+              {JSON.stringify(result.checklistStatusCounts, null, 2)}
+            </pre>
+          </div>
+          <div className="md:col-span-2 space-y-1">
+            <div className="font-medium">Findings status counts</div>
+            <pre className="bg-muted rounded p-2 overflow-x-auto">
+              {JSON.stringify(result.findingStatusCounts, null, 2)}
+            </pre>
+          </div>
+          <div className="md:col-span-2 space-y-1">
+            <div className="font-medium">Foundation tables</div>
+            <pre className="bg-muted rounded p-2 overflow-x-auto">
+              {JSON.stringify(result.tableCheck, null, 2)}
+            </pre>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Field({ label, value, mono }: { label: string; value: any; mono?: boolean }) {
+  return (
+    <div className="space-y-0.5">
+      <div className="text-muted-foreground">{label}</div>
+      <div className={mono ? "font-mono break-all" : "break-words"}>{value ?? "—"}</div>
+    </div>
   );
 }

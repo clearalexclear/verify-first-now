@@ -258,6 +258,127 @@ export type Database = {
           },
         ]
       }
+      connector_runs: {
+        Row: {
+          case_id: string | null
+          confidence: string | null
+          connector_id: string
+          created_at: string
+          duration_ms: number | null
+          error_message: string | null
+          id: string
+          job_id: string | null
+          metadata: Json
+          mode: string
+          raw_response_path: string | null
+          raw_response_storage_allowed: boolean
+          request_hash: string | null
+          retrieved_at: string
+          source_url: string | null
+          status: string
+        }
+        Insert: {
+          case_id?: string | null
+          confidence?: string | null
+          connector_id: string
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          job_id?: string | null
+          metadata?: Json
+          mode: string
+          raw_response_path?: string | null
+          raw_response_storage_allowed?: boolean
+          request_hash?: string | null
+          retrieved_at?: string
+          source_url?: string | null
+          status: string
+        }
+        Update: {
+          case_id?: string | null
+          confidence?: string | null
+          connector_id?: string
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          job_id?: string | null
+          metadata?: Json
+          mode?: string
+          raw_response_path?: string | null
+          raw_response_storage_allowed?: boolean
+          request_hash?: string | null
+          retrieved_at?: string
+          source_url?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "connector_runs_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "connector_runs_connector_id_fkey"
+            columns: ["connector_id"]
+            isOneToOne: false
+            referencedRelation: "connectors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "connector_runs_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "investigation_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      connectors: {
+        Row: {
+          category: string
+          created_at: string
+          enabled: boolean
+          id: string
+          mode: string
+          name: string
+          notes: string | null
+          raw_response_policy: string
+          required_env: string[]
+          source_url: string | null
+          updated_at: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          enabled?: boolean
+          id: string
+          mode: string
+          name: string
+          notes?: string | null
+          raw_response_policy?: string
+          required_env?: string[]
+          source_url?: string | null
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          mode?: string
+          name?: string
+          notes?: string | null
+          raw_response_policy?: string
+          required_env?: string[]
+          source_url?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       customers: {
         Row: {
           company: string
@@ -285,15 +406,101 @@ export type Database = {
         }
         Relationships: []
       }
+      evidence_facts: {
+        Row: {
+          case_id: string
+          classification: Database["public"]["Enums"]["evidence_classification"]
+          confidence: string
+          connector_run_id: string | null
+          created_at: string
+          evidence_excerpt: string | null
+          evidence_item_id: string | null
+          fact_key: string
+          fact_value: Json | null
+          finding_key: string | null
+          id: string
+          license_notes: string | null
+          raw_response_path: string | null
+          retrieval_date: string
+          source_name: string
+          source_url: string | null
+        }
+        Insert: {
+          case_id: string
+          classification?: Database["public"]["Enums"]["evidence_classification"]
+          confidence?: string
+          connector_run_id?: string | null
+          created_at?: string
+          evidence_excerpt?: string | null
+          evidence_item_id?: string | null
+          fact_key: string
+          fact_value?: Json | null
+          finding_key?: string | null
+          id?: string
+          license_notes?: string | null
+          raw_response_path?: string | null
+          retrieval_date?: string
+          source_name: string
+          source_url?: string | null
+        }
+        Update: {
+          case_id?: string
+          classification?: Database["public"]["Enums"]["evidence_classification"]
+          confidence?: string
+          connector_run_id?: string | null
+          created_at?: string
+          evidence_excerpt?: string | null
+          evidence_item_id?: string | null
+          fact_key?: string
+          fact_value?: Json | null
+          finding_key?: string | null
+          id?: string
+          license_notes?: string | null
+          raw_response_path?: string | null
+          retrieval_date?: string
+          source_name?: string
+          source_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "evidence_facts_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "evidence_facts_connector_run_id_fkey"
+            columns: ["connector_run_id"]
+            isOneToOne: false
+            referencedRelation: "connector_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "evidence_facts_evidence_item_id_fkey"
+            columns: ["evidence_item_id"]
+            isOneToOne: false
+            referencedRelation: "evidence_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       evidence_items: {
         Row: {
           analyst_comments: string | null
           case_id: string
           check_id: string | null
+          classification:
+            | Database["public"]["Enums"]["evidence_classification"]
+            | null
           client_visible: boolean
+          confidence: string | null
+          connector_run_id: string | null
           created_at: string
           evidence_type: Database["public"]["Enums"]["evidence_type"]
           id: string
+          license_notes: string | null
+          raw_response_path: string | null
           related_legal_entity: string | null
           retrieval_date: string | null
           source: string | null
@@ -306,10 +513,17 @@ export type Database = {
           analyst_comments?: string | null
           case_id: string
           check_id?: string | null
+          classification?:
+            | Database["public"]["Enums"]["evidence_classification"]
+            | null
           client_visible?: boolean
+          confidence?: string | null
+          connector_run_id?: string | null
           created_at?: string
           evidence_type: Database["public"]["Enums"]["evidence_type"]
           id?: string
+          license_notes?: string | null
+          raw_response_path?: string | null
           related_legal_entity?: string | null
           retrieval_date?: string | null
           source?: string | null
@@ -322,10 +536,17 @@ export type Database = {
           analyst_comments?: string | null
           case_id?: string
           check_id?: string | null
+          classification?:
+            | Database["public"]["Enums"]["evidence_classification"]
+            | null
           client_visible?: boolean
+          confidence?: string | null
+          connector_run_id?: string | null
           created_at?: string
           evidence_type?: Database["public"]["Enums"]["evidence_type"]
           id?: string
+          license_notes?: string | null
+          raw_response_path?: string | null
           related_legal_entity?: string | null
           retrieval_date?: string | null
           source?: string | null
@@ -349,6 +570,157 @@ export type Database = {
             referencedRelation: "case_checks"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "evidence_items_connector_run_id_fkey"
+            columns: ["connector_run_id"]
+            isOneToOne: false
+            referencedRelation: "connector_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      investigation_jobs: {
+        Row: {
+          attempt_count: number
+          case_id: string
+          completed_at: string | null
+          created_at: string
+          id: string
+          idempotency_key: string
+          last_error: string | null
+          locked_at: string | null
+          locked_by: string | null
+          max_attempts: number
+          metadata: Json
+          next_run_at: string
+          order_id: string
+          priority: number
+          started_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempt_count?: number
+          case_id: string
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          idempotency_key: string
+          last_error?: string | null
+          locked_at?: string | null
+          locked_by?: string | null
+          max_attempts?: number
+          metadata?: Json
+          next_run_at?: string
+          order_id: string
+          priority?: number
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempt_count?: number
+          case_id?: string
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          idempotency_key?: string
+          last_error?: string | null
+          locked_at?: string | null
+          locked_by?: string | null
+          max_attempts?: number
+          metadata?: Json
+          next_run_at?: string
+          order_id?: string
+          priority?: number
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "investigation_jobs_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "investigation_jobs_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      investigation_steps: {
+        Row: {
+          attempt_count: number
+          case_id: string
+          completed_at: string | null
+          created_at: string
+          id: string
+          input_hash: string | null
+          job_id: string
+          last_error: string | null
+          max_attempts: number
+          next_run_at: string
+          output: Json | null
+          started_at: string | null
+          status: string
+          step_key: string
+          updated_at: string
+        }
+        Insert: {
+          attempt_count?: number
+          case_id: string
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          input_hash?: string | null
+          job_id: string
+          last_error?: string | null
+          max_attempts?: number
+          next_run_at?: string
+          output?: Json | null
+          started_at?: string | null
+          status?: string
+          step_key: string
+          updated_at?: string
+        }
+        Update: {
+          attempt_count?: number
+          case_id?: string
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          input_hash?: string | null
+          job_id?: string
+          last_error?: string | null
+          max_attempts?: number
+          next_run_at?: string
+          output?: Json | null
+          started_at?: string | null
+          status?: string
+          step_key?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "investigation_steps_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "investigation_steps_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "investigation_jobs"
+            referencedColumns: ["id"]
+          },
         ]
       }
       orders: {
@@ -365,8 +737,11 @@ export type Database = {
           estimated_order_value: string
           id: string
           order_reference: string
+          paid_at: string | null
           payment_status: string
           product_category: string
+          stripe_checkout_session_id: string | null
+          stripe_payment_intent_id: string | null
           supplier_company_name: string
           supplier_contact_person: string | null
           supplier_country: string
@@ -387,8 +762,11 @@ export type Database = {
           estimated_order_value: string
           id?: string
           order_reference?: string
+          paid_at?: string | null
           payment_status?: string
           product_category: string
+          stripe_checkout_session_id?: string | null
+          stripe_payment_intent_id?: string | null
           supplier_company_name: string
           supplier_contact_person?: string | null
           supplier_country: string
@@ -409,8 +787,11 @@ export type Database = {
           estimated_order_value?: string
           id?: string
           order_reference?: string
+          paid_at?: string | null
           payment_status?: string
           product_category?: string
+          stripe_checkout_session_id?: string | null
+          stripe_payment_intent_id?: string | null
           supplier_company_name?: string
           supplier_contact_person?: string | null
           supplier_country?: string
@@ -465,6 +846,60 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      report_artifacts: {
+        Row: {
+          artifact_type: string
+          case_id: string
+          checksum: string | null
+          created_at: string
+          id: string
+          metadata: Json
+          report_version_id: string | null
+          status: string
+          storage_path: string | null
+          updated_at: string
+        }
+        Insert: {
+          artifact_type: string
+          case_id: string
+          checksum?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json
+          report_version_id?: string | null
+          status?: string
+          storage_path?: string | null
+          updated_at?: string
+        }
+        Update: {
+          artifact_type?: string
+          case_id?: string
+          checksum?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json
+          report_version_id?: string | null
+          status?: string
+          storage_path?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "report_artifacts_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "report_artifacts_report_version_id_fkey"
+            columns: ["report_version_id"]
+            isOneToOne: false
+            referencedRelation: "report_versions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       report_versions: {
         Row: {
@@ -561,6 +996,45 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      source_snapshots: {
+        Row: {
+          checksum: string
+          created_at: string
+          id: string
+          last_successful_refresh: string
+          payload: Json
+          publication_date: string | null
+          retrieval_date: string
+          snapshot_version: string
+          source_key: string
+          source_url: string
+        }
+        Insert: {
+          checksum: string
+          created_at?: string
+          id?: string
+          last_successful_refresh?: string
+          payload: Json
+          publication_date?: string | null
+          retrieval_date?: string
+          snapshot_version: string
+          source_key: string
+          source_url: string
+        }
+        Update: {
+          checksum?: string
+          created_at?: string
+          id?: string
+          last_successful_refresh?: string
+          payload?: Json
+          publication_date?: string | null
+          retrieval_date?: string
+          snapshot_version?: string
+          source_key?: string
+          source_url?: string
+        }
+        Relationships: []
       }
       supplier_cases: {
         Row: {
@@ -793,6 +1267,45 @@ export type Database = {
         }
         Relationships: []
       }
+      webhook_events: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          event_type: string
+          id: string
+          payload: Json | null
+          processed_at: string | null
+          processing_status: string
+          provider: string
+          provider_event_id: string
+          signature_valid: boolean
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          event_type: string
+          id?: string
+          payload?: Json | null
+          processed_at?: string | null
+          processing_status?: string
+          provider?: string
+          provider_event_id: string
+          signature_valid?: boolean
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          event_type?: string
+          id?: string
+          payload?: Json | null
+          processed_at?: string | null
+          processing_status?: string
+          provider?: string
+          provider_event_id?: string
+          signature_valid?: boolean
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -843,6 +1356,13 @@ export type Database = {
         | "not_verified"
         | "not_applicable"
       confidence_level: "high" | "medium_high" | "medium" | "low"
+      evidence_classification:
+        | "VERIFIED"
+        | "CORROBORATED"
+        | "SUPPLIER_CLAIMED"
+        | "INFERRED"
+        | "NOT_INDEPENDENTLY_VERIFIED"
+        | "CONTRADICTED"
       evidence_type:
         | "screenshot"
         | "business_licence"
@@ -1034,6 +1554,14 @@ export const Constants = {
         "not_applicable",
       ],
       confidence_level: ["high", "medium_high", "medium", "low"],
+      evidence_classification: [
+        "VERIFIED",
+        "CORROBORATED",
+        "SUPPLIER_CLAIMED",
+        "INFERRED",
+        "NOT_INDEPENDENTLY_VERIFIED",
+        "CONTRADICTED",
+      ],
       evidence_type: [
         "screenshot",
         "business_licence",
