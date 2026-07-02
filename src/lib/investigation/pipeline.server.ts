@@ -5,6 +5,7 @@ import { screenUflpa } from "./sources/uflpa.server";
 import { screenAdverseMedia, screenLitigation } from "./sources/adverse-media.server";
 import { probeExportHistory, screenCertificates, screenWebsiteConsistency } from "./sources/web-research.server";
 import { runConnectorEvidenceChecks } from "./connectors/findings.server";
+import { buildCanonicalChecklist } from "./checklist";
 import { computeOutcome, synthesiseNarrative } from "./synthesis.server";
 import { renderReportPdf } from "./pdf.server";
 import { emailReport, emailInvestigationFailed } from "./email.server";
@@ -200,6 +201,7 @@ export async function runInvestigation(
       },
       resolved_entity: resolved,
       findings: evidenceBackedFindings,
+      checklist_results: [],
       overall_risk_rating: overall.overall,
       final_outcome: overall.outcome,
       executive_summary: synth.executive_summary,
@@ -210,11 +212,12 @@ export async function runInvestigation(
       inspection_recommendation: synth.inspection_recommendation,
       testing_recommendation: synth.testing_recommendation,
       methodology:
-        "VerifyFirst stores every factual finding as structured evidence before report rendering. Paid registry, shipment, IAF and OpenSanctions connectors remain disabled until credentials are supplied. Generic web research is web intelligence only and cannot independently verify corporate registration, shipment history, certificate validity or litigation.",
+        "VerifyFirst stores every factual finding as structured evidence before report rendering. Every generated report includes the full 32-item canonical supplier-verification checklist. Paid registry, shipment, IAF and OpenSanctions connectors remain disabled until credentials are supplied. Generic web research is web intelligence only and cannot independently verify corporate registration, shipment history, certificate validity, sanctions status or litigation.",
       limitations:
         "No-result searches are not proof that no record exists. Missing or unconfigured source data is reported as not independently verified. Production-grade QCC, ImportGenius, IAF CertSearch and OpenSanctions results require licensed credentials.",
       sources_used: Array.from(sourceSet.values()),
     };
+    report.checklist_results = buildCanonicalChecklist(report);
 
     const share_token = randomToken(40);
     const { data: existing } = await db
@@ -262,7 +265,7 @@ export async function runInvestigation(
       artifact_type: "structured_json",
       storage_path: jsonPath,
       status: "generated",
-      metadata: { finding_count: report.findings.length },
+      metadata: { finding_count: report.findings.length, checklist_count: report.checklist_results.length },
     });
 
     const pdfBytes = await renderReportPdf(report);
@@ -278,6 +281,7 @@ export async function runInvestigation(
       artifact_type: "pdf",
       storage_path: pdfPath,
       status: "generated",
+      metadata: { checklist_count: report.checklist_results.length },
     });
     await log("report_generated", { version: nextVersion, outcome: report.final_outcome, delivered: deliver });
 
