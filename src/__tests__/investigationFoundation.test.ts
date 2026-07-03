@@ -4,7 +4,7 @@ import { connectorRegistry } from "../lib/investigation/connectors/registry.serv
 import { jobIdempotencyKey, nextBackoff, testJobIdempotencyKey } from "../lib/investigation/job-queue.server";
 import { assertTestInvestigationEnabled } from "../lib/investigation/test-runner.server";
 import { verifyStripeSignature } from "../lib/payments/stripe-webhook.server";
-import { buildCanonicalChecklist, CANONICAL_CHECKLIST, CHECKLIST_COUNT, detectChecklistContradictions } from "../lib/investigation/checklist";
+import { buildCanonicalChecklist, CANONICAL_CHECKLIST, CHECKLIST_COUNT, detectChecklistContradictions, applyOutcomeGating } from "../lib/investigation/checklist";
 import { renderReportPdf } from "../lib/investigation/pdf.server";
 import type { Finding, InvestigationReport, ResolvedEntity } from "../lib/investigation/types";
 
