@@ -181,7 +181,38 @@ function JiangmenDiagnosticPanel() {
 
       {error && <p className="text-xs text-destructive">Error: {error}</p>}
 
-      {result && (
+      {result && result.ok === false && (
+        <div className="space-y-3 text-xs">
+          <div className="rounded border border-destructive/40 bg-destructive/5 p-3 space-y-1">
+            <div className="font-semibold text-destructive">Investigation did not produce a report</div>
+            <div>Pipeline error: <span className="font-mono break-all">{result.pipelineError ?? "—"}</span></div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Case ID" value={result.caseId} mono />
+            <Field label="Order ID" value={result.orderId} mono />
+            <Field label="Supplier case status" value={result.supplierCase?.status} />
+            <Field label="Case investigation_error" value={result.supplierCase?.investigation_error} />
+            <Field label="Job ID" value={result.job?.id} mono />
+            <Field label="Job status" value={result.job?.status} />
+            <Field label="Job attempts" value={`${result.job?.attemptCount ?? "?"} / ${result.job?.maxAttempts ?? "?"}`} />
+            <Field label="Job last_error" value={result.job?.lastError} />
+          </div>
+          <div className="space-y-1">
+            <div className="font-medium">Investigation steps</div>
+            <pre className="bg-muted rounded p-2 overflow-x-auto">
+              {JSON.stringify(result.steps, null, 2)}
+            </pre>
+          </div>
+          <div className="space-y-1">
+            <div className="font-medium">Worker result</div>
+            <pre className="bg-muted rounded p-2 overflow-x-auto">
+              {JSON.stringify(result.worker, null, 2)}
+            </pre>
+          </div>
+        </div>
+      )}
+
+      {result && result.ok !== false && (
         <div className="grid gap-3 text-xs md:grid-cols-2">
           <Field label="Case ID" value={result.caseId} mono />
           <Field label="Order ID" value={result.orderId} mono />
