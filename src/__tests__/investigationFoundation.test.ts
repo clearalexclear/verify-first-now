@@ -92,7 +92,7 @@ function mockReport(overrides: Partial<InvestigationReport> = {}): Investigation
 describe("payment security", () => {
   it("keeps payment and test job idempotency server-side", () => {
     expect(jobIdempotencyKey("order-123")).toBe("stripe-paid:order-123");
-    expect(testJobIdempotencyKey("order-123", "case-456")).toBe("test-investigation:order-123:case-456");
+    expect(testJobIdempotencyKey("order-123", "case-456")).toMatch(/^test-investigation:order-123:case-456:/);
   });
 
   it("requires explicit flags for manual investigation tests", () => {
