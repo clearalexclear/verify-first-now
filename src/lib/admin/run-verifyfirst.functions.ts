@@ -176,6 +176,7 @@ export const runVerifyFirstJiangmen = createServerFn({ method: "POST" })
     }
 
     return {
+      ok: true as const,
       caseId: order.case_id as string,
       orderId: order.id as string,
       orderReference: order.order_reference as string | null,
