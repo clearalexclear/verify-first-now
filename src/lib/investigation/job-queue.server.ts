@@ -25,7 +25,7 @@ export function jobIdempotencyKey(orderId: string): string {
 }
 
 export function testJobIdempotencyKey(orderId: string, caseId: string): string {
-  return `test-investigation:${orderId}:${caseId}`;
+  return `test-investigation:${orderId}:${caseId}:${Date.now()}:${crypto.randomUUID()}`;
 }
 
 async function createInvestigationJob(args: {
