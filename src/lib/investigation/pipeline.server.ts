@@ -47,17 +47,24 @@ export async function runInvestigation(
     .from("supplier_cases")
     .select(`
       id, case_reference, status, product_category, destination_market,
-      estimated_order_value, customer_concerns, supplier_chinese_name,
-      orders(id, order_reference, supplier_company_name, supplier_country,
-              website_marketplace_url, supplier_contact_person, customer_name,
-              customer_company, customer_email)
+      estimated_order_value, customer_concerns, supplier_chinese_name
     `)
     .eq("id", caseId)
     .maybeSingle();
-  if (cErr || !caseRow) return { ok: false, error: "Case not found" };
+  if (cErr) return { ok: false, error: `Could not load supplier case: ${cErr.message ?? String(cErr)}` };
+  if (!caseRow) return { ok: false, error: `Supplier case not found for ID: ${caseId}` };
 
-  const order = Array.isArray(caseRow.orders) ? caseRow.orders[0] : caseRow.orders;
-  if (!order) return { ok: false, error: "No order attached to case" };
+  const { data: orderRow, error: oErr } = await db
+    .from("orders")
+    .select(
+      "id, order_reference, supplier_company_name, supplier_country, website_marketplace_url, supplier_contact_person, customer_name, customer_company, customer_email",
+    )
+    .eq("case_id", caseId)
+    .limit(1)
+    .maybeSingle();
+  if (oErr) return { ok: false, error: `Could not load order for case ${caseId}: ${oErr.message ?? String(oErr)}` };
+  if (!orderRow) return { ok: false, error: `No order attached to supplier case ${caseId}` };
+  const order = orderRow;
   if (!opts.allowRerun && ["report_ready", "delivered"].includes(String(caseRow.status))) {
     return { ok: false, error: "Already completed" };
   }
