@@ -149,6 +149,39 @@ const domainRdap: InvestigationConnector<{ domain: string }> = {
   },
 };
 
+interface CpscRecall {
+  recallNumber?: string;
+  title?: string;
+  date?: string;
+  url?: string;
+  products: Array<{ name?: string; description?: string; model?: string; type?: string }>;
+  manufacturers: string[];
+  hazards: string[];
+}
+
+function normalizeCpscRecall(raw: any): CpscRecall {
+  return {
+    recallNumber: raw?.RecallNumber ?? raw?.recallNumber ?? undefined,
+    title: raw?.Title ?? raw?.RecallTitle ?? raw?.title ?? undefined,
+    date: raw?.RecallDate ?? raw?.LastPublishDate ?? raw?.date ?? undefined,
+    url: raw?.URL ?? raw?.RecallURL ?? raw?.url ?? undefined,
+    products: Array.isArray(raw?.Products)
+      ? raw.Products.map((p: any) => ({
+          name: p?.Name,
+          description: p?.Description,
+          model: p?.Model,
+          type: p?.Type,
+        }))
+      : [],
+    manufacturers: Array.isArray(raw?.Manufacturers)
+      ? raw.Manufacturers.map((m: any) => m?.CompanyName ?? m?.Name).filter(Boolean)
+      : [],
+    hazards: Array.isArray(raw?.Hazards)
+      ? raw.Hazards.map((h: any) => h?.Name).filter(Boolean)
+      : [],
+  };
+}
+
 const cpscRecalls: InvestigationConnector<{ query: string }> = {
   id: "cpsc_recalls",
   name: "CPSC recalls",
@@ -165,7 +198,14 @@ const cpscRecalls: InvestigationConnector<{ query: string }> = {
       const url = `${cpscRecalls.sourceUrl}?format=json&RecallTitle=${encodeURIComponent(input.query)}`;
       const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
       const raw = await res.json().catch(() => []);
-      const count = Array.isArray(raw) ? raw.length : 0;
+      const list: any[] = Array.isArray(raw) ? raw : [];
+      const recalls = list.slice(0, 25).map(normalizeCpscRecall);
+      const count = list.length;
+      const excerpt = count > 0
+        ? `CPSC returned ${count} recall result(s) for "${input.query}". Top titles: ` +
+          recalls.slice(0, 5).map((r) => `"${r.title ?? r.recallNumber ?? "untitled"}" (${r.date?.slice(0, 10) ?? "no date"})`).join("; ") +
+          ". Relevance to the exact proposed product has NOT been assessed."
+        : `CPSC returned no recall result for "${input.query}". A no-result search is not proof that no recall risk exists.`;
       return {
         connectorId: cpscRecalls.id,
         status: res.ok ? "success" : "error",
@@ -174,19 +214,18 @@ const cpscRecalls: InvestigationConnector<{ query: string }> = {
         confidence: res.ok ? "medium_high" : "low",
         sourceUrl: url,
         evidence: [{
-          factKey: "cpsc.recalls.search_result_count",
-          factValue: count,
-          classification: count > 0 ? "CORROBORATED" : "NOT_INDEPENDENTLY_VERIFIED",
+          factKey: "cpsc.recalls.search_results",
+          factValue: { query: input.query, count, recalls },
+          classification: "CORROBORATED",
           confidence: "medium_high",
           sourceName: "U.S. CPSC recalls API",
           sourceUrl: url,
           retrievalDate: retrievedAt,
-          evidenceExcerpt: count > 0
-            ? `CPSC returned ${count} recall result(s) for the product query. These require product-specific review.`
-            : `CPSC returned no recall result for the product query. This is not proof no recall risk exists.`,
+          evidenceExcerpt: excerpt,
         }],
         rawResponse: raw,
         rawResponseStorageAllowed: true,
+        metadata: { count },
       };
     } catch (error) {
       return {

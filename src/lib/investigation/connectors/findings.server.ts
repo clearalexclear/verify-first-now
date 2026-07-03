@@ -95,24 +95,49 @@ function rdapFinding(result: ConnectorResult, evidenceIds: string[], domain: str
 function cpscFinding(result: ConnectorResult, evidenceIds: string[], query: string): Finding | null {
   const evidence = result.evidence[0];
   if (!evidence && result.status === "not_configured") return null;
-  const count = typeof evidence?.factValue === "number" ? evidence.factValue : 0;
+  const val: any = evidence?.factValue ?? {};
+  const recalls: any[] = Array.isArray(val?.recalls) ? val.recalls : [];
+  const count: number = typeof val?.count === "number" ? val.count : recalls.length;
+  const topLines = recalls.slice(0, 5).map((r: any) => {
+    const title = r?.title ?? r?.recallNumber ?? "untitled";
+    const date = r?.date ? String(r.date).slice(0, 10) : "no date";
+    const brand = Array.isArray(r?.manufacturers) && r.manufacturers.length ? ` — brand: ${r.manufacturers.join(", ")}` : "";
+    const models = Array.isArray(r?.products) && r.products.length
+      ? ` — products: ${r.products.map((p: any) => [p.name, p.model].filter(Boolean).join(" ")).filter(Boolean).slice(0, 3).join("; ")}`
+      : "";
+    return `• ${title} (${date})${brand}${models}${r?.url ? ` — ${r.url}` : ""}`;
+  }).join("\n");
   return {
     section: "regulatory",
     item: "U.S. CPSC recall screening",
-    status: count > 0 ? "CAUTION" : "NOT_VERIFIED",
+    // Broad text-search results by themselves cannot establish relevance to the exact proposed
+    // product. Until per-recall product-match logic exists, stay NOT_VERIFIED regardless of hit count.
+    status: "NOT_VERIFIED",
     confidence: evidence?.confidence ?? "low",
     source_name: evidence?.sourceName ?? "U.S. CPSC recalls API",
     source_url: evidence?.sourceUrl ?? result.sourceUrl ?? null,
     retrieval_date: evidence?.retrievalDate ?? result.retrievedAt,
-    evidence_excerpt: evidence?.evidenceExcerpt ?? "",
+    evidence_excerpt: count > 0
+      ? `CPSC returned ${count} recall result(s) for "${query}". Relevance to the exact proposed product has not been assessed.\n${topLines}`
+      : `CPSC returned no recall result for "${query}". A no-result search is not proof no recall risk exists.`,
     evidence_ids: evidenceIds,
-    evidence_classification: evidence?.classification ?? "NOT_INDEPENDENTLY_VERIFIED",
-    buyer_impact:
-      count > 0
-        ? `CPSC returned ${count} recall result(s) for "${query}" that need product-specific review.`
-        : "No CPSC recall result was returned for this query, but no-result searches must not be treated as proof no recall exists.",
-    recommended_action: "Review exact product model, brand and material against official recall notices before shipment.",
+    evidence_classification: "NOT_INDEPENDENTLY_VERIFIED",
+    buyer_impact: count > 0
+      ? `CPSC returned ${count} result(s) for the broad product query. Each result must be reviewed against the exact proposed product (brand, model, materials) before it can be treated as a recall risk or dismissed as unrelated.`
+      : "No CPSC recall result was returned for this broad query, but no-result searches must not be treated as proof no recalls exist.",
+    recommended_action: "Match the exact product brand, model number, materials and intended use against each recall result before treating it as either a hit or a clean pass.",
   };
+}
+
+export interface ConnectorRunSummary {
+  connectorId: string;
+  connectorName: string;
+  category: string;
+  status: string;
+  mode: string;
+  sourceUrl: string | null;
+  retrievedAt: string;
+  reason?: string | null;
 }
 
 export async function runConnectorEvidenceChecks(args: {
@@ -121,8 +146,32 @@ export async function runConnectorEvidenceChecks(args: {
   website?: string | null;
   productQuery?: string | null;
 }): Promise<Finding[]> {
+  const { findings } = await runConnectorEvidenceChecksDetailed(args);
+  return findings;
+}
+
+export async function runConnectorEvidenceChecksDetailed(args: {
+  caseId: string;
+  jobId?: string | null;
+  website?: string | null;
+  productQuery?: string | null;
+}): Promise<{ findings: Finding[]; runs: ConnectorRunSummary[] }> {
   const findings: Finding[] = [];
+  const runs: ConnectorRunSummary[] = [];
   const ctx = { caseId: args.caseId, jobId: args.jobId ?? null, env: process.env as Record<string, string | undefined> };
+
+  const record = (connector: InvestigationConnector, result: ConnectorResult, reason?: string | null) => {
+    runs.push({
+      connectorId: connector.id,
+      connectorName: connector.name,
+      category: connector.category,
+      status: result.status,
+      mode: result.mode,
+      sourceUrl: result.sourceUrl ?? connector.sourceUrl ?? null,
+      retrievedAt: result.retrievedAt,
+      reason: reason ?? result.error ?? null,
+    });
+  };
 
   for (const id of PAID_DISABLED_CONNECTORS) {
     const connector = getConnector(id);
@@ -130,6 +179,7 @@ export async function runConnectorEvidenceChecks(args: {
     const result = await connector.run({}, ctx);
     await persistConnectorRun({ result, caseId: args.caseId, jobId: args.jobId ?? null });
     findings.push(disabledConnectorFinding(connector, result));
+    record(connector, result, "Paid connector disabled until licensed credentials are supplied.");
   }
 
   const domain = extractDomain(args.website);
@@ -139,6 +189,7 @@ export async function runConnectorEvidenceChecks(args: {
     const runId = await persistConnectorRun({ result, caseId: args.caseId, jobId: args.jobId ?? null });
     const finding = rdapFinding(result, await evidenceIdsForRun(runId), domain);
     if (finding) findings.push(finding);
+    record(rdap, result);
   }
 
   const cpsc = getConnector("cpsc_recalls") as InvestigationConnector<{ query: string }> | null;
@@ -148,7 +199,8 @@ export async function runConnectorEvidenceChecks(args: {
     const runId = await persistConnectorRun({ result, caseId: args.caseId, jobId: args.jobId ?? null });
     const finding = cpscFinding(result, await evidenceIdsForRun(runId), query);
     if (finding) findings.push(finding);
+    record(cpsc, result);
   }
 
-  return findings;
+  return { findings, runs };
 }

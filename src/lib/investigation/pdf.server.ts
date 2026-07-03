@@ -11,6 +11,7 @@ import {
   OUTCOME_LABEL,
   SECTION_TITLES,
   STATUS_LABEL,
+  humanizeOrderValue,
   type ChecklistReportResult,
   type FindingStatus,
   type InvestigationReport,
@@ -30,12 +31,18 @@ const PAGE_W = 595.28;
 const PAGE_H = 841.89;
 const CONTENT_W = PAGE_W - MARGIN * 2;
 
+interface FootnoteMap {
+  order: string[]; // urls in order of first appearance
+  index: Map<string, number>; // url -> number
+}
+
 interface Ctx {
   doc: PDFDocument;
   page: PDFPage;
   y: number;
   regular: PDFFont;
   bold: PDFFont;
+  footnotes: FootnoteMap;
 }
 
 function newPage(ctx: Ctx) {
@@ -115,11 +122,37 @@ function statusColor(status: FindingStatus): ReturnType<typeof rgb> {
   }
 }
 
-function drawStatusBadge(ctx: Ctx, status: FindingStatus, x: number, y: number) {
-  const label = STATUS_LABEL[status].toUpperCase();
-  const w = Math.min(ctx.bold.widthOfTextAtSize(label, 8) + 10, 120);
-  ctx.page.drawRectangle({ x, y: y - 2, width: w, height: 12, color: statusColor(status) });
-  ctx.page.drawText(label, { x: x + 5, y, size: 8, font: ctx.bold, color: rgb(1, 1, 1) });
+// Sized to accommodate the longest status label without clipping.
+function statusBadgeWidth(bold: PDFFont, status: FindingStatus): number {
+  const label = STATUS_LABEL[status];
+  return bold.widthOfTextAtSize(label, 8) + 14;
+}
+
+function drawStatusBadge(ctx: Ctx, status: FindingStatus, x: number, y: number, width?: number) {
+  const label = STATUS_LABEL[status];
+  const w = width ?? statusBadgeWidth(ctx.bold, status);
+  ctx.page.drawRectangle({ x, y: y - 3, width: w, height: 13, color: statusColor(status) });
+  ctx.page.drawText(label, { x: x + 6, y, size: 8, font: ctx.bold, color: rgb(1, 1, 1) });
+}
+
+function footnoteFor(ctx: Ctx, url: string): number {
+  const existing = ctx.footnotes.index.get(url);
+  if (existing) return existing;
+  const n = ctx.footnotes.order.length + 1;
+  ctx.footnotes.order.push(url);
+  ctx.footnotes.index.set(url, n);
+  return n;
+}
+
+function shortSourceLabel(name: string, url: string | null): string {
+  const trimmed = (name || "").trim();
+  if (trimmed && trimmed.length <= 80) return trimmed;
+  if (url) {
+    try {
+      return new URL(url).hostname.replace(/^www\./, "");
+    } catch { /* ignore */ }
+  }
+  return trimmed.slice(0, 80);
 }
 
 function checklistForReport(r: InvestigationReport): ChecklistReportResult[] {
@@ -128,9 +161,11 @@ function checklistForReport(r: InvestigationReport): ChecklistReportResult[] {
 
 function drawChecklistItem(ctx: Ctx, item: ChecklistReportResult) {
   ensureSpace(ctx, 92);
-  const titleLines = wrap(asciiSafe(`${item.id}: ${item.title}`), ctx.bold, 10, CONTENT_W - 120);
+  // Customer-facing: title only, no underscore-laden internal ID.
+  const badgeW = statusBadgeWidth(ctx.bold, item.status);
+  const titleLines = wrap(asciiSafe(item.title), ctx.bold, 10, CONTENT_W - badgeW - 10);
   ctx.page.drawText(titleLines[0], { x: MARGIN, y: ctx.y - 10, size: 10, font: ctx.bold, color: NAVY });
-  drawStatusBadge(ctx, item.status, MARGIN + CONTENT_W - 118, ctx.y - 10);
+  drawStatusBadge(ctx, item.status, MARGIN + CONTENT_W - badgeW, ctx.y - 10, badgeW);
   ctx.y -= 14;
   for (let i = 1; i < titleLines.length; i++) {
     ctx.page.drawText(titleLines[i], { x: MARGIN, y: ctx.y - 10, size: 10, font: ctx.bold, color: NAVY });
@@ -143,8 +178,23 @@ function drawChecklistItem(ctx: Ctx, item: ChecklistReportResult) {
     `Retrieved: ${item.last_retrieval_date ? item.last_retrieval_date.slice(0, 10) : "not retrieved"}`,
   ].join("  |  ");
   drawWrapped(ctx, meta, { size: 8.5, color: GREY });
-  drawWrapped(ctx, `Sources: ${item.source_names.length ? item.source_names.join("; ") : "No independent source evidence"}`, { size: 8.5, color: GREY });
-  if (item.source_urls.length) drawWrapped(ctx, `Source URLs: ${item.source_urls.join("; ")}`, { size: 8.5, color: GREY });
+
+  // Replace long URLs with short labels + footnote numbers.
+  const sourceLabels: string[] = [];
+  const nameList = item.source_names.length ? item.source_names : [];
+  const urlList = item.source_urls;
+  if (nameList.length === 0 && urlList.length === 0) {
+    sourceLabels.push("No independent source evidence");
+  } else {
+    for (let i = 0; i < Math.max(nameList.length, urlList.length); i++) {
+      const name = nameList[i] ?? nameList[0] ?? "";
+      const url = urlList[i] ?? null;
+      const short = shortSourceLabel(name, url);
+      const marker = url ? ` [${footnoteFor(ctx, url)}]` : "";
+      sourceLabels.push(`${short}${marker}`);
+    }
+  }
+  drawWrapped(ctx, `Sources: ${sourceLabels.join("; ")}`, { size: 8.5, color: GREY });
   if (item.paid_connector_dependency) drawWrapped(ctx, `Paid connector dependency: ${item.paid_connector_dependency}`, { size: 8.5, color: GREY });
   drawWrapped(ctx, "Explanation: " + item.explanation, { size: 9.5 });
   if (item.missing_information_required.length) {
@@ -155,6 +205,41 @@ function drawChecklistItem(ctx: Ctx, item: ChecklistReportResult) {
   ctx.y -= 6;
   ctx.page.drawLine({ start: { x: MARGIN, y: ctx.y }, end: { x: MARGIN + CONTENT_W, y: ctx.y }, thickness: 0.5, color: LIGHT });
   ctx.y -= 10;
+}
+
+function drawStatusSummary(ctx: Ctx, checklist: ChecklistReportResult[]) {
+  const order: FindingStatus[] = ["PASS", "CAUTION", "FAIL", "NOT_VERIFIED", "NOT_APPLICABLE"];
+  const counts: Record<FindingStatus, number> = { PASS: 0, CAUTION: 0, FAIL: 0, NOT_VERIFIED: 0, NOT_APPLICABLE: 0 };
+  for (const c of checklist) counts[c.status] = (counts[c.status] ?? 0) + 1;
+
+  ensureSpace(ctx, 70);
+  ctx.y -= 4;
+  drawWrapped(ctx, "Checklist status summary", { size: 11, bold: true, color: NAVY });
+  ctx.y -= 4;
+  const boxH = 34;
+  const cellW = CONTENT_W / order.length;
+  for (let i = 0; i < order.length; i++) {
+    const s = order[i];
+    const x = MARGIN + i * cellW;
+    ctx.page.drawRectangle({ x, y: ctx.y - boxH, width: cellW - 4, height: boxH, color: statusColor(s) });
+    ctx.page.drawText(String(counts[s]), { x: x + 10, y: ctx.y - 20, size: 14, font: ctx.bold, color: rgb(1, 1, 1) });
+    ctx.page.drawText(STATUS_LABEL[s].toUpperCase(), { x: x + 10, y: ctx.y - 30, size: 6.5, font: ctx.bold, color: rgb(1, 1, 1) });
+  }
+  ctx.y -= boxH + 10;
+}
+
+function drawBlockersBox(ctx: Ctx, blockers: string[]) {
+  ensureSpace(ctx, 60);
+  ctx.y -= 4;
+  drawWrapped(ctx, "Critical blockers before payment", { size: 11, bold: true, color: RED });
+  ctx.page.drawRectangle({ x: MARGIN, y: ctx.y - 6, width: CONTENT_W, height: 3, color: RED });
+  ctx.y -= 12;
+  if (blockers.length === 0) {
+    drawWrapped(ctx, "No critical blockers identified from the current evidence set. Item-level findings below remain authoritative.", { size: 9.5, color: TEXT });
+  } else {
+    for (const b of blockers) drawWrapped(ctx, `• ${b}`, { size: 9.5, color: TEXT });
+  }
+  ctx.y -= 6;
 }
 
 function drawCover(ctx: Ctx, r: InvestigationReport) {
@@ -177,34 +262,45 @@ function drawCover(ctx: Ctx, r: InvestigationReport) {
     r.final_outcome === "PROCEED_WITH_SAFEGUARDS" ? AMBER :
     r.final_outcome === "PAUSE_PENDING_CLARIFICATION" ? AMBER : RED;
   ctx.page.drawRectangle({ x: MARGIN, y: ctx.y - 70, width: CONTENT_W, height: 70, color: outcomeColor });
-  ctx.page.drawText("COMMERCIAL RECOMMENDATION", { x: MARGIN + 14, y: ctx.y - 22, size: 9, font: ctx.bold, color: rgb(1, 1, 1) });
-  ctx.page.drawText(outcomeText, { x: MARGIN + 14, y: ctx.y - 50, size: 22, font: ctx.bold, color: rgb(1, 1, 1) });
-  ctx.page.drawText(`Overall risk: ${r.overall_risk_rating.toUpperCase()}`, {
-    x: MARGIN + CONTENT_W - ctx.bold.widthOfTextAtSize(`Overall risk: ${r.overall_risk_rating.toUpperCase()}`, 11) - 14,
+  ctx.page.drawText("Commercial recommendation", { x: MARGIN + 14, y: ctx.y - 22, size: 9, font: ctx.bold, color: rgb(1, 1, 1) });
+  ctx.page.drawText(outcomeText, { x: MARGIN + 14, y: ctx.y - 50, size: 20, font: ctx.bold, color: rgb(1, 1, 1) });
+  const riskLabel = `Overall risk: ${r.overall_risk_rating.charAt(0).toUpperCase() + r.overall_risk_rating.slice(1)}`;
+  ctx.page.drawText(riskLabel, {
+    x: MARGIN + CONTENT_W - ctx.bold.widthOfTextAtSize(riskLabel, 11) - 14,
     y: ctx.y - 45,
     size: 11,
     font: ctx.bold,
     color: rgb(1, 1, 1),
   });
-  ctx.y -= 90;
+  ctx.y -= 82;
 
   drawWrapped(ctx, "Order reference: " + r.order_reference, { size: 10, bold: true });
   drawWrapped(ctx, "Case reference: " + r.case_reference, { size: 10 });
   drawWrapped(ctx, "Prepared for: " + r.customer_input.name + " (" + r.customer_input.company + ")", { size: 10 });
   drawWrapped(ctx, "Destination market: " + r.customer_input.destination_market, { size: 10 });
-  drawWrapped(ctx, "Estimated order value: " + r.customer_input.estimated_order_value, { size: 10 });
-  drawWrapped(ctx, "Report generated: " + r.generated_at.slice(0, 19).replace("T", " ") + " UTC", { size: 10, gap: 14 });
+  drawWrapped(ctx, "Estimated order value: " + humanizeOrderValue(r.customer_input.estimated_order_value), { size: 10 });
+  drawWrapped(ctx, "Report generated: " + r.generated_at.slice(0, 19).replace("T", " ") + " UTC", { size: 10, gap: 10 });
+
+  // First-page status summary (5 badges) and critical-blockers box.
+  drawStatusSummary(ctx, checklistForReport(r));
+  drawBlockersBox(ctx, r.critical_blockers ?? []);
 
   drawSectionHeader(ctx, "Executive summary");
-  drawWrapped(ctx, r.executive_summary || "(not generated)", { gap: 8 });
-  drawWrapped(ctx, `Canonical checklist items: ${checklistForReport(r).length}`, { size: 10, bold: true, color: NAVY });
+  drawWrapped(ctx, r.executive_summary || "(not generated)", { gap: 4 });
 }
 
 export async function renderReportPdf(r: InvestigationReport): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   const regular = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
-  const ctx: Ctx = { doc, page: doc.addPage([PAGE_W, PAGE_H]), y: PAGE_H - MARGIN, regular, bold };
+  const ctx: Ctx = {
+    doc,
+    page: doc.addPage([PAGE_W, PAGE_H]),
+    y: PAGE_H - MARGIN,
+    regular,
+    bold,
+    footnotes: { order: [], index: new Map() },
+  };
 
   drawCover(ctx, r);
 
@@ -233,9 +329,8 @@ export async function renderReportPdf(r: InvestigationReport): Promise<Uint8Arra
   }
 
   newPage(ctx);
-  drawSectionHeader(ctx, "Buyer implications");
+  drawSectionHeader(ctx, "Buyer implications and recommended safeguards");
   drawWrapped(ctx, r.buyer_implications || "Item-level checklist results are authoritative.");
-  drawSectionHeader(ctx, "Recommended safeguards");
   drawWrapped(ctx, r.recommended_safeguards || "Review unresolved checklist items before payment.");
   drawWrapped(ctx, "Payment: " + r.payment_recommendation);
   drawWrapped(ctx, "Pre-shipment inspection: " + r.inspection_recommendation);
@@ -243,13 +338,41 @@ export async function renderReportPdf(r: InvestigationReport): Promise<Uint8Arra
 
   newPage(ctx);
   drawSectionHeader(ctx, "Sources, methodology and limitations");
+  drawWrapped(ctx, "Sources actually queried", { size: 11, bold: true, color: NAVY });
+  if ((r.sources_queried ?? []).length === 0) {
+    drawWrapped(ctx, "No independent source was successfully queried during this run.", { size: 9, color: GREY });
+  } else {
+    for (const s of r.sources_queried ?? []) {
+      const marker = s.url ? ` [${footnoteFor(ctx, s.url)}]` : "";
+      drawWrapped(ctx, `- ${shortSourceLabel(s.name, s.url)}${marker} (retrieved ${s.retrieved_at.slice(0, 10)})`, { size: 9 });
+    }
+  }
+  drawWrapped(ctx, "Customer-provided evidence", { size: 11, bold: true, color: NAVY });
+  if ((r.customer_evidence ?? []).length === 0) {
+    drawWrapped(ctx, "No customer documents were uploaded.", { size: 9, color: GREY });
+  } else {
+    for (const s of r.customer_evidence ?? []) {
+      drawWrapped(ctx, `- ${s.name} (retrieved ${s.retrieved_at.slice(0, 10)})`, { size: 9 });
+    }
+  }
+  drawWrapped(ctx, "Sources unavailable or not configured", { size: 11, bold: true, color: NAVY });
+  if ((r.sources_unavailable ?? []).length === 0) {
+    drawWrapped(ctx, "All expected sources were reachable in this run.", { size: 9, color: GREY });
+  } else {
+    for (const s of r.sources_unavailable ?? []) {
+      drawWrapped(ctx, `- ${s.name}: ${s.reason}`, { size: 9, color: GREY });
+    }
+  }
   drawWrapped(ctx, "Methodology", { size: 11, bold: true, color: NAVY });
   drawWrapped(ctx, r.methodology);
   drawWrapped(ctx, "Limitations", { size: 11, bold: true, color: NAVY });
   drawWrapped(ctx, r.limitations);
-  drawWrapped(ctx, "Sources consulted", { size: 11, bold: true, color: NAVY });
-  for (const s of r.sources_used) {
-    drawWrapped(ctx, `- ${s.name}${s.url ? " - " + s.url : ""} (retrieved ${s.retrieved_at.slice(0, 10)})`, { size: 9 });
+
+  if (ctx.footnotes.order.length > 0) {
+    drawWrapped(ctx, "Source references", { size: 11, bold: true, color: NAVY });
+    for (let i = 0; i < ctx.footnotes.order.length; i++) {
+      drawWrapped(ctx, `[${i + 1}] ${ctx.footnotes.order[i]}`, { size: 8, color: GREY });
+    }
   }
 
   const pages = doc.getPages();

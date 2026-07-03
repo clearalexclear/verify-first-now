@@ -70,17 +70,31 @@ export async function screenWebsiteConsistency(args: {
       ],
       { model: "google/gemini-3-flash-preview" },
     );
+    // Website/domain existence alone is NOT supplier-identity verification. If the legal entity
+    // has not been resolved via a corporate registry, refuse to PASS this check.
+    let status = cls.status;
+    let confidence = cls.confidence;
+    let excerpt = cls.evidence_excerpt;
+    let impact = cls.buyer_impact;
+    let action = cls.recommended_action;
+    if (!args.resolved?.matched && status === "PASS") {
+      status = "NOT_VERIFIED";
+      confidence = "low";
+      excerpt = `Website was fetched and its content did not obviously contradict the supplier claim, but the supplier's registered legal entity has not been resolved. Domain existence is not supplier-identity verification. ${excerpt}`;
+      impact = "The website exists but its company name, contact details, address and domain ownership have not been compared against a verified legal entity.";
+      action = "Verify the supplier's registered legal name/address via QCC or an official registry, then compare against website 'About / Contact' details before treating the website as consistent.";
+    }
     return [{
       section: "digital_footprint",
       item: "Website and domain consistency",
-      status: cls.status,
-      confidence: cls.confidence,
+      status,
+      confidence,
       source_name: scraped.title || args.website,
       source_url: scraped.sourceURL,
       retrieval_date: now,
-      evidence_excerpt: cls.evidence_excerpt,
-      buyer_impact: cls.buyer_impact,
-      recommended_action: cls.recommended_action,
+      evidence_excerpt: excerpt,
+      buyer_impact: impact,
+      recommended_action: action,
     }];
   } catch (e) {
     return [{
@@ -108,18 +122,42 @@ export async function screenCertificates(args: {
       /certificat|cert|iso |ce |fda|reach|rohs/i.test(d.doc_type || ""),
   );
   if (certs.length === 0) {
-    return [{
-      section: "certificates_documents",
-      item: "Certificate and document analysis",
-      status: "NOT_APPLICABLE",
-      confidence: "high",
-      source_name: "Customer uploads",
+    // No uploaded certificates. Absence of evidence is NOT the same as "not applicable"; keep
+    // supplier_document_consistency, certificate_authenticity and product_certificates_test_reports
+    // NOT_VERIFIED and show the customer what to provide.
+    const base = {
+      section: "certificates_documents" as const,
+      status: "NOT_VERIFIED" as const,
+      confidence: "low" as const,
+      source_name: "Customer upload",
       source_url: null,
       retrieval_date: now,
-      evidence_excerpt: "No certificates were uploaded by the customer.",
-      buyer_impact: "Cannot confirm regulatory or quality-system claims.",
-      recommended_action: "Request relevant valid certificates (ISO, CE, FDA, REACH/RoHS) before payment.",
-    }];
+      evidence_ids: [],
+      evidence_classification: "NOT_INDEPENDENTLY_VERIFIED" as const,
+    };
+    return [
+      {
+        ...base,
+        item: "Uploaded supplier documents (business licence, ID)",
+        evidence_excerpt: "No supplier documents were uploaded by the customer. Missing information required: business licence, official company profile.",
+        buyer_impact: "Supplier document consistency cannot be checked without at least a business licence or equivalent registry extract.",
+        recommended_action: "Request the supplier's business licence and one form of official corporate ID, and re-run the check.",
+      },
+      {
+        ...base,
+        item: "Certificate authenticity",
+        evidence_excerpt: "No certificates were uploaded by the customer. Missing information required: relevant certificate scans (ISO, CE, FDA, REACH/RoHS).",
+        buyer_impact: "Certificate authenticity cannot be checked without at least one certificate scan or issuer reference number.",
+        recommended_action: "Request certificates from the supplier and re-run the check.",
+      },
+      {
+        ...base,
+        item: "Product certificates and test reports (CE, FDA, REACH, RoHS)",
+        evidence_excerpt: "No product certificates or test reports were uploaded by the customer. Missing information required: product-specific certificates and lab test reports for the intended SKUs.",
+        buyer_impact: "Product-certificate coverage of the exact SKU cannot be verified without the underlying documents.",
+        recommended_action: "Request product-specific certificates and test reports covering the exact SKU, and re-run the check.",
+      },
+    ];
   }
 
   const out: Finding[] = [];
