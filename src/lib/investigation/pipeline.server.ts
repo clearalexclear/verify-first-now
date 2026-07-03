@@ -4,8 +4,8 @@ import { screenSanctions } from "./sources/opensanctions.server";
 import { screenUflpa } from "./sources/uflpa.server";
 import { screenAdverseMedia, screenLitigation } from "./sources/adverse-media.server";
 import { probeExportHistory, screenCertificates, screenWebsiteConsistency } from "./sources/web-research.server";
-import { runConnectorEvidenceChecks } from "./connectors/findings.server";
-import { buildCanonicalChecklist } from "./checklist";
+import { runConnectorEvidenceChecksDetailed, type ConnectorRunSummary } from "./connectors/findings.server";
+import { applyOutcomeGating, buildCanonicalChecklist } from "./checklist";
 import { computeOutcome, synthesiseNarrative } from "./synthesis.server";
 import { renderReportPdf } from "./pdf.server";
 import { emailReport, emailInvestigationFailed } from "./email.server";
@@ -115,21 +115,37 @@ export async function runInvestigation(
     const nameForScreening = resolved.legal_name_en || order.supplier_company_name;
     const chineseForScreening = resolved.legal_name_local || caseRow.supplier_chinese_name || null;
 
+    const connectorRunPromise = runConnectorEvidenceChecksDetailed({
+      caseId,
+      jobId: opts.jobId ?? null,
+      website: order.website_marketplace_url,
+      productQuery: caseRow.product_category ?? "",
+    });
+
     const settled = await Promise.allSettled([
       screenSanctions({ name: nameForScreening, country: order.supplier_country }),
-      screenUflpa({ name: nameForScreening, destinationMarket }),
+      screenUflpa({
+        statedName: order.supplier_company_name,
+        resolvedNameEn: resolved.legal_name_en,
+        resolvedNameLocal: resolved.legal_name_local ?? caseRow.supplier_chinese_name ?? null,
+        aliases: [],
+        entityResolved: !!resolved.matched,
+        destinationMarket,
+      }),
       screenAdverseMedia({ name: nameForScreening, chineseName: chineseForScreening }),
       screenLitigation({ name: nameForScreening, chineseName: chineseForScreening }),
       screenWebsiteConsistency({ statedName: nameForScreening, website: order.website_marketplace_url, resolved }),
       screenCertificates({ extracted }),
       probeExportHistory({ name: nameForScreening, destinationMarket }),
-      runConnectorEvidenceChecks({
-        caseId,
-        jobId: opts.jobId ?? null,
-        website: order.website_marketplace_url,
-        productQuery: caseRow.product_category ?? "",
-      }),
+      connectorRunPromise.then((r) => r.findings),
     ]);
+
+    let connectorRuns: ConnectorRunSummary[] = [];
+    try {
+      connectorRuns = (await connectorRunPromise).runs;
+    } catch {
+      connectorRuns = [];
+    }
 
     const findings: Finding[] = [];
     for (const result of settled) {
@@ -176,15 +192,65 @@ export async function runInvestigation(
       overall,
     });
 
-    const sourceSet = new Map<string, { name: string; url: string | null; retrieved_at: string }>();
-    for (const s of entitySources) {
-      const k = (s.url || s.name).toLowerCase();
-      if (!sourceSet.has(k)) sourceSet.set(k, { ...s, retrieved_at: new Date().toISOString() });
+    // ------ Sources triage: split into actually queried, customer evidence, and unavailable ------
+    const sourcesQueriedMap = new Map<string, { name: string; url: string | null; retrieved_at: string; category?: string }>();
+    const customerEvidenceMap = new Map<string, { name: string; url: string | null; retrieved_at: string; category?: string }>();
+    const sourcesUnavailable: { name: string; reason: string; category?: string }[] = [];
+
+    // Entity-resolution sources (only listed when they returned useful data)
+    if (resolved.matched) {
+      for (const s of entitySources) {
+        const k = (s.url || s.name).toLowerCase();
+        if (!sourcesQueriedMap.has(k)) sourcesQueriedMap.set(k, { ...s, retrieved_at: new Date().toISOString(), category: "entity_resolution" });
+      }
     }
+    // Customer-provided documents
+    for (const doc of extracted) {
+      const k = `upload:${doc.filename}`.toLowerCase();
+      if (!customerEvidenceMap.has(k)) customerEvidenceMap.set(k, { name: `Customer upload: ${doc.filename}`, url: null, retrieved_at: new Date().toISOString(), category: "customer_upload" });
+    }
+    // Free connectors (RDAP, CPSC) and paid disabled connectors
+    for (const run of connectorRuns) {
+      if (run.status === "success" || run.status === "not_found") {
+        const k = (run.sourceUrl || run.connectorName).toLowerCase();
+        if (!sourcesQueriedMap.has(k)) sourcesQueriedMap.set(k, { name: run.connectorName, url: run.sourceUrl, retrieved_at: run.retrievedAt, category: run.category });
+      } else if (run.status === "not_configured" || run.status === "skipped") {
+        sourcesUnavailable.push({
+          name: run.connectorName,
+          reason: run.reason ?? "Not configured. No API request was made.",
+          category: run.category,
+        });
+      } else if (run.status === "error" || run.status === "rate_limited") {
+        sourcesUnavailable.push({
+          name: run.connectorName,
+          reason: run.reason ?? `Connector returned ${run.status}.`,
+          category: run.category,
+        });
+      }
+    }
+    // Additional queried sources implied by findings we know DID execute (screens that produced
+    // evidence excerpts): UFLPA, sanctions, adverse media, litigation, website consistency,
+    // export history probe. Skip empty ones — no request = not "consulted".
     for (const f of evidenceBackedFindings) {
-      const k = (f.source_url || f.source_name).toLowerCase();
-      if (!sourceSet.has(k)) sourceSet.set(k, { name: f.source_name, url: f.source_url, retrieved_at: f.retrieval_date });
+      if (!f.evidence_excerpt?.trim()) continue;
+      const source = f.source_name || "";
+      // Only include sources that clearly came from an actual retrieval — either official/free
+      // connector or one of our resolvable screens with a URL / snapshot reference.
+      if (
+        /DHS UFLPA Entity List snapshot|OpenSanctions|CPSC recalls|RDAP|Public web search|Firecrawl|Customer upload|Supplier website|Public shipping-data web search/i.test(source) ||
+        f.source_url
+      ) {
+        const k = (f.source_url || source).toLowerCase();
+        if (/Customer upload/i.test(source)) {
+          if (!customerEvidenceMap.has(k)) customerEvidenceMap.set(k, { name: source, url: f.source_url, retrieved_at: f.retrieval_date, category: "customer_upload" });
+        } else {
+          if (!sourcesQueriedMap.has(k)) sourcesQueriedMap.set(k, { name: source, url: f.source_url, retrieved_at: f.retrieval_date, category: "screening" });
+        }
+      }
     }
+
+    const sourcesQueried = Array.from(sourcesQueriedMap.values());
+    const customerEvidence = Array.from(customerEvidenceMap.values());
 
     const report: InvestigationReport = {
       generated_at: new Date().toISOString(),
@@ -222,9 +288,25 @@ export async function runInvestigation(
         "VerifyFirst stores every factual finding as structured evidence before report rendering. Every generated report includes the full 32-item canonical supplier-verification checklist. Paid registry, shipment, IAF and OpenSanctions connectors remain disabled until credentials are supplied. Generic web research is web intelligence only and cannot independently verify corporate registration, shipment history, certificate validity, sanctions status or litigation.",
       limitations:
         "No-result searches are not proof that no record exists. Missing or unconfigured source data is reported as not independently verified. Production-grade QCC, ImportGenius, IAF CertSearch and OpenSanctions results require licensed credentials.",
-      sources_used: Array.from(sourceSet.values()),
+      sources_used: [...sourcesQueried, ...customerEvidence],
+      sources_queried: sourcesQueried,
+      customer_evidence: customerEvidence,
+      sources_unavailable: sourcesUnavailable,
+      critical_blockers: [],
     };
     report.checklist_results = buildCanonicalChecklist(report);
+
+    // Apply post-checklist outcome gating: never allow GO / PROCEED_WITH_SAFEGUARDS while
+    // critical identity, sanctions, or licence items remain NOT_VERIFIED.
+    const gated = applyOutcomeGating(overall, report.checklist_results as any, { paymentDetailsProvided: false });
+    if (gated.outcome !== report.final_outcome || gated.overall !== report.overall_risk_rating) {
+      report.final_outcome = gated.outcome;
+      report.overall_risk_rating = gated.overall;
+      // Refresh the final_outcome checklist item so it reflects the gated recommendation.
+      report.checklist_results = buildCanonicalChecklist(report);
+    }
+    report.critical_blockers = gated.blockers;
+
 
     const share_token = randomToken(40);
     const { data: existing } = await db

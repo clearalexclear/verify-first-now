@@ -11,6 +11,7 @@ import {
   OUTCOME_LABEL,
   SECTION_TITLES,
   STATUS_LABEL,
+  humanizeOrderValue,
   type ReportSectionKey,
 } from "@/lib/investigation/types";
 
@@ -92,7 +93,7 @@ function ReportPage() {
       <div className="print:hidden"><SiteHeader /></div>
       <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 print:py-2">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3 print:hidden">
-          <p className="text-sm text-muted-foreground">Report generated {new Date(r.generated_at).toLocaleString()}</p>
+          <p className="text-sm text-muted-foreground">Report generated {r.generated_at.slice(0, 19).replace("T", " ")} UTC</p>
           <div className="flex gap-2">
             {pdfUrl && (
               <Button asChild variant="outline">
@@ -120,7 +121,7 @@ function ReportPage() {
             <Meta label="Case reference" value={r.case_reference} mono />
             <Meta label="Prepared for" value={`${r.customer_input.name} (${r.customer_input.company})`} />
             <Meta label="Destination market" value={r.customer_input.destination_market} />
-            <Meta label="Estimated order value" value={r.customer_input.estimated_order_value} />
+            <Meta label="Estimated order value" value={humanizeOrderValue(r.customer_input.estimated_order_value)} />
             <Meta label="Product category" value={r.customer_input.product_category} />
           </dl>
         </header>
@@ -185,10 +186,9 @@ function ChecklistItem({ item }: { item: ChecklistReportResult }) {
     <article className="rounded-lg border border-border bg-card p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <p className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground">{item.id}</p>
           <h4 className="font-semibold text-navy">{item.title}</h4>
         </div>
-        <span className={`rounded-full px-3 py-0.5 text-xs font-semibold uppercase ${STATUS_STYLE[item.status]}`}>
+        <span className={`whitespace-nowrap rounded-full px-3 py-0.5 text-xs font-semibold ${STATUS_STYLE[item.status]}`}>
           {STATUS_LABEL[item.status]}
         </span>
       </div>

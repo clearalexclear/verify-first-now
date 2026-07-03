@@ -312,25 +312,79 @@ export function buildCanonicalChecklist(report: InvestigationReport): ChecklistR
   }
   put("factory_vs_trader", factory);
 
-  const mapFinding = (id: ChecklistId, predicate: (finding: Finding) => boolean) => {
-    const match = bestFinding(findings, predicate);
-    if (match) put(id, resultFromFinding(def(id), match));
-  };
+  // -----------------------------------------------------------------------------------------
+  // Evidence -> checklist ALLOWLIST. No generic section-level fallback. Each finding may only
+  // populate the checklist items enumerated here. This prevents e.g. UFLPA evidence from ever
+  // reaching product_certificates_test_reports, or RDAP evidence from independently verifying
+  // website_domain_consistency.
+  // -----------------------------------------------------------------------------------------
+  const ALLOWLIST: Array<{ id: ChecklistId; match: (f: Finding) => boolean }> = [
+    { id: "website_domain_consistency", match: (f) => f.item === "Website and domain consistency" },
+    {
+      id: "supplier_document_consistency",
+      match: (f) =>
+        f.source_name === "Customer upload" ||
+        /uploaded (business licence|supplier document|document)/i.test(f.item) ||
+        f.item.startsWith("Uploaded document") ||
+        f.item.startsWith("Uploaded supplier documents"),
+    },
+    {
+      id: "business_licence_validation",
+      match: (f) => /business licen[cs]e/i.test(`${f.item}`),
+    },
+    {
+      id: "certificate_authenticity",
+      match: (f) =>
+        f.section === "certificates_documents" &&
+        (f.item === "Certificate authenticity" || /^Certificate:/i.test(f.item)),
+    },
+    {
+      id: "iso_management_certificates",
+      match: (f) => /IAF CertSearch|IAF/.test(f.source_name) || /ISO management/i.test(f.item),
+    },
+    {
+      id: "product_certificates_test_reports",
+      match: (f) =>
+        f.section === "certificates_documents" &&
+        /(CE|FDA|REACH|RoHS|test report|Product certificates)/i.test(f.item),
+    },
+    {
+      id: "sanctions_restricted_party",
+      match: (f) => /Sanctions|Restricted-party|OpenSanctions/i.test(`${f.item} ${f.source_name}`) && !/UFLPA/i.test(f.item),
+    },
+    {
+      id: "uflpa_forced_labour",
+      match: (f) => /UFLPA|forced.?labou?r/i.test(f.item) || /UFLPA/i.test(f.source_name),
+    },
+    { id: "litigation_court_records", match: (f) => /Litigation and enforcement/i.test(f.item) },
+    { id: "enforcement_administrative_penalties", match: (f) => /Enforcement|Administrative penalt|Dishonest debtor/i.test(f.item) },
+    { id: "adverse_media", match: (f) => /Adverse media/i.test(f.item) },
+    {
+      id: "us_shipment_export_history",
+      match: (f) => /Export and shipment history|shipment history|ImportGenius/i.test(`${f.item} ${f.source_name}`),
+    },
+    { id: "buyer_customer_history", match: (f) => /Buyer.*history|Known buyer/i.test(f.item) },
+    { id: "product_recall_history", match: (f) => /CPSC recall|Product recall/i.test(f.item) },
+  ];
 
-  mapFinding("website_domain_consistency", (f) => f.item.includes("Website and domain") || f.item.includes("Domain RDAP"));
-  mapFinding("supplier_document_consistency", (f) => /document|upload/i.test(f.item) || f.source_name.includes("Customer upload"));
-  mapFinding("business_licence_validation", (f) => /business licen[cs]e/i.test(`${f.item} ${f.evidence_excerpt}`));
-  mapFinding("certificate_authenticity", (f) => f.section === "certificates_documents" && /certificate/i.test(f.item));
-  mapFinding("iso_management_certificates", (f) => /iso|iaf/i.test(`${f.item} ${f.source_name}`));
-  mapFinding("product_certificates_test_reports", (f) => /ce|fda|reach|rohs|test report|certificate/i.test(`${f.item} ${f.evidence_excerpt}`));
-  mapFinding("sanctions_restricted_party", (f) => /sanctions|restricted-party|opensanctions/i.test(`${f.item} ${f.source_name}`));
-  mapFinding("uflpa_forced_labour", (f) => /uflpa|forced.?labou?r/i.test(`${f.item} ${f.source_name}`));
-  mapFinding("litigation_court_records", (f) => /litigation|court|judgment|lawsuit/i.test(`${f.item} ${f.source_name}`));
-  mapFinding("enforcement_administrative_penalties", (f) => /enforcement|penalt|administrative|dishonest debtor/i.test(`${f.item} ${f.evidence_excerpt}`));
-  mapFinding("adverse_media", (f) => /adverse media/i.test(f.item));
-  mapFinding("us_shipment_export_history", (f) => /shipment|export|importgenius/i.test(`${f.item} ${f.source_name}`));
-  mapFinding("buyer_customer_history", (f) => /buyer|customer history|known buyer/i.test(`${f.item} ${f.evidence_excerpt}`));
-  mapFinding("product_recall_history", (f) => /cpsc|recall/i.test(`${f.item} ${f.source_name}`));
+  // Group findings by target checklist id per the allowlist. A finding whose source or item does
+  // not match any allowlist entry is left as an evidence fact only — it never leaks into an
+  // unrelated checklist item.
+  const grouped = new Map<ChecklistId, Finding[]>();
+  for (const finding of findings) {
+    for (const entry of ALLOWLIST) {
+      if (entry.match(finding)) {
+        const list = grouped.get(entry.id) ?? [];
+        list.push(finding);
+        grouped.set(entry.id, list);
+      }
+    }
+  }
+  const rank: Record<FindingStatus, number> = { FAIL: 5, CAUTION: 4, PASS: 3, NOT_VERIFIED: 2, NOT_APPLICABLE: 1 };
+  for (const [id, list] of grouped.entries()) {
+    const best = list.slice().sort((a, b) => rank[b.status] - rank[a.status])[0];
+    if (best) put(id, resultFromFinding(def(id), best));
+  }
 
   const contact = blank(def("contact_information_consistency"), now);
   if (!hasText(report.supplier_input.contact)) {
@@ -416,6 +470,68 @@ export function buildCanonicalChecklist(report: InvestigationReport): ChecklistR
   put("recommended_next_actions", actions);
 
   return CANONICAL_CHECKLIST.map((item) => byId.get(item.id) ?? blank(item, now));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Final-outcome gating.
+//
+// The commercial recommendation cannot be GO/PROCEED_WITH_SAFEGUARDS while any critical identity
+// or sanctions check remains NOT_VERIFIED. Sanctions/UFLPA FAIL is NO_GO. Otherwise the current
+// deterministic outcome (from computeOutcome) stands.
+// ---------------------------------------------------------------------------------------------
+const CRITICAL_IDENTITY_IDS: ChecklistId[] = [
+  "legal_company_existence",
+  "registration_status",
+  "business_licence_validation",
+  "sanctions_restricted_party",
+];
+
+export interface OutcomeGatingInput {
+  overall: "low" | "medium" | "high" | "critical";
+  outcome: FinalOutcome;
+}
+
+export function applyOutcomeGating(
+  current: OutcomeGatingInput,
+  checklist: ChecklistResult[],
+  opts: { paymentDetailsProvided?: boolean } = {},
+): { overall: OutcomeGatingInput["overall"]; outcome: FinalOutcome; blockers: string[] } {
+  const byId = new Map<string, ChecklistResult>();
+  for (const item of checklist) byId.set(item.id, item);
+  const blockers: string[] = [];
+
+  const anyFail = (ids: string[]) => ids.some((id) => byId.get(id)?.status === "FAIL");
+  const anyNotVerified = (ids: string[]) => ids.filter((id) => byId.get(id)?.status === "NOT_VERIFIED");
+
+  // Sanctions or UFLPA FAIL is a hard NO_GO.
+  if (anyFail(["sanctions_restricted_party", "uflpa_forced_labour"])) {
+    blockers.push("Confirmed sanctions or UFLPA match.");
+    return { overall: "critical", outcome: "NO_GO", blockers };
+  }
+  // Any critical identity item still NOT_VERIFIED forces PAUSE.
+  const unverified = anyNotVerified(CRITICAL_IDENTITY_IDS);
+  if (unverified.length > 0) {
+    for (const id of unverified) {
+      const item = byId.get(id);
+      if (item) blockers.push(`${item.title} is not independently verified.`);
+    }
+  }
+  if (opts.paymentDetailsProvided) {
+    const paymentBeneficiary = byId.get("red_flags_contradictions");
+    if (paymentBeneficiary?.status === "NOT_VERIFIED") {
+      blockers.push("Legal-entity / payment-beneficiary consistency is not independently verified.");
+    }
+  }
+  // Contradictions flagged as FAIL (material identity/payment contradiction) → NO_GO
+  const contradictions = byId.get("red_flags_contradictions");
+  if (contradictions?.status === "FAIL") {
+    blockers.push("Material verified identity/payment-beneficiary contradiction.");
+    return { overall: "critical", outcome: "NO_GO", blockers };
+  }
+  if (blockers.length > 0) {
+    return { overall: current.overall === "critical" ? "critical" : "high", outcome: "PAUSE_PENDING_CLARIFICATION", blockers };
+  }
+  return { overall: current.overall, outcome: current.outcome, blockers };
 }
 
 export function checklistResultsToFindings(results: ChecklistResult[]): Finding[] {

@@ -78,16 +78,32 @@ async function latestSnapshot(): Promise<{ entities: string[]; snapshotVersion: 
 }
 
 export async function screenUflpa(args: {
-  name: string;
+  statedName: string;
+  resolvedNameEn?: string | null;
+  resolvedNameLocal?: string | null;
+  aliases?: string[];
+  entityResolved?: boolean;
   destinationMarket: string;
 }): Promise<Finding[]> {
   const now = new Date().toISOString();
   const isUsBound = /united states|usa|u\.s\.a?\.|^us$/i.test(args.destinationMarket);
-  const target = norm(args.name);
-  if (!target) return [];
+  const candidates = Array.from(new Set([
+    args.statedName,
+    args.resolvedNameEn ?? "",
+    args.resolvedNameLocal ?? "",
+    ...(args.aliases ?? []),
+  ].filter((n) => n && n.trim().length)));
+  if (candidates.length === 0) return [];
 
   const snapshot = await latestSnapshot();
-  const baseFinding = (status: Finding["status"], confidence: Finding["confidence"], evidence: string, impact: string, action: string): Finding => ({
+  const baseFinding = (
+    status: Finding["status"],
+    confidence: Finding["confidence"],
+    evidence: string,
+    impact: string,
+    action: string,
+    classification: Finding["evidence_classification"] = status === "NOT_APPLICABLE" ? "NOT_INDEPENDENTLY_VERIFIED" : "VERIFIED",
+  ): Finding => ({
     section: "sanctions_forced_labour",
     item: "UFLPA (Uyghur Forced Labor Prevention Act) Entity List screening",
     status,
@@ -97,7 +113,7 @@ export async function screenUflpa(args: {
     retrieval_date: snapshot?.retrievalDate ?? now,
     evidence_excerpt: evidence,
     evidence_ids: [],
-    evidence_classification: status === "NOT_APPLICABLE" ? "NOT_INDEPENDENTLY_VERIFIED" : "VERIFIED",
+    evidence_classification: classification,
     buyer_impact: impact,
     recommended_action: action,
   });
@@ -119,20 +135,26 @@ export async function screenUflpa(args: {
       "",
       "No current DHS UFLPA snapshot is stored. A missing snapshot cannot be treated as a pass.",
       "Run the UFLPA refresh process and re-screen before US-bound shipment.",
+      "NOT_INDEPENDENTLY_VERIFIED",
     )];
   }
 
-  let best = { score: 0, entity: "" };
-  for (const e of snapshot.entities) {
-    const score = dice(target, norm(e));
-    if (score > best.score) best = { score, entity: e };
+  // Score every candidate name against every listed entity.
+  let best = { score: 0, entity: "", target: "" };
+  for (const name of candidates) {
+    const target = norm(name);
+    if (!target) continue;
+    for (const e of snapshot.entities) {
+      const score = dice(target, norm(e));
+      if (score > best.score) best = { score, entity: e, target: name };
+    }
   }
 
   if (best.score >= 0.9) {
     return [baseFinding(
       "FAIL",
       "high",
-      `Strong name match (${best.score.toFixed(2)}) to listed entity: "${best.entity}". Snapshot ${snapshot.snapshotVersion}, checksum ${snapshot.checksum}.`,
+      `Strong name match (${best.score.toFixed(2)}) between "${best.target}" and listed entity: "${best.entity}". Snapshot ${snapshot.snapshotVersion}, checksum ${snapshot.checksum}.`,
       "Goods produced wholly or in part by this entity carry a rebuttable presumption of forced-labour use; CBP can detain or exclude the shipment.",
       "Do not proceed without specific UFLPA-compliant documentation reviewed by trade counsel.",
     )];
@@ -141,16 +163,30 @@ export async function screenUflpa(args: {
     return [baseFinding(
       "CAUTION",
       "medium_high",
-      `Partial name similarity (${best.score.toFixed(2)}) to listed entity: "${best.entity}". Snapshot ${snapshot.snapshotVersion}, checksum ${snapshot.checksum}.`,
+      `Partial name similarity (${best.score.toFixed(2)}) between "${best.target}" and listed entity: "${best.entity}". Snapshot ${snapshot.snapshotVersion}, checksum ${snapshot.checksum}.`,
       "Potential UFLPA exposure; ambiguity in the legal-entity identity must be resolved before US-bound shipment.",
       "Confirm exact registered legal name, registration number, and registered address; re-run this check.",
     )];
   }
+
+  // No name match. If the legal entity is NOT resolved, we cannot treat this as a pass;
+  // aliases and the official legal name were not screened.
+  if (!args.entityResolved) {
+    return [baseFinding(
+      "NOT_VERIFIED",
+      "low",
+      `No match found for the submitted name in the stored DHS UFLPA snapshot (${snapshot.entities.length} entries, version ${snapshot.snapshotVersion}). The supplier's verified Chinese legal name, verified English name and known aliases were not screened because the legal entity could not be resolved.`,
+      "Cannot be treated as a UFLPA pass until the legal entity is verified and screened by all names and aliases.",
+      "Resolve the official Chinese legal name (统一社会信用代码) and English legal name via QCC or the State Administration for Market Regulation, then re-run UFLPA screening against all names and known aliases.",
+      "NOT_INDEPENDENTLY_VERIFIED",
+    )];
+  }
+
   return [baseFinding(
     "PASS",
     "medium_high",
-    `No name match to stored DHS UFLPA snapshot (${snapshot.entities.length} extracted entries, version ${snapshot.snapshotVersion}, checksum ${snapshot.checksum}).`,
-    "No listed-entity name match identified in the stored official snapshot.",
+    `No name match to stored DHS UFLPA snapshot for verified names (English: "${args.resolvedNameEn ?? "n/a"}"; local: "${args.resolvedNameLocal ?? "n/a"}"; aliases: ${(args.aliases ?? []).join("; ") || "none"}). Snapshot ${snapshot.snapshotVersion}, ${snapshot.entities.length} entries, checksum ${snapshot.checksum}.`,
+    "No listed-entity name match identified in the stored official snapshot after screening the verified legal names.",
     "For high-risk sectors or Xinjiang-linked supply chains, request supply-chain mapping regardless of name-screening result.",
   )];
 }

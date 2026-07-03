@@ -97,6 +97,19 @@ export interface ChecklistReportResult {
   last_retrieval_date: string | null;
 }
 
+export interface SourceEntry {
+  name: string;
+  url: string | null;
+  retrieved_at: string;
+  category?: string;
+}
+
+export interface UnavailableSource {
+  name: string;
+  reason: string;
+  category?: string;
+}
+
 export interface InvestigationReport {
   generated_at: string;
   order_reference: string;
@@ -131,7 +144,11 @@ export interface InvestigationReport {
   testing_recommendation: string;
   methodology: string;
   limitations: string;
-  sources_used: { name: string; url: string | null; retrieved_at: string }[];
+  sources_used: SourceEntry[];
+  sources_queried?: SourceEntry[];
+  customer_evidence?: SourceEntry[];
+  sources_unavailable?: UnavailableSource[];
+  critical_blockers?: string[];
 }
 
 export const SECTION_TITLES: Record<ReportSectionKey, string> = {
@@ -150,11 +167,33 @@ export const SECTION_TITLES: Record<ReportSectionKey, string> = {
 };
 
 export const OUTCOME_LABEL: Record<FinalOutcome, string> = {
-  GO: "GO",
-  PROCEED_WITH_SAFEGUARDS: "PROCEED WITH SAFEGUARDS",
-  PAUSE_PENDING_CLARIFICATION: "PAUSE PENDING CLARIFICATION",
-  NO_GO: "NO-GO",
+  GO: "Go",
+  PROCEED_WITH_SAFEGUARDS: "Proceed with safeguards",
+  PAUSE_PENDING_CLARIFICATION: "Pause pending clarification",
+  NO_GO: "Do not proceed",
 };
+
+const ORDER_VALUE_LABELS: Record<string, string> = {
+  "under_1k": "Under US$1,000",
+  "1_10k": "US$1,000 – US$10,000",
+  "10_50k": "US$10,000 – US$50,000",
+  "50_100k": "US$50,000 – US$100,000",
+  "100_500k": "US$100,000 – US$500,000",
+  "over_500k": "Over US$500,000",
+};
+
+export function humanizeOrderValue(raw: string | null | undefined): string {
+  if (!raw) return "Not provided";
+  const key = String(raw).trim().toLowerCase();
+  if (ORDER_VALUE_LABELS[key]) return ORDER_VALUE_LABELS[key];
+  // If a bare number, render as USD
+  const n = Number(String(raw).replace(/[^0-9.]/g, ""));
+  if (Number.isFinite(n) && n > 0) {
+    return `US$${n.toLocaleString("en-US")}`;
+  }
+  return String(raw);
+}
+
 
 export const STATUS_LABEL: Record<FindingStatus, string> = {
   PASS: "Pass",
