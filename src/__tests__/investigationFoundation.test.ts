@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { enforceEvidenceIds } from "../lib/investigation/evidence.server";
 import { connectorRegistry } from "../lib/investigation/connectors/registry.server";
 import { jobIdempotencyKey, nextBackoff, testJobIdempotencyKey } from "../lib/investigation/job-queue.server";
@@ -258,5 +258,83 @@ describe("Jiangmen Changwen mock case classification", () => {
       ["Stored official UFLPA snapshot screening", "VERIFIED", "PASS"],
       ["ImportGenius shipment history", "NOT_INDEPENDENTLY_VERIFIED", "NOT_VERIFIED"],
     ]);
+  });
+});
+
+describe("runInvestigation case + order loading", () => {
+  const buildDb = (overrides: {
+    caseRow?: any; caseErr?: any; orderRow?: any; orderErr?: any;
+  }) => {
+    const { caseRow = null, caseErr = null, orderRow = null, orderErr = null } = overrides;
+    return {
+      from(table: string) {
+        const chain: any = {
+          _table: table,
+          select() { return chain; },
+          eq() { return chain; },
+          limit() { return chain; },
+          insert() { return Promise.resolve({ data: null, error: null }); },
+          update() { return chain; },
+          async maybeSingle() {
+            if (table === "supplier_cases") return { data: caseRow, error: caseErr };
+            if (table === "orders") return { data: orderRow, error: orderErr };
+            return { data: null, error: null };
+          },
+        };
+        return chain;
+      },
+    };
+  };
+
+  it("returns preserved supabase error when supplier case query fails", async () => {
+    vi.resetModules();
+    vi.doMock("@/integrations/supabase/client.server", () => ({
+      supabaseAdmin: buildDb({ caseErr: { message: "boom relationship" } }),
+    }));
+    const { runInvestigation } = await import("../lib/investigation/pipeline.server");
+    const res = await runInvestigation("case-1");
+    expect(res).toEqual({ ok: false, error: "Could not load supplier case: boom relationship" });
+  });
+
+  it("returns explicit not-found for missing supplier case", async () => {
+    vi.resetModules();
+    vi.doMock("@/integrations/supabase/client.server", () => ({
+      supabaseAdmin: buildDb({}),
+    }));
+    const { runInvestigation } = await import("../lib/investigation/pipeline.server");
+    const res = await runInvestigation("case-missing");
+    expect(res).toEqual({ ok: false, error: "Supplier case not found for ID: case-missing" });
+  });
+
+  it("returns preserved order error when order query fails", async () => {
+    vi.resetModules();
+    vi.doMock("@/integrations/supabase/client.server", () => ({
+      supabaseAdmin: buildDb({
+        caseRow: { id: "c1", status: "intake_complete" },
+        orderErr: { message: "orders relation error" },
+      }),
+    }));
+    const { runInvestigation } = await import("../lib/investigation/pipeline.server");
+    const res = await runInvestigation("c1");
+    expect(res).toEqual({ ok: false, error: "Could not load order for case c1: orders relation error" });
+  });
+
+  it("advances past case+order loading when both exist (separately queried)", async () => {
+    vi.resetModules();
+    vi.doMock("@/integrations/supabase/client.server", () => ({
+      supabaseAdmin: buildDb({
+        caseRow: { id: "c1", status: "intake_complete", case_reference: "VF-1" },
+        orderRow: {
+          id: "o1", order_reference: "PO-1", supplier_company_name: "Jiangmen Changwen",
+          supplier_country: "China", website_marketplace_url: "https://ex.test",
+          supplier_contact_person: null, customer_name: "C", customer_company: "CC",
+          customer_email: "c@example.test",
+        },
+      }),
+    }));
+    const { runInvestigation } = await import("../lib/investigation/pipeline.server");
+    const res = await runInvestigation("c1");
+    // Must NOT be the generic "Case not found" and must NOT be the case/order-loading branches.
+    expect(res.ok === false ? res.error : "").not.toMatch(/Case not found|Supplier case not found|Could not load supplier case|Could not load order|No order attached/);
   });
 });
