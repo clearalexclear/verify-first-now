@@ -99,7 +99,64 @@ export const runVerifyFirstJiangmen = createServerFn({ method: "POST" })
       .order("version_number", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (rvErr || !rv) throw new Error("No report version was produced");
+
+    if (rvErr || !rv) {
+      // Gather full diagnostic detail so the failure is actionable.
+      const { data: caseRow } = await db
+        .from("supplier_cases")
+        .select("status, investigation_error, investigation_started_at, investigation_completed_at")
+        .eq("id", order.case_id)
+        .maybeSingle();
+      const { data: jobRow } = await db
+        .from("investigation_jobs")
+        .select("id, status, attempt_count, max_attempts, last_error, next_run_at, created_at, completed_at, metadata")
+        .eq("id", runResult.jobId)
+        .maybeSingle();
+      const { data: steps } = await db
+        .from("investigation_steps")
+        .select("step_key, status, attempt_count, max_attempts, last_error, started_at, completed_at")
+        .eq("job_id", runResult.jobId)
+        .order("step_key", { ascending: true });
+
+      const worker: any = runResult.worker ?? {};
+      const pipelineError =
+        (steps ?? []).find((s: any) => s.step_key === "report_generation")?.last_error ??
+        jobRow?.last_error ??
+        caseRow?.investigation_error ??
+        worker?.error ??
+        null;
+
+      return {
+        ok: false as const,
+        caseId: order.case_id as string,
+        orderId: order.id as string,
+        orderReference: order.order_reference as string | null,
+        supplierName: order.supplier_company_name as string | null,
+        tableCheck,
+        reportsBucket: { name: REPORTS_BUCKET, exists: true },
+        uflpa,
+        supplierCase: caseRow ?? null,
+        job: jobRow
+          ? {
+              id: jobRow.id,
+              status: jobRow.status,
+              attemptCount: jobRow.attempt_count,
+              maxAttempts: jobRow.max_attempts,
+              lastError: jobRow.last_error,
+              nextRunAt: jobRow.next_run_at,
+              createdAt: jobRow.created_at,
+              completedAt: jobRow.completed_at,
+              metadata: jobRow.metadata,
+              created: runResult.jobCreated,
+            }
+          : { id: runResult.jobId, created: runResult.jobCreated, status: "unknown" },
+        steps: steps ?? [],
+        worker,
+        pipelineError,
+        error: "No report version was produced",
+      };
+    }
+
 
     const snapshot: any = rv.snapshot ?? {};
     const checklist: any[] = Array.isArray(snapshot.checklist_results) ? snapshot.checklist_results : [];
