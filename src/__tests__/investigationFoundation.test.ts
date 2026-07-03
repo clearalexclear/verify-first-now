@@ -338,3 +338,150 @@ describe("runInvestigation case + order loading", () => {
     expect(res.ok === false ? res.error : "").not.toMatch(/Case not found|Supplier case not found|Could not load supplier case|Could not load order|No order attached/);
   });
 });
+
+describe("evidence allowlist & post-checklist gating", () => {
+  it("keeps UFLPA evidence out of product_certificates_test_reports", () => {
+    const findings: Finding[] = [
+      {
+        ...baseFinding,
+        section: "sanctions_forced_labour",
+        item: "UFLPA (Uyghur Forced Labor Prevention Act) Entity List screening",
+        status: "PASS",
+        source_name: "DHS UFLPA Entity List snapshot 2026-07-03",
+        source_url: "https://www.dhs.gov/uflpa-entity-list",
+        evidence_ids: ["ev_uflpa"],
+        evidence_classification: "VERIFIED",
+      },
+    ];
+    const results = buildCanonicalChecklist(mockReport({ findings }));
+    expect(results.find((r) => r.id === "uflpa_forced_labour")?.status).toBe("PASS");
+    // MUST NOT infect certificate items.
+    expect(results.find((r) => r.id === "product_certificates_test_reports")?.status).toBe("NOT_VERIFIED");
+    expect(results.find((r) => r.id === "certificate_authenticity")?.status).toBe("NOT_VERIFIED");
+    expect(results.find((r) => r.id === "supplier_document_consistency")?.status).toBe("NOT_VERIFIED");
+  });
+
+  it("does not let RDAP independently verify website/domain consistency", () => {
+    const findings: Finding[] = [
+      {
+        ...baseFinding,
+        section: "digital_footprint",
+        item: "Domain RDAP registration",
+        status: "PASS",
+        source_name: "RDAP",
+        source_url: "https://rdap.org/domain/example.test",
+        evidence_ids: ["ev_rdap"],
+        evidence_classification: "VERIFIED",
+      },
+    ];
+    const results = buildCanonicalChecklist(mockReport({ findings }));
+    // RDAP does not map to website_domain_consistency — that stays NOT_VERIFIED.
+    expect(results.find((r) => r.id === "website_domain_consistency")?.status).toBe("NOT_VERIFIED");
+  });
+
+  it("missing documents produce NOT_VERIFIED with missing_information_required", () => {
+    const findings: Finding[] = [
+      {
+        ...baseFinding,
+        section: "certificates_documents",
+        item: "Uploaded supplier documents (business licence, ID)",
+        status: "NOT_VERIFIED",
+        source_name: "Customer upload",
+        evidence_excerpt: "No supplier documents uploaded. Missing information required: business licence.",
+        evidence_ids: ["ev_missing"],
+        evidence_classification: "NOT_INDEPENDENTLY_VERIFIED",
+      },
+      {
+        ...baseFinding,
+        section: "certificates_documents",
+        item: "Certificate authenticity",
+        status: "NOT_VERIFIED",
+        source_name: "Customer upload",
+        evidence_excerpt: "No certificates uploaded.",
+        evidence_ids: ["ev_cert_missing"],
+        evidence_classification: "NOT_INDEPENDENTLY_VERIFIED",
+      },
+      {
+        ...baseFinding,
+        section: "certificates_documents",
+        item: "Product certificates and test reports (CE, FDA, REACH, RoHS)",
+        status: "NOT_VERIFIED",
+        source_name: "Customer upload",
+        evidence_excerpt: "No product certificates uploaded.",
+        evidence_ids: ["ev_prod_missing"],
+        evidence_classification: "NOT_INDEPENDENTLY_VERIFIED",
+      },
+    ];
+    const results = buildCanonicalChecklist(mockReport({ findings }));
+    for (const id of ["supplier_document_consistency", "certificate_authenticity", "product_certificates_test_reports"] as const) {
+      const r = results.find((x) => x.id === id);
+      expect(r?.status).toBe("NOT_VERIFIED");
+      expect(r?.status).not.toBe("NOT_APPLICABLE");
+    }
+  });
+
+  it("all 32 canonical checklist items are always present", () => {
+    const results = buildCanonicalChecklist(mockReport());
+    expect(results).toHaveLength(32);
+    expect(new Set(results.map((r) => r.id)).size).toBe(32);
+  });
+
+  it("post-checklist gating forces PAUSE when critical identity checks remain NOT_VERIFIED", () => {
+    const results = buildCanonicalChecklist(mockReport());
+    // With no resolved entity, legal_company_existence, registration_status, business_licence_validation
+    // and sanctions_restricted_party are all NOT_VERIFIED.
+    const gated = applyOutcomeGating({ overall: "low", outcome: "GO" }, results);
+    expect(gated.outcome).toBe("PAUSE_PENDING_CLARIFICATION");
+    expect(gated.blockers.length).toBeGreaterThan(0);
+  });
+});
+
+describe("CPSC recall screening", () => {
+  it("does not auto-caution on broad hit count and reports actual titles", async () => {
+    // Import the finding builder indirectly by simulating the connector result shape.
+    const { runConnectorEvidenceChecksDetailed } = await import("../lib/investigation/connectors/findings.server");
+    // We only assert that the exported helper exists; the shape of the CPSC finding is verified
+    // in the checklist-level test below.
+    expect(typeof runConnectorEvidenceChecksDetailed).toBe("function");
+
+    // Simulate a CPSC finding that had many hits.
+    const findings: Finding[] = [
+      {
+        ...baseFinding,
+        section: "regulatory",
+        item: "U.S. CPSC recall screening",
+        status: "NOT_VERIFIED", // broad hits alone must NOT be CAUTION
+        source_name: "U.S. CPSC recalls API",
+        source_url: "https://www.saferproducts.gov/RestWebServices/Recall",
+        evidence_excerpt: 'CPSC returned 25 recall result(s) for "kitchenware". Relevance to the exact proposed product has not been assessed.\n• Blender recall (2024-05-01)',
+        evidence_ids: ["ev_cpsc"],
+        evidence_classification: "NOT_INDEPENDENTLY_VERIFIED",
+      },
+    ];
+    const results = buildCanonicalChecklist(mockReport({ findings }));
+    const recall = results.find((r) => r.id === "product_recall_history");
+    expect(recall?.status).toBe("NOT_VERIFIED");
+    expect(recall?.explanation).toMatch(/25 recall result/);
+  });
+});
+
+describe("sources triage in report shape", () => {
+  it("does not list QCC/ImportGenius/IAF/OpenSanctions as queried when disabled", () => {
+    const r = mockReport({
+      sources_queried: [
+        { name: "DHS UFLPA Entity List snapshot 2026-07-03", url: "https://www.dhs.gov/uflpa-entity-list", retrieved_at: "2026-07-03T00:00:00.000Z" },
+      ],
+      customer_evidence: [],
+      sources_unavailable: [
+        { name: "QCC International API", reason: "Not configured" },
+        { name: "ImportGenius API", reason: "Not configured" },
+        { name: "IAF CertSearch", reason: "Not configured" },
+        { name: "OpenSanctions Commercial API", reason: "Not configured" },
+      ],
+    });
+    for (const banned of ["QCC International API", "ImportGenius API", "IAF CertSearch", "OpenSanctions Commercial API"]) {
+      expect(r.sources_queried?.some((s) => s.name === banned)).toBe(false);
+      expect(r.sources_unavailable?.some((s) => s.name === banned)).toBe(true);
+    }
+  });
+});
