@@ -43,12 +43,15 @@ export async function runInvestigationWorkerOnce(
       jobId: job.id,
       caseId: job.case_id,
       stepKey: "report_generation",
-      fn: async () =>
-        runInvestigation(job.case_id, {
+      fn: async () => {
+        const result = await runInvestigation(job.case_id, {
           jobId: job.id,
           deliver: opts.deliver ?? true,
           allowRerun: opts.allowRerun ?? false,
-        }),
+        });
+        if (!result.ok) throw new Error(result.error);
+        return result;
+      },
     });
     await markJobSucceeded(job.id);
     return { claimed: true, jobId: job.id, status: "succeeded" as const };
