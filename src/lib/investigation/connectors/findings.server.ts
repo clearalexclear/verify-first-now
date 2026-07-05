@@ -1,6 +1,7 @@
 import type { Finding } from "../types";
 import { getConnector, persistConnectorRun } from "./registry.server";
 import type { ConnectorResult, InvestigationConnector } from "./types";
+import { loadManualEvidenceFindings, MANUAL_SOURCE, MANUAL_SOURCE_LABEL } from "../sources/manual-evidence.server";
 
 const PAID_DISABLED_CONNECTORS = [
   "qcc_corporate_registry",
@@ -101,11 +102,11 @@ function cpscFinding(result: ConnectorResult, evidenceIds: string[], query: stri
   const topLines = recalls.slice(0, 5).map((r: any) => {
     const title = r?.title ?? r?.recallNumber ?? "untitled";
     const date = r?.date ? String(r.date).slice(0, 10) : "no date";
-    const brand = Array.isArray(r?.manufacturers) && r.manufacturers.length ? ` — brand: ${r.manufacturers.join(", ")}` : "";
+    const brand = Array.isArray(r?.manufacturers) && r.manufacturers.length ? ` - brand: ${r.manufacturers.join(", ")}` : "";
     const models = Array.isArray(r?.products) && r.products.length
-      ? ` — products: ${r.products.map((p: any) => [p.name, p.model].filter(Boolean).join(" ")).filter(Boolean).slice(0, 3).join("; ")}`
+      ? ` - products: ${r.products.map((p: any) => [p.name, p.model].filter(Boolean).join(" ")).filter(Boolean).slice(0, 3).join("; ")}`
       : "";
-    return `• ${title} (${date})${brand}${models}${r?.url ? ` — ${r.url}` : ""}`;
+    return `- ${title} (${date})${brand}${models}${r?.url ? ` - ${r.url}` : ""}`;
   }).join("\n");
   return {
     section: "regulatory",
@@ -172,6 +173,21 @@ export async function runConnectorEvidenceChecksDetailed(args: {
       reason: reason ?? result.error ?? null,
     });
   };
+
+  const manualFindings = await loadManualEvidenceFindings(args.caseId);
+  if (manualFindings.length > 0) {
+    findings.push(...manualFindings);
+    runs.push({
+      connectorId: MANUAL_SOURCE,
+      connectorName: MANUAL_SOURCE_LABEL,
+      category: "manual_evidence",
+      status: "success",
+      mode: "mock",
+      sourceUrl: null,
+      retrievedAt: new Date().toISOString(),
+      reason: `${manualFindings.length} active manual evidence ${manualFindings.length === 1 ? "entry" : "entries"}`,
+    });
+  }
 
   for (const id of PAID_DISABLED_CONNECTORS) {
     const connector = getConnector(id);
