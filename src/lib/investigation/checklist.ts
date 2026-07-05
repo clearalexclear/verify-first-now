@@ -9,6 +9,9 @@ import type {
   ResolvedEntity,
 } from "./types";
 
+const MANUAL_SOURCE = "manual_analyst_entry";
+const MANUAL_SOURCE_LABEL = "Analyst verification";
+
 export type ChecklistId =
   | "legal_company_existence"
   | "chinese_legal_name"
@@ -162,8 +165,16 @@ function sourceIsFirecrawl(sourceName: string): boolean {
   return /firecrawl|web search|public shipping-data web search/i.test(sourceName);
 }
 
+function sourceIsManual(sourceName: string): boolean {
+  return sourceName === MANUAL_SOURCE || sourceName === MANUAL_SOURCE_LABEL;
+}
+
+function displaySourceName(sourceName: string): string {
+  return sourceIsManual(sourceName) ? MANUAL_SOURCE_LABEL : sourceName;
+}
+
 function resultFromFinding(def: ChecklistDefinition, finding: Finding): ChecklistResult {
-  const sourceNames = unique([finding.source_name]);
+  const sourceNames = unique([displaySourceName(finding.source_name)]);
   const sourceUrls = unique([finding.source_url]);
   let status = finding.status;
   let classification = finding.evidence_classification ?? "NOT_INDEPENDENTLY_VERIFIED";
@@ -178,9 +189,12 @@ function resultFromFinding(def: ChecklistDefinition, finding: Finding): Checklis
     status = "NOT_VERIFIED";
     classification = "NOT_INDEPENDENTLY_VERIFIED";
     confidence = "low";
+  } else if (classification === "SUPPLIER_CLAIMED" || classification === "NOT_INDEPENDENTLY_VERIFIED") {
+    status = status === "NOT_APPLICABLE" ? "NOT_APPLICABLE" : "NOT_VERIFIED";
+    confidence = classification === "SUPPLIER_CLAIMED" ? confidence : "low";
   } else if (sourceIsFirecrawl(finding.source_name)) {
     classification = classification === "VERIFIED" ? "INFERRED" : classification;
-  } else if (!sourceIsOfficial(finding.source_name) && classification === "VERIFIED") {
+  } else if (!sourceIsOfficial(finding.source_name) && !sourceIsManual(finding.source_name) && classification === "VERIFIED") {
     classification = "CORROBORATED";
   }
 
@@ -277,6 +291,11 @@ function outcomeToStatus(outcome: FinalOutcome): FindingStatus {
   return "CAUTION";
 }
 
+function manualChecklistId(finding: Finding): ChecklistId | null {
+  if (!sourceIsManual(finding.source_name)) return null;
+  return CANONICAL_CHECKLIST.find((item) => item.title === finding.item || item.id === finding.item)?.id ?? null;
+}
+
 export function buildCanonicalChecklist(report: InvestigationReport): ChecklistResult[] {
   const now = report.generated_at || new Date().toISOString();
   const byId = new Map<ChecklistId, ChecklistResult>();
@@ -312,12 +331,6 @@ export function buildCanonicalChecklist(report: InvestigationReport): ChecklistR
   }
   put("factory_vs_trader", factory);
 
-  // -----------------------------------------------------------------------------------------
-  // Evidence -> checklist ALLOWLIST. No generic section-level fallback. Each finding may only
-  // populate the checklist items enumerated here. This prevents e.g. UFLPA evidence from ever
-  // reaching product_certificates_test_reports, or RDAP evidence from independently verifying
-  // website_domain_consistency.
-  // -----------------------------------------------------------------------------------------
   const ALLOWLIST: Array<{ id: ChecklistId; match: (f: Finding) => boolean }> = [
     { id: "website_domain_consistency", match: (f) => f.item === "Website and domain consistency" },
     {
@@ -328,50 +341,39 @@ export function buildCanonicalChecklist(report: InvestigationReport): ChecklistR
         f.item.startsWith("Uploaded document") ||
         f.item.startsWith("Uploaded supplier documents"),
     },
-    {
-      id: "business_licence_validation",
-      match: (f) => /business licen[cs]e/i.test(`${f.item}`),
-    },
+    { id: "business_licence_validation", match: (f) => /business licen[cs]e/i.test(`${f.item}`) },
     {
       id: "certificate_authenticity",
       match: (f) =>
         f.section === "certificates_documents" &&
         (f.item === "Certificate authenticity" || /^Certificate:/i.test(f.item)),
     },
-    {
-      id: "iso_management_certificates",
-      match: (f) => /IAF CertSearch|IAF/.test(f.source_name) || /ISO management/i.test(f.item),
-    },
+    { id: "iso_management_certificates", match: (f) => /IAF CertSearch|IAF/.test(f.source_name) || /ISO management/i.test(f.item) },
     {
       id: "product_certificates_test_reports",
       match: (f) =>
         f.section === "certificates_documents" &&
         /(CE|FDA|REACH|RoHS|test report|Product certificates)/i.test(f.item),
     },
-    {
-      id: "sanctions_restricted_party",
-      match: (f) => /Sanctions|Restricted-party|OpenSanctions/i.test(`${f.item} ${f.source_name}`) && !/UFLPA/i.test(f.item),
-    },
-    {
-      id: "uflpa_forced_labour",
-      match: (f) => /UFLPA|forced.?labou?r/i.test(f.item) || /UFLPA/i.test(f.source_name),
-    },
+    { id: "sanctions_restricted_party", match: (f) => /Sanctions|Restricted-party|OpenSanctions/i.test(`${f.item} ${f.source_name}`) && !/UFLPA/i.test(f.item) },
+    { id: "uflpa_forced_labour", match: (f) => /UFLPA|forced.?labou?r/i.test(f.item) || /UFLPA/i.test(f.source_name) },
     { id: "litigation_court_records", match: (f) => /Litigation and enforcement/i.test(f.item) },
     { id: "enforcement_administrative_penalties", match: (f) => /Enforcement|Administrative penalt|Dishonest debtor/i.test(f.item) },
     { id: "adverse_media", match: (f) => /Adverse media/i.test(f.item) },
-    {
-      id: "us_shipment_export_history",
-      match: (f) => /Export and shipment history|shipment history|ImportGenius/i.test(`${f.item} ${f.source_name}`),
-    },
+    { id: "us_shipment_export_history", match: (f) => /Export and shipment history|shipment history|ImportGenius/i.test(`${f.item} ${f.source_name}`) },
     { id: "buyer_customer_history", match: (f) => /Buyer.*history|Known buyer/i.test(f.item) },
     { id: "product_recall_history", match: (f) => /CPSC recall|Product recall/i.test(f.item) },
   ];
 
-  // Group findings by target checklist id per the allowlist. A finding whose source or item does
-  // not match any allowlist entry is left as an evidence fact only — it never leaks into an
-  // unrelated checklist item.
   const grouped = new Map<ChecklistId, Finding[]>();
   for (const finding of findings) {
+    const manualId = manualChecklistId(finding);
+    if (manualId) {
+      const list = grouped.get(manualId) ?? [];
+      list.push(finding);
+      grouped.set(manualId, list);
+      continue;
+    }
     for (const entry of ALLOWLIST) {
       if (entry.match(finding)) {
         const list = grouped.get(entry.id) ?? [];
@@ -421,7 +423,7 @@ export function buildCanonicalChecklist(report: InvestigationReport): ChecklistR
     contradictionResult.status = contradictions.some((item) => /bank beneficiary|sanction|restricted/i.test(item)) ? "FAIL" : "CAUTION";
     contradictionResult.evidence_classification = "CONTRADICTED";
     contradictionResult.confidence = "medium";
-    contradictionResult.source_names = unique(findings.flatMap((f) => f.evidence_excerpt ? [f.source_name] : []));
+    contradictionResult.source_names = unique(findings.flatMap((f) => f.evidence_excerpt ? [displaySourceName(f.source_name)] : []));
     contradictionResult.source_urls = unique(findings.flatMap((f) => f.source_url ? [f.source_url] : []));
     contradictionResult.evidence_ids = unique(findings.flatMap((f) => f.evidence_ids ?? []));
     contradictionResult.explanation = contradictions.join(" ");
@@ -472,13 +474,6 @@ export function buildCanonicalChecklist(report: InvestigationReport): ChecklistR
   return CANONICAL_CHECKLIST.map((item) => byId.get(item.id) ?? blank(item, now));
 }
 
-// ---------------------------------------------------------------------------------------------
-// Final-outcome gating.
-//
-// The commercial recommendation cannot be GO/PROCEED_WITH_SAFEGUARDS while any critical identity
-// or sanctions check remains NOT_VERIFIED. Sanctions/UFLPA FAIL is NO_GO. Otherwise the current
-// deterministic outcome (from computeOutcome) stands.
-// ---------------------------------------------------------------------------------------------
 const CRITICAL_IDENTITY_IDS: ChecklistId[] = [
   "legal_company_existence",
   "registration_status",
@@ -503,12 +498,10 @@ export function applyOutcomeGating(
   const anyFail = (ids: string[]) => ids.some((id) => byId.get(id)?.status === "FAIL");
   const anyNotVerified = (ids: string[]) => ids.filter((id) => byId.get(id)?.status === "NOT_VERIFIED");
 
-  // Sanctions or UFLPA FAIL is a hard NO_GO.
   if (anyFail(["sanctions_restricted_party", "uflpa_forced_labour"])) {
     blockers.push("Confirmed sanctions or UFLPA match.");
     return { overall: "critical", outcome: "NO_GO", blockers };
   }
-  // Any critical identity item still NOT_VERIFIED forces PAUSE.
   const unverified = anyNotVerified(CRITICAL_IDENTITY_IDS);
   if (unverified.length > 0) {
     for (const id of unverified) {
@@ -522,7 +515,6 @@ export function applyOutcomeGating(
       blockers.push("Legal-entity / payment-beneficiary consistency is not independently verified.");
     }
   }
-  // Contradictions flagged as FAIL (material identity/payment contradiction) → NO_GO
   const contradictions = byId.get("red_flags_contradictions");
   if (contradictions?.status === "FAIL") {
     blockers.push("Material verified identity/payment-beneficiary contradiction.");
