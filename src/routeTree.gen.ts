@@ -24,6 +24,7 @@ import { Route as OrderStatusTokenRouteImport } from './routes/order.status.$tok
 import { Route as ApiStripeWebhookRouteImport } from './routes/api/stripe/webhook'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
 import { Route as AuthenticatedAdminTemplatesRouteImport } from './routes/_authenticated/admin/templates'
+import { Route as AuthenticatedAdminManualEvidenceRouteImport } from './routes/_authenticated/admin/manual-evidence'
 import { Route as ApiPublicInvestigateCaseIdRouteImport } from './routes/api/public/investigate.$caseId'
 import { Route as AuthenticatedAdminCasesCaseIdRouteImport } from './routes/_authenticated/admin/cases.$caseId'
 
@@ -102,6 +103,12 @@ const AuthenticatedAdminTemplatesRoute =
     path: '/templates',
     getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
+const AuthenticatedAdminManualEvidenceRoute =
+  AuthenticatedAdminManualEvidenceRouteImport.update({
+    id: '/manual-evidence',
+    path: '/manual-evidence',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
 const ApiPublicInvestigateCaseIdRoute =
   ApiPublicInvestigateCaseIdRouteImport.update({
     id: '/api/public/investigate/$caseId',
@@ -125,6 +132,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AuthenticatedAdminRouteRouteWithChildren
   '/r/$shareToken': typeof RShareTokenRoute
   '/upload/$token': typeof UploadTokenRoute
+  '/admin/manual-evidence': typeof AuthenticatedAdminManualEvidenceRoute
   '/admin/templates': typeof AuthenticatedAdminTemplatesRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
@@ -142,6 +150,7 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/r/$shareToken': typeof RShareTokenRoute
   '/upload/$token': typeof UploadTokenRoute
+  '/admin/manual-evidence': typeof AuthenticatedAdminManualEvidenceRoute
   '/admin/templates': typeof AuthenticatedAdminTemplatesRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
@@ -162,6 +171,7 @@ export interface FileRoutesById {
   '/_authenticated/admin': typeof AuthenticatedAdminRouteRouteWithChildren
   '/r/$shareToken': typeof RShareTokenRoute
   '/upload/$token': typeof UploadTokenRoute
+  '/_authenticated/admin/manual-evidence': typeof AuthenticatedAdminManualEvidenceRoute
   '/_authenticated/admin/templates': typeof AuthenticatedAdminTemplatesRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
@@ -182,6 +192,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/r/$shareToken'
     | '/upload/$token'
+    | '/admin/manual-evidence'
     | '/admin/templates'
     | '/admin/users'
     | '/api/stripe/webhook'
@@ -199,6 +210,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/r/$shareToken'
     | '/upload/$token'
+    | '/admin/manual-evidence'
     | '/admin/templates'
     | '/admin/users'
     | '/api/stripe/webhook'
@@ -218,6 +230,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin'
     | '/r/$shareToken'
     | '/upload/$token'
+    | '/_authenticated/admin/manual-evidence'
     | '/_authenticated/admin/templates'
     | '/_authenticated/admin/users'
     | '/api/stripe/webhook'
@@ -348,6 +361,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminTemplatesRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
+    '/_authenticated/admin/manual-evidence': {
+      id: '/_authenticated/admin/manual-evidence'
+      path: '/manual-evidence'
+      fullPath: '/admin/manual-evidence'
+      preLoaderRoute: typeof AuthenticatedAdminManualEvidenceRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
     '/api/public/investigate/$caseId': {
       id: '/api/public/investigate/$caseId'
       path: '/api/public/investigate/$caseId'
@@ -366,6 +386,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedAdminRouteRouteChildren {
+  AuthenticatedAdminManualEvidenceRoute: typeof AuthenticatedAdminManualEvidenceRoute
   AuthenticatedAdminTemplatesRoute: typeof AuthenticatedAdminTemplatesRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
@@ -374,6 +395,7 @@ interface AuthenticatedAdminRouteRouteChildren {
 
 const AuthenticatedAdminRouteRouteChildren: AuthenticatedAdminRouteRouteChildren =
   {
+    AuthenticatedAdminManualEvidenceRoute: AuthenticatedAdminManualEvidenceRoute,
     AuthenticatedAdminTemplatesRoute: AuthenticatedAdminTemplatesRoute,
     AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
     AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,

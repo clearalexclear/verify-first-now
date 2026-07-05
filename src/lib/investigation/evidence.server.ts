@@ -1,3 +1,4 @@
+import { MANUAL_SOURCE } from "./sources/manual-evidence.server";
 import type { EvidenceClassification, Finding } from "./types";
 
 function inferClassification(finding: Finding): EvidenceClassification {
@@ -58,6 +59,14 @@ export async function persistFindingEvidence(caseId: string, findings: Finding[]
   const out: Finding[] = [];
 
   for (const finding of findings) {
+    if (finding.source_name === MANUAL_SOURCE && (finding.evidence_ids ?? []).length > 0) {
+      out.push({
+        ...finding,
+        evidence_classification: finding.evidence_classification ?? inferClassification(finding),
+      });
+      continue;
+    }
+
     if (!finding.evidence_excerpt?.trim()) {
       out.push({
         ...finding,
