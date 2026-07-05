@@ -194,7 +194,7 @@ function resultFromFinding(def: ChecklistDefinition, finding: Finding): Checklis
     confidence = classification === "SUPPLIER_CLAIMED" ? confidence : "low";
   } else if (sourceIsFirecrawl(finding.source_name)) {
     classification = classification === "VERIFIED" ? "INFERRED" : classification;
-  } else if (!sourceIsOfficial(finding.source_name) && !sourceIsManual(finding.source_name) && classification === "VERIFIED") {
+  } else if (!sourceIsOfficial(finding.source_name) && classification === "VERIFIED") {
     classification = "CORROBORATED";
   }
 
@@ -291,11 +291,6 @@ function outcomeToStatus(outcome: FinalOutcome): FindingStatus {
   return "CAUTION";
 }
 
-function manualChecklistId(finding: Finding): ChecklistId | null {
-  if (!sourceIsManual(finding.source_name)) return null;
-  return CANONICAL_CHECKLIST.find((item) => item.title === finding.item || item.id === finding.item)?.id ?? null;
-}
-
 export function buildCanonicalChecklist(report: InvestigationReport): ChecklistResult[] {
   const now = report.generated_at || new Date().toISOString();
   const byId = new Map<ChecklistId, ChecklistResult>();
@@ -331,7 +326,12 @@ export function buildCanonicalChecklist(report: InvestigationReport): ChecklistR
   }
   put("factory_vs_trader", factory);
 
+  const manualAllowlist = CANONICAL_CHECKLIST.map((item) => ({
+    id: item.id,
+    match: (f: Finding) => f.source_name === MANUAL_SOURCE && f.item === item.title,
+  }));
   const ALLOWLIST: Array<{ id: ChecklistId; match: (f: Finding) => boolean }> = [
+    ...manualAllowlist,
     { id: "website_domain_consistency", match: (f) => f.item === "Website and domain consistency" },
     {
       id: "supplier_document_consistency",
@@ -367,13 +367,6 @@ export function buildCanonicalChecklist(report: InvestigationReport): ChecklistR
 
   const grouped = new Map<ChecklistId, Finding[]>();
   for (const finding of findings) {
-    const manualId = manualChecklistId(finding);
-    if (manualId) {
-      const list = grouped.get(manualId) ?? [];
-      list.push(finding);
-      grouped.set(manualId, list);
-      continue;
-    }
     for (const entry of ALLOWLIST) {
       if (entry.match(finding)) {
         const list = grouped.get(entry.id) ?? [];
