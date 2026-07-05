@@ -2,8 +2,9 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { CANONICAL_CHECKLIST, type ChecklistId } from "@/lib/investigation/checklist";
-import { MANUAL_SOURCE, confidenceForManualClassification } from "@/lib/investigation/sources/manual-evidence.server";
-import type { EvidenceClassification } from "@/lib/investigation/types";
+import type { EvidenceClassification, FindingConfidence } from "@/lib/investigation/types";
+
+const MANUAL_SOURCE = "manual_analyst_entry";
 
 const CLASSIFICATIONS = [
   "VERIFIED",
@@ -19,6 +20,13 @@ const AttachmentSchema = z.object({
   contentType: z.string().min(1),
   fileBase64: z.string().min(1),
 });
+
+function confidenceForManualClassification(classification: EvidenceClassification): FindingConfidence {
+  if (classification === "VERIFIED") return "high";
+  if (classification === "CORROBORATED" || classification === "CONTRADICTED") return "medium_high";
+  if (classification === "SUPPLIER_CLAIMED" || classification === "INFERRED") return "medium";
+  return "low";
+}
 
 async function assertStaff(supabase: any, userId: string) {
   const { data, error } = await supabase
