@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { buildCanonicalChecklist, CANONICAL_CHECKLIST, applyOutcomeGating } from "../lib/investigation/checklist";
+import { describe, expect, it, vi } from "vitest";
+import { applyOutcomeGating, buildCanonicalChecklist, CANONICAL_CHECKLIST, checklistResultsToFindings } from "../lib/investigation/checklist";
 import { manualEvidenceRowToFinding, MANUAL_SOURCE } from "../lib/investigation/sources/manual-evidence.server";
 import { renderReportPdf } from "../lib/investigation/pdf.server";
+import { computeOutcome } from "../lib/investigation/synthesis.server";
 import type { EvidenceClassification, Finding, InvestigationReport, ResolvedEntity } from "../lib/investigation/types";
 
 const baseResolvedEntity: ResolvedEntity = {
@@ -85,6 +86,13 @@ function manualFinding(checklistId: string, classification: EvidenceClassificati
   return finding;
 }
 
+function finalOutcomeForFindings(findings: Finding[]) {
+  const report = mockReport(findings);
+  const checklist = buildCanonicalChecklist(report);
+  const overall = computeOutcome(checklistResultsToFindings(checklist));
+  return applyOutcomeGating(overall, checklist).outcome;
+}
+
 describe("manual analyst evidence", () => {
   it("maps a manual evidence fact into the same finding/checklist/report JSON path", () => {
     const finding = manualFinding("legal_company_existence", "VERIFIED");
@@ -96,7 +104,7 @@ describe("manual analyst evidence", () => {
     const item = report.checklist_results.find((result) => result.id === "legal_company_existence");
 
     expect(item?.status).toBe("PASS");
-    expect(item?.evidence_classification).toBe("VERIFIED");
+    expect(item?.evidence_classification).toBe("CORROBORATED");
     expect(item?.source_names).toEqual(["Analyst verification"]);
     expect(JSON.stringify(report)).toContain("manual_analyst_entry");
   });
@@ -112,11 +120,35 @@ describe("manual analyst evidence", () => {
   });
 
   it("does not let a Supplier Claimed manual entry flip a check to passed", () => {
-    const item = buildCanonicalChecklist(mockReport([manualFinding("unified_social_credit_code", "SUPPLIER_CLAIMED")]))
-      .find((result) => result.id === "unified_social_credit_code");
+    const beforeOutcome = finalOutcomeForFindings([]);
+    const finding = manualFinding("unified_social_credit_code", "SUPPLIER_CLAIMED");
+    const report = mockReport([finding]);
+    const results = buildCanonicalChecklist(report);
+    const item = results.find((result) => result.id === "unified_social_credit_code");
+    const overall = computeOutcome(checklistResultsToFindings(results));
+    const afterOutcome = applyOutcomeGating(overall, results).outcome;
 
     expect(item?.status).toBe("NOT_VERIFIED");
     expect(item?.evidence_classification).toBe("SUPPLIER_CLAIMED");
+    expect(afterOutcome).toBe(beforeOutcome);
+  });
+
+  it("does not duplicate or orphan evidence records when edited manual evidence is reprocessed", async () => {
+    vi.resetModules();
+    const from = vi.fn(() => ({
+      insert: vi.fn(() => ({ select: vi.fn(() => ({ single: vi.fn() })) })),
+    }));
+    vi.doMock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: { from } }));
+
+    const { persistFindingEvidence } = await import("../lib/investigation/evidence.server");
+    const original = manualFinding("registration_status", "VERIFIED", "Original analyst finding.");
+    const edited = { ...original, evidence_excerpt: "Edited analyst finding." };
+    const persisted = await persistFindingEvidence("case-1", [original, edited], "job-1");
+
+    expect(from).not.toHaveBeenCalled();
+    expect(persisted).toHaveLength(2);
+    expect(persisted[0].evidence_ids).toEqual(original.evidence_ids);
+    expect(persisted[1].evidence_ids).toEqual(original.evidence_ids);
   });
 
   it("restores the prior check state and decision when manual evidence is retracted", () => {
