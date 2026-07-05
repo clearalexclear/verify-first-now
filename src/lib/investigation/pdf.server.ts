@@ -32,8 +32,8 @@ const PAGE_H = 841.89;
 const CONTENT_W = PAGE_W - MARGIN * 2;
 
 interface FootnoteMap {
-  order: string[]; // urls in order of first appearance
-  index: Map<string, number>; // url -> number
+  order: string[];
+  index: Map<string, number>;
 }
 
 interface Ctx {
@@ -122,7 +122,6 @@ function statusColor(status: FindingStatus): ReturnType<typeof rgb> {
   }
 }
 
-// Sized to accommodate the longest status label without clipping.
 function statusBadgeWidth(bold: PDFFont, status: FindingStatus): number {
   const label = STATUS_LABEL[status];
   return bold.widthOfTextAtSize(label, 8) + 14;
@@ -161,7 +160,6 @@ function checklistForReport(r: InvestigationReport): ChecklistReportResult[] {
 
 function drawChecklistItem(ctx: Ctx, item: ChecklistReportResult) {
   ensureSpace(ctx, 92);
-  // Customer-facing: title only, no underscore-laden internal ID.
   const badgeW = statusBadgeWidth(ctx.bold, item.status);
   const titleLines = wrap(asciiSafe(item.title), ctx.bold, 10, CONTENT_W - badgeW - 10);
   ctx.page.drawText(titleLines[0], { x: MARGIN, y: ctx.y - 10, size: 10, font: ctx.bold, color: NAVY });
@@ -179,7 +177,6 @@ function drawChecklistItem(ctx: Ctx, item: ChecklistReportResult) {
   ].join("  |  ");
   drawWrapped(ctx, meta, { size: 8.5, color: GREY });
 
-  // Replace long URLs with short labels + footnote numbers.
   const sourceLabels: string[] = [];
   const nameList = item.source_names.length ? item.source_names : [];
   const urlList = item.source_urls;
@@ -237,7 +234,7 @@ function drawBlockersBox(ctx: Ctx, blockers: string[]) {
   if (blockers.length === 0) {
     drawWrapped(ctx, "No critical blockers identified from the current evidence set. Item-level findings below remain authoritative.", { size: 9.5, color: TEXT });
   } else {
-    for (const b of blockers) drawWrapped(ctx, `• ${b}`, { size: 9.5, color: TEXT });
+    for (const b of blockers) drawWrapped(ctx, `- ${b}`, { size: 9.5, color: TEXT });
   }
   ctx.y -= 6;
 }
@@ -281,7 +278,6 @@ function drawCover(ctx: Ctx, r: InvestigationReport) {
   drawWrapped(ctx, "Estimated order value: " + humanizeOrderValue(r.customer_input.estimated_order_value), { size: 10 });
   drawWrapped(ctx, "Report generated: " + r.generated_at.slice(0, 19).replace("T", " ") + " UTC", { size: 10, gap: 10 });
 
-  // First-page status summary (5 badges) and critical-blockers box.
   drawStatusSummary(ctx, checklistForReport(r));
   drawBlockersBox(ctx, r.critical_blockers ?? []);
 
@@ -365,6 +361,7 @@ export async function renderReportPdf(r: InvestigationReport): Promise<Uint8Arra
   }
   drawWrapped(ctx, "Methodology", { size: 11, bold: true, color: NAVY });
   drawWrapped(ctx, r.methodology);
+  drawWrapped(ctx, "Checks verified by analyst review are labeled as such.", { size: 9 });
   drawWrapped(ctx, "Limitations", { size: 11, bold: true, color: NAVY });
   drawWrapped(ctx, r.limitations);
 
