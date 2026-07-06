@@ -83,7 +83,7 @@ export const getCase = createServerFn({ method: "GET" })
         *,
         customer:customers(*),
         supplier:suppliers(*),
-        order:orders(*)
+        order:orders!supplier_cases_order_id_fkey(*)
       `)
       .eq("id", data.caseId)
       .maybeSingle();
