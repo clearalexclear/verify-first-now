@@ -408,7 +408,9 @@ export type Database = {
       }
       evidence_facts: {
         Row: {
+          attachment_paths: Json
           case_id: string
+          checklist_id: string | null
           classification: Database["public"]["Enums"]["evidence_classification"]
           confidence: string
           connector_run_id: string | null
@@ -420,13 +422,20 @@ export type Database = {
           finding_key: string | null
           id: string
           license_notes: string | null
+          manual_entry_created_by: string | null
           raw_response_path: string | null
+          retracted_at: string | null
+          retracted_by: string | null
+          retraction_reason: string | null
           retrieval_date: string
+          source_citation: string | null
           source_name: string
           source_url: string | null
         }
         Insert: {
+          attachment_paths?: Json
           case_id: string
+          checklist_id?: string | null
           classification?: Database["public"]["Enums"]["evidence_classification"]
           confidence?: string
           connector_run_id?: string | null
@@ -438,13 +447,20 @@ export type Database = {
           finding_key?: string | null
           id?: string
           license_notes?: string | null
+          manual_entry_created_by?: string | null
           raw_response_path?: string | null
+          retracted_at?: string | null
+          retracted_by?: string | null
+          retraction_reason?: string | null
           retrieval_date?: string
+          source_citation?: string | null
           source_name: string
           source_url?: string | null
         }
         Update: {
+          attachment_paths?: Json
           case_id?: string
+          checklist_id?: string | null
           classification?: Database["public"]["Enums"]["evidence_classification"]
           confidence?: string
           connector_run_id?: string | null
@@ -456,8 +472,13 @@ export type Database = {
           finding_key?: string | null
           id?: string
           license_notes?: string | null
+          manual_entry_created_by?: string | null
           raw_response_path?: string | null
+          retracted_at?: string | null
+          retracted_by?: string | null
+          retraction_reason?: string | null
           retrieval_date?: string
+          source_citation?: string | null
           source_name?: string
           source_url?: string | null
         }
