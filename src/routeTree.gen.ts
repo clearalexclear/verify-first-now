@@ -25,6 +25,7 @@ import { Route as ApiStripeWebhookRouteImport } from './routes/api/stripe/webhoo
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
 import { Route as AuthenticatedAdminTemplatesRouteImport } from './routes/_authenticated/admin/templates'
 import { Route as AuthenticatedAdminManualEvidenceRouteImport } from './routes/_authenticated/admin/manual-evidence'
+import { Route as AuthenticatedAdminIntegrationDiagnosticsRouteImport } from './routes/_authenticated/admin/integration-diagnostics'
 import { Route as ApiPublicInvestigateCaseIdRouteImport } from './routes/api/public/investigate.$caseId'
 import { Route as AuthenticatedAdminCasesCaseIdRouteImport } from './routes/_authenticated/admin/cases.$caseId'
 
@@ -109,6 +110,12 @@ const AuthenticatedAdminManualEvidenceRoute =
     path: '/manual-evidence',
     getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
+const AuthenticatedAdminIntegrationDiagnosticsRoute =
+  AuthenticatedAdminIntegrationDiagnosticsRouteImport.update({
+    id: '/integration-diagnostics',
+    path: '/integration-diagnostics',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
 const ApiPublicInvestigateCaseIdRoute =
   ApiPublicInvestigateCaseIdRouteImport.update({
     id: '/api/public/investigate/$caseId',
@@ -132,6 +139,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AuthenticatedAdminRouteRouteWithChildren
   '/r/$shareToken': typeof RShareTokenRoute
   '/upload/$token': typeof UploadTokenRoute
+  '/admin/integration-diagnostics': typeof AuthenticatedAdminIntegrationDiagnosticsRoute
   '/admin/manual-evidence': typeof AuthenticatedAdminManualEvidenceRoute
   '/admin/templates': typeof AuthenticatedAdminTemplatesRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
@@ -150,6 +158,7 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/r/$shareToken': typeof RShareTokenRoute
   '/upload/$token': typeof UploadTokenRoute
+  '/admin/integration-diagnostics': typeof AuthenticatedAdminIntegrationDiagnosticsRoute
   '/admin/manual-evidence': typeof AuthenticatedAdminManualEvidenceRoute
   '/admin/templates': typeof AuthenticatedAdminTemplatesRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
@@ -171,6 +180,7 @@ export interface FileRoutesById {
   '/_authenticated/admin': typeof AuthenticatedAdminRouteRouteWithChildren
   '/r/$shareToken': typeof RShareTokenRoute
   '/upload/$token': typeof UploadTokenRoute
+  '/_authenticated/admin/integration-diagnostics': typeof AuthenticatedAdminIntegrationDiagnosticsRoute
   '/_authenticated/admin/manual-evidence': typeof AuthenticatedAdminManualEvidenceRoute
   '/_authenticated/admin/templates': typeof AuthenticatedAdminTemplatesRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
@@ -192,6 +202,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/r/$shareToken'
     | '/upload/$token'
+    | '/admin/integration-diagnostics'
     | '/admin/manual-evidence'
     | '/admin/templates'
     | '/admin/users'
@@ -210,6 +221,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/r/$shareToken'
     | '/upload/$token'
+    | '/admin/integration-diagnostics'
     | '/admin/manual-evidence'
     | '/admin/templates'
     | '/admin/users'
@@ -230,6 +242,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin'
     | '/r/$shareToken'
     | '/upload/$token'
+    | '/_authenticated/admin/integration-diagnostics'
     | '/_authenticated/admin/manual-evidence'
     | '/_authenticated/admin/templates'
     | '/_authenticated/admin/users'
@@ -368,6 +381,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminManualEvidenceRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
+    '/_authenticated/admin/integration-diagnostics': {
+      id: '/_authenticated/admin/integration-diagnostics'
+      path: '/integration-diagnostics'
+      fullPath: '/admin/integration-diagnostics'
+      preLoaderRoute: typeof AuthenticatedAdminIntegrationDiagnosticsRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
     '/api/public/investigate/$caseId': {
       id: '/api/public/investigate/$caseId'
       path: '/api/public/investigate/$caseId'
@@ -386,6 +406,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedAdminRouteRouteChildren {
+  AuthenticatedAdminIntegrationDiagnosticsRoute: typeof AuthenticatedAdminIntegrationDiagnosticsRoute
   AuthenticatedAdminManualEvidenceRoute: typeof AuthenticatedAdminManualEvidenceRoute
   AuthenticatedAdminTemplatesRoute: typeof AuthenticatedAdminTemplatesRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
@@ -395,6 +416,8 @@ interface AuthenticatedAdminRouteRouteChildren {
 
 const AuthenticatedAdminRouteRouteChildren: AuthenticatedAdminRouteRouteChildren =
   {
+    AuthenticatedAdminIntegrationDiagnosticsRoute:
+      AuthenticatedAdminIntegrationDiagnosticsRoute,
     AuthenticatedAdminManualEvidenceRoute:
       AuthenticatedAdminManualEvidenceRoute,
     AuthenticatedAdminTemplatesRoute: AuthenticatedAdminTemplatesRoute,

@@ -5,7 +5,7 @@ import { useEffect, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { getMyAccess, claimFirstAdmin } from "@/lib/admin/admin.functions";
 import { Button } from "@/components/ui/button";
-import { Shield, LayoutDashboard, FileText, Users, ListChecks, LogOut } from "lucide-react";
+import { Shield, LayoutDashboard, FileText, Users, ListChecks, LogOut, Activity } from "lucide-react";
 
 export function AdminShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
