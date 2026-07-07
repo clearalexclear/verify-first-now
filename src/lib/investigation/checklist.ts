@@ -68,29 +68,29 @@ export interface ChecklistResult extends ChecklistDefinition {
 }
 
 export const CANONICAL_CHECKLIST: ChecklistDefinition[] = [
-  { id: "legal_company_existence", title: "Legal company existence", section: "legal_entity", paid_connector_dependency: "QCC International API" },
-  { id: "chinese_legal_name", title: "Chinese legal name", section: "legal_entity", paid_connector_dependency: "QCC International API" },
-  { id: "unified_social_credit_code", title: "Unified Social Credit Code", section: "legal_entity", paid_connector_dependency: "QCC International API" },
-  { id: "registration_status", title: "Registration status", section: "legal_entity", paid_connector_dependency: "QCC International API" },
-  { id: "incorporation_date", title: "Incorporation date", section: "legal_entity", paid_connector_dependency: "QCC International API" },
-  { id: "registered_capital", title: "Registered capital", section: "legal_entity", paid_connector_dependency: "QCC International API" },
-  { id: "legal_representative", title: "Legal representative", section: "legal_entity", paid_connector_dependency: "QCC International API" },
-  { id: "registered_address", title: "Registered address", section: "legal_entity", paid_connector_dependency: "QCC International API" },
-  { id: "business_scope", title: "Business scope", section: "legal_entity", paid_connector_dependency: "QCC International API" },
-  { id: "shareholders_beneficial_ownership", title: "Shareholders and beneficial ownership", section: "ownership", paid_connector_dependency: "QCC International API" },
-  { id: "related_companies", title: "Related companies", section: "ownership", paid_connector_dependency: "QCC International API" },
+  { id: "legal_company_existence", title: "Legal company existence", section: "legal_entity", paid_connector_dependency: "China registry provider (QINCheck or Panda360)" },
+  { id: "chinese_legal_name", title: "Chinese legal name", section: "legal_entity", paid_connector_dependency: "China registry provider (QINCheck or Panda360)" },
+  { id: "unified_social_credit_code", title: "Unified Social Credit Code", section: "legal_entity", paid_connector_dependency: "China registry provider (QINCheck or Panda360)" },
+  { id: "registration_status", title: "Registration status", section: "legal_entity", paid_connector_dependency: "China registry provider (QINCheck or Panda360)" },
+  { id: "incorporation_date", title: "Incorporation date", section: "legal_entity", paid_connector_dependency: "China registry provider (QINCheck or Panda360)" },
+  { id: "registered_capital", title: "Registered capital", section: "legal_entity", paid_connector_dependency: "China registry provider (QINCheck or Panda360)" },
+  { id: "legal_representative", title: "Legal representative", section: "legal_entity", paid_connector_dependency: "China registry provider (QINCheck or Panda360)" },
+  { id: "registered_address", title: "Registered address", section: "legal_entity", paid_connector_dependency: "China registry provider (QINCheck or Panda360)" },
+  { id: "business_scope", title: "Business scope", section: "legal_entity", paid_connector_dependency: "China registry provider (QINCheck or Panda360)" },
+  { id: "shareholders_beneficial_ownership", title: "Shareholders and beneficial ownership", section: "ownership", paid_connector_dependency: "China registry provider (QINCheck or Panda360)" },
+  { id: "related_companies", title: "Related companies", section: "ownership", paid_connector_dependency: "China registry provider (QINCheck or Panda360)" },
   { id: "factory_vs_trader", title: "Factory versus trader assessment", section: "factory_vs_trader", paid_connector_dependency: "QCC International API / ImportGenius API" },
   { id: "website_domain_consistency", title: "Website/domain consistency", section: "digital_footprint", paid_connector_dependency: null },
   { id: "contact_information_consistency", title: "Contact information consistency", section: "digital_footprint", paid_connector_dependency: "QCC International API" },
   { id: "supplier_document_consistency", title: "Supplier document consistency", section: "certificates_documents", paid_connector_dependency: null },
-  { id: "business_licence_validation", title: "Business licence validation", section: "certificates_documents", paid_connector_dependency: "QCC International API" },
+  { id: "business_licence_validation", title: "Business licence validation", section: "certificates_documents", paid_connector_dependency: "China registry provider (QINCheck or Panda360)" },
   { id: "certificate_authenticity", title: "Certificate authenticity", section: "certificates_documents", paid_connector_dependency: "Issuer-specific certificate databases" },
   { id: "iso_management_certificates", title: "ISO management certificates", section: "certificates_documents", paid_connector_dependency: "IAF CertSearch" },
   { id: "product_certificates_test_reports", title: "Product certificates and test reports", section: "certificates_documents", paid_connector_dependency: "Issuer/lab-specific verification sources" },
   { id: "sanctions_restricted_party", title: "Sanctions and restricted-party screening", section: "sanctions_forced_labour", paid_connector_dependency: "OpenSanctions Commercial API" },
   { id: "uflpa_forced_labour", title: "UFLPA/forced-labour screening", section: "sanctions_forced_labour", paid_connector_dependency: null },
-  { id: "litigation_court_records", title: "Litigation and court records", section: "litigation_enforcement", paid_connector_dependency: "QCC International API / Chinese court-record provider" },
-  { id: "enforcement_administrative_penalties", title: "Enforcement and administrative penalties", section: "litigation_enforcement", paid_connector_dependency: "QCC International API / Chinese administrative-record provider" },
+  { id: "litigation_court_records", title: "Litigation and court records", section: "litigation_enforcement", paid_connector_dependency: "China registry provider (QINCheck or Panda360) / Chinese court-record provider" },
+  { id: "enforcement_administrative_penalties", title: "Enforcement and administrative penalties", section: "litigation_enforcement", paid_connector_dependency: "China registry provider (QINCheck or Panda360) / Chinese administrative-record provider" },
   { id: "adverse_media", title: "Adverse media", section: "digital_footprint", paid_connector_dependency: null },
   { id: "us_shipment_export_history", title: "US shipment/export history", section: "export_history", paid_connector_dependency: "ImportGenius API" },
   { id: "buyer_customer_history", title: "Buyer/customer history where available", section: "export_history", paid_connector_dependency: "ImportGenius API" },
@@ -106,6 +106,9 @@ export const CHECKLIST_COUNT = 32;
 
 const OFFICIAL_SOURCE_PATTERNS = [
   /qcc/i,
+  /qincheck/i,
+  /panda360/i,
+  /china registry/i,
   /importgenius/i,
   /iaf/i,
   /opensanctions/i,
@@ -163,6 +166,10 @@ function sourceIsOfficial(sourceName: string): boolean {
 
 function sourceIsFirecrawl(sourceName: string): boolean {
   return /firecrawl|web search|public shipping-data web search/i.test(sourceName);
+}
+
+function sourceIsChinaRegistry(sourceName: string): boolean {
+  return /qincheck|panda360/i.test(sourceName);
 }
 
 function sourceIsManual(sourceName: string): boolean {
@@ -330,8 +337,30 @@ export function buildCanonicalChecklist(report: InvestigationReport): ChecklistR
     id: item.id,
     match: (f: Finding) => f.source_name === MANUAL_SOURCE && f.item === item.title,
   }));
+  const chinaRegistryChecks: Array<{ id: ChecklistId; item: string }> = [
+    { id: "legal_company_existence", item: "Legal company existence" },
+    { id: "chinese_legal_name", item: "Chinese legal name" },
+    { id: "unified_social_credit_code", item: "Unified Social Credit Code" },
+    { id: "registration_status", item: "Registration status" },
+    { id: "incorporation_date", item: "Incorporation date" },
+    { id: "registered_capital", item: "Registered capital" },
+    { id: "legal_representative", item: "Legal representative" },
+    { id: "registered_address", item: "Registered address" },
+    { id: "business_scope", item: "Business scope" },
+    { id: "shareholders_beneficial_ownership", item: "Shareholders and beneficial ownership" },
+    { id: "related_companies", item: "Related companies" },
+    { id: "litigation_court_records", item: "Litigation and enforcement screening" },
+    { id: "enforcement_administrative_penalties", item: "Enforcement and administrative penalties" },
+    { id: "business_licence_validation", item: "Business licence validation" },
+  ];
+  const chinaRegistryAllowlist: Array<{ id: ChecklistId; match: (f: Finding) => boolean }> = chinaRegistryChecks.map((entry) => ({
+    id: entry.id,
+    match: (f: Finding) => sourceIsChinaRegistry(f.source_name) && f.item === entry.item,
+  }));
+
   const ALLOWLIST: Array<{ id: ChecklistId; match: (f: Finding) => boolean }> = [
     ...manualAllowlist,
+    ...chinaRegistryAllowlist,
     { id: "website_domain_consistency", match: (f) => f.item === "Website and domain consistency" },
     {
       id: "supplier_document_consistency",

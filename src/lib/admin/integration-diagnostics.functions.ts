@@ -25,6 +25,8 @@ interface ProviderReport {
     status: string | null;
     error: string | null;
     sourceUrl: string | null;
+    fieldsReturned?: string[];
+    evidenceCount?: number | null;
   };
   evidenceCount: number;
   lastEvidenceExcerpt: string | null;
@@ -103,13 +105,65 @@ const PROVIDERS: Array<{
     paidDisabled: true,
   },
   {
+    id: "china_registry_qincheck",
+    name: "QINCheck China registry",
+    category: "corporate_registry",
+    requiredEnv: ["CHINA_REGISTRY_ENABLED", "QINCHECK_API_KEY"],
+    connectorRunId: "china_registry_qincheck",
+    evidenceSourcePatterns: ["QINCheck China registry%"],
+    checklistItemsAffected: [
+      "legal_company_existence",
+      "chinese_legal_name",
+      "unified_social_credit_code",
+      "registration_status",
+      "incorporation_date",
+      "registered_capital",
+      "legal_representative",
+      "registered_address",
+      "business_scope",
+      "shareholders_beneficial_ownership",
+      "related_companies",
+      "litigation_court_records",
+      "enforcement_administrative_penalties",
+      "business_licence_validation",
+    ],
+    notes: "Preferred automated China registry provider. Used first when CHINA_REGISTRY_PROVIDER is auto or qincheck and CHINA_REGISTRY_ENABLED=true.",
+    paidDisabled: true,
+  },
+  {
+    id: "china_registry_panda360",
+    name: "Panda360 China registry",
+    category: "corporate_registry",
+    requiredEnv: ["CHINA_REGISTRY_ENABLED", "PANDA360_API_KEY"],
+    connectorRunId: "china_registry_panda360",
+    evidenceSourcePatterns: ["Panda360 China registry%"],
+    checklistItemsAffected: [
+      "legal_company_existence",
+      "chinese_legal_name",
+      "unified_social_credit_code",
+      "registration_status",
+      "incorporation_date",
+      "registered_capital",
+      "legal_representative",
+      "registered_address",
+      "business_scope",
+      "shareholders_beneficial_ownership",
+      "related_companies",
+      "litigation_court_records",
+      "enforcement_administrative_penalties",
+      "business_licence_validation",
+    ],
+    notes: "Fallback automated China registry provider. Used when QINCheck is unavailable in auto mode, or directly when CHINA_REGISTRY_PROVIDER=panda360.",
+    paidDisabled: true,
+  },
+  {
     id: "qcc_corporate_registry",
     name: "QCC International API",
     category: "corporate_registry",
     requiredEnv: ["QCC_API_KEY"],
     connectorRunId: "qcc_corporate_registry",
     checklistItemsAffected: ["legal_entity_registration", "business_licence"],
-    notes: "Paid connector. Not implemented — returns not_configured. Panda360 / QINCheck / Tianyancha are NOT implemented and not listed as queried.",
+    notes: "Paid connector. Not implemented — returns not_configured. Tianyancha is NOT implemented.",
     paidDisabled: true,
   },
   {
@@ -151,7 +205,12 @@ export const getIntegrationDiagnostics = createServerFn({ method: "POST" })
     const db = supabaseAdmin as any;
 
     const envConfigured = (keys: string[]) =>
-      Object.fromEntries(keys.map((k) => [k, Boolean(process.env[k])]));
+      Object.fromEntries(keys.map((k) => [
+        k,
+        k === "CHINA_REGISTRY_ENABLED"
+          ? String(process.env[k] ?? "").toLowerCase() === "true"
+          : Boolean(process.env[k]),
+      ]));
 
     const reports: ProviderReport[] = [];
 
@@ -169,7 +228,7 @@ export const getIntegrationDiagnostics = createServerFn({ method: "POST" })
       if (p.connectorRunId) {
         let q = db
           .from("connector_runs")
-          .select("status, error_message, retrieved_at, source_url")
+          .select("status, error_message, retrieved_at, source_url, metadata")
           .eq("connector_id", p.connectorRunId)
           .order("retrieved_at", { ascending: false })
           .limit(1);
@@ -182,6 +241,8 @@ export const getIntegrationDiagnostics = createServerFn({ method: "POST" })
             status: row.status,
             error: row.error_message,
             sourceUrl: row.source_url,
+            fieldsReturned: Array.isArray(row.metadata?.fields_returned) ? row.metadata.fields_returned : [],
+            evidenceCount: typeof row.metadata?.evidence_count === "number" ? row.metadata.evidence_count : null,
           };
         }
       }
@@ -226,7 +287,7 @@ export const getIntegrationDiagnostics = createServerFn({ method: "POST" })
     }
 
     // Also surface which providers are known NOT implemented in code.
-    const notImplemented = ["panda360", "qincheck", "tianyancha"].map((id) => ({
+    const notImplemented = ["tianyancha"].map((id) => ({
       id,
       name: id,
       reason: "Not implemented in this codebase. Not queried; not listed as queried in any report.",

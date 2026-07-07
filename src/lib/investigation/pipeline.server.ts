@@ -4,6 +4,7 @@ import { screenSanctions } from "./sources/opensanctions.server";
 import { screenUflpa } from "./sources/uflpa.server";
 import { screenAdverseMedia, screenLitigation } from "./sources/adverse-media.server";
 import { probeExportHistory, screenCertificates, screenWebsiteConsistency } from "./sources/web-research.server";
+import { retrieveChinaRegistryEvidence } from "./sources/china-registry.server";
 import { runConnectorEvidenceChecksDetailed, type ConnectorRunSummary } from "./connectors/findings.server";
 import { applyOutcomeGating, buildCanonicalChecklist } from "./checklist";
 import { computeOutcome, synthesiseNarrative } from "./synthesis.server";
@@ -102,15 +103,80 @@ export async function runInvestigation(
     }
     await log("evidence_added", { stage: "document_extraction", count: extracted.length });
 
-    const { entity: resolved, sources: entitySources } = await resolveLegalEntity({
+    const { entity: initialResolved, sources: entitySources } = await resolveLegalEntity({
       statedName: order.supplier_company_name,
       chineseName: caseRow.supplier_chinese_name ?? null,
       country: order.supplier_country,
       website: order.website_marketplace_url,
       extracted,
     });
+    const registryResult = await retrieveChinaRegistryEvidence({
+      statedName: order.supplier_company_name,
+      chineseName: caseRow.supplier_chinese_name ?? null,
+      country: order.supplier_country,
+      website: order.website_marketplace_url,
+      resolved: initialResolved,
+      extracted,
+    });
+    const resolved = registryResult.resolvedPatch
+      ? {
+          ...initialResolved,
+          ...registryResult.resolvedPatch,
+          registration_country: initialResolved.registration_country,
+          sources: [
+            ...(initialResolved.sources ?? []),
+            ...(registryResult.resolvedPatch.sources ?? []),
+          ],
+        }
+      : initialResolved;
     await db.from("supplier_cases").update({ resolved_entity: resolved }).eq("id", caseId);
-    await log("evidence_added", { stage: "entity_resolution", matched: resolved.matched });
+    await log("evidence_added", { stage: "entity_resolution", matched: resolved.matched, china_registry_status: registryResult.status });
+
+    const registryConnectorId =
+      registryResult.provider === "qincheck"
+        ? "china_registry_qincheck"
+        : registryResult.provider === "panda360"
+          ? "china_registry_panda360"
+          : "china_registry_auto";
+    const { data: registryRun } = await db.from("connector_runs").insert({
+      connector_id: registryConnectorId,
+      case_id: caseId,
+      job_id: opts.jobId ?? null,
+      status: registryResult.status === "disabled" ? "skipped" : registryResult.status === "ambiguous" ? "not_found" : registryResult.status,
+      mode: registryResult.status === "success" ? "paid_enabled" : "paid_disabled",
+      retrieved_at: registryResult.retrievedAt,
+      confidence: registryResult.status === "success" ? "high" : "low",
+      source_url: registryResult.sourceUrl,
+      raw_response_storage_allowed: registryResult.status === "success",
+      error_message: registryResult.error ?? null,
+      metadata: {
+        provider: registryResult.provider,
+        evidence_count: registryResult.evidenceCount,
+        fields_returned: registryResult.fieldsReturned,
+        raw_response: registryResult.status === "success" ? registryResult.rawResponse : null,
+      },
+    }).select("id").maybeSingle();
+    const registryFindings: Finding[] = [];
+    for (const finding of registryResult.findings) {
+      const { data: insertedEvidence } = await db.from("evidence_facts").insert({
+        case_id: caseId,
+        connector_run_id: registryRun?.id ?? null,
+        finding_key: `${finding.section}:${finding.item}`,
+        fact_key: finding.item,
+        fact_value: { status: finding.status, excerpt: finding.evidence_excerpt },
+        classification: finding.evidence_classification ?? "VERIFIED",
+        confidence: finding.confidence,
+        source_name: finding.source_name,
+        source_url: finding.source_url,
+        retrieval_date: finding.retrieval_date,
+        evidence_excerpt: finding.evidence_excerpt,
+        license_notes: `Created from configured China registry provider ${registryResult.sourceName}`,
+      }).select("id").maybeSingle();
+      registryFindings.push({
+        ...finding,
+        evidence_ids: insertedEvidence?.id ? [...(finding.evidence_ids ?? []), insertedEvidence.id] : finding.evidence_ids ?? [],
+      });
+    }
 
     const nameForScreening = resolved.legal_name_en || order.supplier_company_name;
     const chineseForScreening = resolved.legal_name_local || caseRow.supplier_chinese_name || null;
@@ -138,6 +204,7 @@ export async function runInvestigation(
       screenCertificates({ extracted }),
       probeExportHistory({ name: nameForScreening, destinationMarket }),
       connectorRunPromise.then((r) => r.findings),
+      Promise.resolve(registryFindings),
     ]);
 
     let connectorRuns: ConnectorRunSummary[] = [];
@@ -146,6 +213,16 @@ export async function runInvestigation(
     } catch {
       connectorRuns = [];
     }
+    connectorRuns.push({
+      connectorId: registryConnectorId,
+      connectorName: registryResult.sourceName,
+      category: "corporate_registry",
+      status: registryResult.status === "disabled" ? "skipped" : registryResult.status === "ambiguous" ? "not_found" : registryResult.status,
+      mode: registryResult.status === "success" ? "paid_enabled" : "paid_disabled",
+      sourceUrl: registryResult.sourceUrl,
+      retrievedAt: registryResult.retrievedAt,
+      reason: registryResult.error ?? (registryResult.status === "success" ? `${registryResult.evidenceCount} registry evidence facts returned.` : "China registry provider not configured or did not return a selectable match."),
+    });
 
     const findings: Finding[] = [];
     for (const result of settled) {
