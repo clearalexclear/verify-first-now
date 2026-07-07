@@ -60,6 +60,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
   const nav = [
     { to: "/admin", label: "Cases", icon: LayoutDashboard, exact: true },
     { to: "/admin/templates", label: "Templates", icon: ListChecks, adminOnly: false },
+    { to: "/admin/integration-diagnostics", label: "Diagnostics", icon: Activity, adminOnly: true },
     { to: "/admin/users", label: "Users", icon: Users, adminOnly: true },
   ];
 
