@@ -127,7 +127,15 @@ function IntegrationDiagnostics() {
                       </div>
                     )}
                     <div className="mt-2 font-medium">Evidence produced</div>
-                    <div className="text-muted-foreground">{p.evidenceCount} fact(s)</div>
+                    <div className="text-muted-foreground">
+                      {p.lastRun.evidenceCount ?? p.evidenceCount} fact(s)
+                    </div>
+                    {Array.isArray(p.lastRun.fieldsReturned) && p.lastRun.fieldsReturned.length > 0 && (
+                      <>
+                        <div className="mt-2 font-medium">Fields returned</div>
+                        <div className="text-muted-foreground">{p.lastRun.fieldsReturned.join(", ")}</div>
+                      </>
+                    )}
                     {p.lastEvidenceExcerpt && (
                       <div className="mt-1 rounded bg-muted p-2 whitespace-pre-wrap">
                         {p.lastEvidenceExcerpt}
