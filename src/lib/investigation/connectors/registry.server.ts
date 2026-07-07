@@ -90,7 +90,11 @@ const domainRdap: InvestigationConnector<{ domain: string }> = {
     }
     try {
       const url = `https://rdap.org/domain/${encodeURIComponent(input.domain)}`;
-      const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(15_000),
+        headers: { Accept: "application/rdap+json, application/json" },
+        redirect: "follow",
+      });
       if (res.status === 404) {
         return {
           connectorId: domainRdap.id,
@@ -112,7 +116,38 @@ const domainRdap: InvestigationConnector<{ domain: string }> = {
           rawResponseStorageAllowed: false,
         };
       }
-      const raw = await res.json();
+      const bodyText = await res.text();
+      const contentType = res.headers.get("content-type") ?? "";
+      const looksJson = contentType.includes("json") || bodyText.trim().startsWith("{");
+      if (!looksJson) {
+        return {
+          connectorId: domainRdap.id,
+          status: "error",
+          mode: domainRdap.mode,
+          retrievedAt,
+          confidence: "low",
+          sourceUrl: url,
+          evidence: [],
+          rawResponseStorageAllowed: false,
+          error: `RDAP responded with HTTP ${res.status} and non-JSON content-type "${contentType}". First 160 chars: ${bodyText.slice(0, 160)}`,
+        };
+      }
+      let raw: any;
+      try {
+        raw = JSON.parse(bodyText);
+      } catch (e) {
+        return {
+          connectorId: domainRdap.id,
+          status: "error",
+          mode: domainRdap.mode,
+          retrievedAt,
+          confidence: "low",
+          sourceUrl: url,
+          evidence: [],
+          rawResponseStorageAllowed: false,
+          error: `RDAP JSON parse failed at HTTP ${res.status}: ${e instanceof Error ? e.message : String(e)}. First 160 chars: ${bodyText.slice(0, 160)}`,
+        };
+      }
       return {
         connectorId: domainRdap.id,
         status: res.ok ? "success" : "error",
