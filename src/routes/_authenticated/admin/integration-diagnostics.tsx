@@ -3,13 +3,16 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { getIntegrationDiagnostics } from "@/lib/admin/integration-diagnostics.functions";
+import { runChinaRegistryLookup } from "@/lib/admin/china-registry-lookup.functions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 
 export const Route = createFileRoute("/_authenticated/admin/integration-diagnostics")({
   component: IntegrationDiagnostics,
 });
+
 
 function statusBadge(status: string) {
   const map: Record<string, string> = {
