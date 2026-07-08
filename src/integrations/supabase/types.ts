@@ -744,6 +744,63 @@ export type Database = {
           },
         ]
       }
+      official_registry_verification_tasks: {
+        Row: {
+          case_id: string
+          completed_at: string | null
+          completed_by: string | null
+          created_at: string
+          evidence_fact_ids: string[]
+          id: string
+          job_id: string | null
+          reason: string | null
+          requested_search_terms: string[]
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          case_id: string
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          evidence_fact_ids?: string[]
+          id?: string
+          job_id?: string | null
+          reason?: string | null
+          requested_search_terms?: string[]
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          case_id?: string
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          evidence_fact_ids?: string[]
+          id?: string
+          job_id?: string | null
+          reason?: string | null
+          requested_search_terms?: string[]
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "official_registry_verification_tasks_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "official_registry_verification_tasks_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "investigation_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       orders: {
         Row: {
           case_id: string | null
