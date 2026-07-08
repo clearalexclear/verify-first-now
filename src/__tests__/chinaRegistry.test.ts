@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { applyOutcomeGating, buildCanonicalChecklist, checklistResultsToFindings } from "../lib/investigation/checklist";
 import { chinaRegistryRecordToFindings, retrieveChinaRegistryEvidence } from "../lib/investigation/sources/china-registry.server";
 import { officialRegistryFieldsToFindings, OFFICIAL_BROWSER_ASSISTED_SOURCE } from "../lib/investigation/sources/official-browser-assisted.server";
+import { openWebRegistryFindingsFromSources, validateUsccChecksum, type OpenWebRegistryEvidenceSource } from "../lib/investigation/sources/open-web-china-registry.server";
 import { computeOutcome } from "../lib/investigation/synthesis.server";
 import type { Finding, InvestigationReport, ResolvedEntity } from "../lib/investigation/types";
 
@@ -92,6 +93,30 @@ function registryBody() {
     relatedCompanies: [{ name: "Jiangmen Changwen Manufacturing Co., Ltd." }],
     litigation: ["Civil case record available"],
     administrativePenalties: ["Administrative penalty record available"],
+  };
+}
+
+const validUscc = "91440700MA4W123452";
+
+function publicSource(overrides: Partial<OpenWebRegistryEvidenceSource> = {}): OpenWebRegistryEvidenceSource {
+  return {
+    url: "https://example.com/profile/changwen",
+    title: "Jiangmen Changwen company profile",
+    snippet: "",
+    markdown: [
+      "江门市长文贸易有限公司",
+      `统一社会信用代码: ${validUscc}`,
+      "经营状态: 存续",
+      "成立日期: 2017-05-12",
+      "注册资本: 人民币100万元",
+      "注册地址: 广东省江门市蓬江区示例路1号",
+      "法定代表人: 陈文",
+      "经营范围: 厨具和不锈钢制品销售及出口",
+      "股东: 陈文",
+      "关联企业: 江门市长文制造有限公司",
+    ].join("\n"),
+    kind: "indexed_registry",
+    ...overrides,
   };
 }
 
@@ -370,5 +395,89 @@ describe("China registry providers", () => {
 
     expect(outcome.outcome).toBe("PAUSE_PENDING_CLARIFICATION");
     expect(outcome.blockers).toContain("Legal company existence is not independently verified.");
+  });
+
+  it("finds USCC from a public-source fixture", () => {
+    const result = openWebRegistryFindingsFromSources([publicSource()]);
+
+    expect(result.findings.find((finding) => finding.item === "Unified Social Credit Code")?.evidence_excerpt).toContain(validUscc);
+    expect(result.fieldsReturned).toContain("Unified Social Credit Code");
+  });
+
+  it("rejects invalid USCC with caution", () => {
+    expect(validateUsccChecksum(validUscc)).toBe(true);
+    expect(validateUsccChecksum("91440700MA4W123456")).toBe(false);
+
+    const result = openWebRegistryFindingsFromSources([
+      publicSource({ markdown: publicSource().markdown.replace(validUscc, "91440700MA4W123456") }),
+    ]);
+    const uscc = result.findings.find((finding) => finding.item === "Unified Social Credit Code");
+
+    expect(uscc?.status).toBe("CAUTION");
+    expect(uscc?.evidence_classification).toBe("CONTRADICTED");
+    expect(uscc?.evidence_excerpt).toMatch(/checksum/);
+  });
+
+  it("classifies multi-source open-web match as CORROBORATED", () => {
+    const result = openWebRegistryFindingsFromSources([
+      publicSource({ url: "https://www.alibaba.com/supplier/changwen", kind: "marketplace", title: "Alibaba profile" }),
+      publicSource({ url: "https://www.made-in-china.com/showroom/changwen", kind: "marketplace", title: "Made-in-China profile" }),
+    ]);
+    const uscc = result.findings.find((finding) => finding.item === "Unified Social Credit Code");
+
+    expect(uscc?.status).toBe("PASS");
+    expect(uscc?.evidence_classification).toBe("CORROBORATED");
+  });
+
+  it("classifies official-source open-web fixture as VERIFIED", () => {
+    const result = openWebRegistryFindingsFromSources([
+      publicSource({
+        url: "https://www.gsxt.gov.cn/corp-query-entprise-info-91440700MA4W123452.html",
+        title: "National Enterprise Credit Information Publicity System",
+        kind: "official",
+      }),
+    ]);
+    const uscc = result.findings.find((finding) => finding.item === "Unified Social Credit Code");
+    const checklist = buildCanonicalChecklist(mockReport(result.findings.map((finding, index) => ({ ...finding, evidence_ids: [`open_official_${index}`] }))));
+
+    expect(uscc?.evidence_classification).toBe("VERIFIED");
+    expect(checklist.find((item) => item.id === "unified_social_credit_code")?.evidence_classification).toBe("VERIFIED");
+  });
+
+  it("classifies single weak open-web source as NOT_INDEPENDENTLY_VERIFIED", () => {
+    const result = openWebRegistryFindingsFromSources([
+      publicSource({ url: "https://supplier-blog.example/changwen", kind: "public_web" }),
+    ]);
+    const checklist = buildCanonicalChecklist(mockReport(result.findings.map((finding, index) => ({ ...finding, evidence_ids: [`open_weak_${index}`] }))));
+
+    expect(result.findings.find((finding) => finding.item === "Unified Social Credit Code")?.evidence_classification).toBe("NOT_INDEPENDENTLY_VERIFIED");
+    expect(checklist.find((item) => item.id === "unified_social_credit_code")?.status).toBe("NOT_VERIFIED");
+  });
+
+  it("conflicting open-web sources create CAUTION", () => {
+    const result = openWebRegistryFindingsFromSources([
+      publicSource(),
+      publicSource({
+        url: "https://example.org/other",
+        markdown: publicSource().markdown.replace(validUscc, "91440700MA4W123456"),
+      }),
+    ]);
+    const uscc = result.findings.find((finding) => finding.item === "Unified Social Credit Code");
+
+    expect(result.status).toBe("conflict");
+    expect(uscc?.status).toBe("CAUTION");
+    expect(uscc?.evidence_classification).toBe("CONTRADICTED");
+  });
+
+  it("does not map open-web registry evidence to sanctions, certificates, shipments or UFLPA", () => {
+    const result = openWebRegistryFindingsFromSources([
+      publicSource(),
+      publicSource({ url: "https://www.alibaba.com/supplier/changwen", kind: "marketplace" }),
+    ]);
+    const checklist = buildCanonicalChecklist(mockReport(result.findings.map((finding, index) => ({ ...finding, evidence_ids: [`open_map_${index}`] }))));
+
+    for (const id of ["sanctions_restricted_party", "uflpa_forced_labour", "us_shipment_export_history", "certificate_authenticity", "product_recall_history", "factory_vs_trader"]) {
+      expect(checklist.find((item) => item.id === id)?.status).toBe("NOT_VERIFIED");
+    }
   });
 });

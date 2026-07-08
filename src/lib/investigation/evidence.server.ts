@@ -1,6 +1,7 @@
 import { MANUAL_SOURCE } from "./sources/manual-evidence.server";
 import { PANDA360_SOURCE, QINCHECK_SOURCE } from "./sources/china-registry.server";
 import { OFFICIAL_BROWSER_ASSISTED_SOURCE } from "./sources/official-browser-assisted.server";
+import { OPEN_WEB_CHINA_REGISTRY_SOURCE } from "./sources/open-web-china-registry.server";
 import type { EvidenceClassification, Finding } from "./types";
 
 function inferClassification(finding: Finding): EvidenceClassification {
@@ -62,7 +63,11 @@ export async function persistFindingEvidence(caseId: string, findings: Finding[]
 
   for (const finding of findings) {
     if (
-      (finding.source_name === MANUAL_SOURCE || finding.source_name === QINCHECK_SOURCE || finding.source_name === PANDA360_SOURCE || finding.source_name === OFFICIAL_BROWSER_ASSISTED_SOURCE) &&
+      (finding.source_name === MANUAL_SOURCE ||
+        finding.source_name === QINCHECK_SOURCE ||
+        finding.source_name === PANDA360_SOURCE ||
+        finding.source_name === OFFICIAL_BROWSER_ASSISTED_SOURCE ||
+        finding.source_name.startsWith(OPEN_WEB_CHINA_REGISTRY_SOURCE)) &&
       (finding.evidence_ids ?? []).length > 0
     ) {
       out.push({

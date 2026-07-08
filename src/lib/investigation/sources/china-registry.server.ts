@@ -1,13 +1,14 @@
 import type { ExtractedDoc } from "../extract-documents.server";
 import type { Finding, FindingConfidence, ResolvedEntity } from "../types";
 import { OFFICIAL_BROWSER_ASSISTED_PROVIDER, OFFICIAL_BROWSER_ASSISTED_SOURCE } from "./official-browser-assisted.server";
+import { OPEN_WEB_CHINA_REGISTRY_LABEL, OPEN_WEB_CHINA_REGISTRY_PROVIDER, OPEN_WEB_CHINA_REGISTRY_SOURCE, runOpenWebChinaRegistryResolver } from "./open-web-china-registry.server";
 
 export const CHINA_REGISTRY_SOURCE = "China registry provider";
 export const QINCHECK_SOURCE = "QINCheck China registry";
 export const PANDA360_SOURCE = "Panda360 China registry";
 
 type ApiProviderName = "qincheck" | "panda360";
-type ProviderName = ApiProviderName | typeof OFFICIAL_BROWSER_ASSISTED_PROVIDER;
+type ProviderName = ApiProviderName | typeof OFFICIAL_BROWSER_ASSISTED_PROVIDER | typeof OPEN_WEB_CHINA_REGISTRY_PROVIDER;
 type ProviderPreference = ProviderName | "auto" | "disabled";
 
 export interface ChinaRegistrySearchInput {
@@ -15,6 +16,8 @@ export interface ChinaRegistrySearchInput {
   chineseName: string | null;
   country: string;
   website: string | null;
+  productCategory?: string | null;
+  cityProvinceHint?: string | null;
   resolved: ResolvedEntity;
   extracted: ExtractedDoc[];
 }
@@ -64,6 +67,7 @@ function providerPreference(env: Record<string, string | undefined>): ProviderPr
   const raw = (env.CHINA_REGISTRY_PROVIDER || "auto").trim().toLowerCase();
   if (raw === "qincheck") return "qincheck";
   if (raw === "panda360") return "panda360";
+  if (raw === OPEN_WEB_CHINA_REGISTRY_PROVIDER || raw === "open_web") return OPEN_WEB_CHINA_REGISTRY_PROVIDER;
   if (raw === OFFICIAL_BROWSER_ASSISTED_PROVIDER) return OFFICIAL_BROWSER_ASSISTED_PROVIDER;
   if (raw === "disabled") return "disabled";
   return "auto";
@@ -155,7 +159,7 @@ function enoughFieldsMatch(candidate: RegistryRecord, args: ChinaRegistrySearchI
 
 function normalizeRecord(provider: ProviderName, raw: any, sourceUrl: string): RegistryRecord {
   const root = raw?.data ?? raw?.company ?? raw?.result ?? raw?.report ?? raw;
-  const sourceName = provider === "qincheck" ? QINCHECK_SOURCE : PANDA360_SOURCE;
+  const sourceName = provider === "qincheck" ? QINCHECK_SOURCE : provider === "panda360" ? PANDA360_SOURCE : OPEN_WEB_CHINA_REGISTRY_SOURCE;
   return {
     provider,
     sourceName,
@@ -410,6 +414,19 @@ export async function retrieveChinaRegistryEvidence(
       error: "Official browser-assisted registry verification requires analyst completion.",
     });
   }
+  if (preference === OPEN_WEB_CHINA_REGISTRY_PROVIDER) {
+    const openWeb = await runOpenWebChinaRegistryResolver(args, { env });
+    return result(openWeb.status === "conflict" ? "success" : openWeb.status, {
+      provider: OPEN_WEB_CHINA_REGISTRY_PROVIDER,
+      sourceName: OPEN_WEB_CHINA_REGISTRY_SOURCE,
+      sourceUrl: openWeb.findings[0]?.source_url ?? null,
+      findings: openWeb.findings,
+      resolvedPatch: openWeb.resolvedPatch,
+      rawResponse: openWeb.rawResponse,
+      fieldsReturned: openWeb.fieldsReturned,
+      error: openWeb.error,
+    });
+  }
   const order: ApiProviderName[] = preference === "auto" ? ["qincheck", "panda360"] : [preference];
   let last: ChinaRegistryResult | null = null;
   const attempted: ChinaRegistryResult[] = [];
@@ -421,10 +438,26 @@ export async function retrieveChinaRegistryEvidence(
     if (preference !== "auto") break;
   }
   if (preference === "auto" && attempted.every((current) => current.status === "not_configured")) {
+    const openWeb = await runOpenWebChinaRegistryResolver(args, { env });
+    if (openWeb.status === "success" || openWeb.status === "conflict") {
+      return result("success", {
+        provider: OPEN_WEB_CHINA_REGISTRY_PROVIDER,
+        sourceName: OPEN_WEB_CHINA_REGISTRY_SOURCE,
+        sourceUrl: openWeb.findings[0]?.source_url ?? null,
+        findings: openWeb.findings,
+        resolvedPatch: openWeb.resolvedPatch,
+        rawResponse: openWeb.rawResponse,
+        fieldsReturned: openWeb.fieldsReturned,
+        error: openWeb.status === "conflict" ? "Conflicting open-web registry evidence was found; checklist items are marked CAUTION where applicable." : undefined,
+      });
+    }
     return result("pending_admin", {
       provider: OFFICIAL_BROWSER_ASSISTED_PROVIDER,
       sourceName: OFFICIAL_BROWSER_ASSISTED_SOURCE,
-      error: "QINCheck and Panda360 are not configured. Official browser-assisted verification task is required.",
+      error: openWeb.error
+        ? `QINCheck and Panda360 are not configured. ${openWeb.error} Official browser-assisted verification task is required.`
+        : "QINCheck and Panda360 are not configured. Official browser-assisted verification task is required.",
+      rawResponse: { open_web_registry: { status: openWeb.status, diagnostics: openWeb.diagnostics, note: OPEN_WEB_CHINA_REGISTRY_LABEL } },
     });
   }
   return last ?? result("not_configured", { error: "No China registry provider is configured." });
