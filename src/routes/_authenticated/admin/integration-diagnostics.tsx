@@ -3,13 +3,16 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { getIntegrationDiagnostics } from "@/lib/admin/integration-diagnostics.functions";
+import { runChinaRegistryLookup } from "@/lib/admin/china-registry-lookup.functions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 
 export const Route = createFileRoute("/_authenticated/admin/integration-diagnostics")({
   component: IntegrationDiagnostics,
 });
+
 
 function statusBadge(status: string) {
   const map: Record<string, string> = {
@@ -37,15 +40,36 @@ function runBadge(s: string | null) {
 function IntegrationDiagnostics() {
   const [caseId, setCaseId] = useState("");
   const fn = useServerFn(getIntegrationDiagnostics);
+  const lookupFn = useServerFn(runChinaRegistryLookup);
   const q = useQuery({
     queryKey: ["integration-diagnostics", caseId],
     queryFn: () => fn({ data: caseId ? { caseId } : {} }),
   });
 
+  const [lookup, setLookup] = useState({ statedName: "", chineseName: "", uscc: "", englishName: "", website: "" });
+  const [lookupResult, setLookupResult] = useState<any>(null);
+  const [lookupBusy, setLookupBusy] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+
+  async function runLookup() {
+    setLookupBusy(true);
+    setLookupError(null);
+    setLookupResult(null);
+    try {
+      const res = await lookupFn({ data: lookup });
+      setLookupResult(res);
+    } catch (e: any) {
+      setLookupError(e?.message ?? "Lookup failed");
+    } finally {
+      setLookupBusy(false);
+    }
+  }
+
   return (
     <div className="p-6 space-y-4">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Integration diagnostics</h1>
+
         <p className="text-sm text-muted-foreground">
           Provider-by-provider status of the VerifyFirst investigation pipeline. Optionally scope
           to a specific case ID to see per-case run/evidence counts.
@@ -62,6 +86,45 @@ function IntegrationDiagnostics() {
           {q.isFetching ? "Loading…" : "Refresh"}
         </Button>
       </div>
+
+      <div className="rounded-lg border bg-card p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <h2 className="font-semibold">China Registry Lookup</h2>
+          <span className="text-xs text-muted-foreground">
+            Probe the automated pipeline (QINCheck → Panda360). Search order: USCC → Chinese name → English name.
+          </span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+          <div><Label className="text-xs">Company name (required)</Label><Input value={lookup.statedName} onChange={(e) => setLookup({ ...lookup, statedName: e.target.value })} /></div>
+          <div><Label className="text-xs">Chinese legal name</Label><Input value={lookup.chineseName} onChange={(e) => setLookup({ ...lookup, chineseName: e.target.value })} /></div>
+          <div><Label className="text-xs">USCC</Label><Input value={lookup.uscc} onChange={(e) => setLookup({ ...lookup, uscc: e.target.value })} /></div>
+          <div><Label className="text-xs">English name</Label><Input value={lookup.englishName} onChange={(e) => setLookup({ ...lookup, englishName: e.target.value })} /></div>
+          <div><Label className="text-xs">Website</Label><Input value={lookup.website} onChange={(e) => setLookup({ ...lookup, website: e.target.value })} /></div>
+          <div className="flex items-end">
+            <Button onClick={runLookup} disabled={lookupBusy || !lookup.statedName.trim()}>
+              {lookupBusy ? "Looking up…" : "Run lookup"}
+            </Button>
+          </div>
+        </div>
+        {lookupError && (
+          <div className="rounded border border-destructive/50 bg-destructive/10 text-destructive p-2 text-xs">{lookupError}</div>
+        )}
+        {lookupResult && (
+          <div className="rounded border p-3 text-xs space-y-1">
+            {lookupResult.blocked ? (
+              <div className="rounded bg-amber-100 text-amber-900 p-2 font-medium">{lookupResult.message}</div>
+            ) : null}
+            <div><span className="font-medium">Configured provider:</span> {lookupResult.provider ?? "—"}</div>
+            <div><span className="font-medium">Status:</span> <Badge>{lookupResult.status}</Badge></div>
+            <div><span className="font-medium">Match confidence:</span> {lookupResult.matchConfidence ?? "—"}</div>
+            <div><span className="font-medium">Fields returned:</span> {lookupResult.fieldsReturned?.length ? lookupResult.fieldsReturned.join(", ") : "—"}</div>
+            <div><span className="font-medium">Search terms tried (in order):</span> {(lookupResult.searchOrder ?? []).map((t: any) => `${t.label}=${t.value}`).join(" → ") || "—"}</div>
+            <div><span className="font-medium">Env:</span> QINCHECK_API_KEY={String(lookupResult.configured.QINCHECK_API_KEY)}, PANDA360_API_KEY={String(lookupResult.configured.PANDA360_API_KEY)}, CHINA_REGISTRY_ENABLED={String(lookupResult.configured.CHINA_REGISTRY_ENABLED)}</div>
+            {lookupResult.error && <div className="rounded bg-muted p-2 whitespace-pre-wrap">{lookupResult.error}</div>}
+          </div>
+        )}
+      </div>
+
 
       {q.error ? (
         <div className="rounded border border-destructive/50 bg-destructive/10 text-destructive p-3 text-sm">
