@@ -6,6 +6,7 @@ import { screenAdverseMedia, screenLitigation } from "./sources/adverse-media.se
 import { probeExportHistory, screenCertificates, screenWebsiteConsistency } from "./sources/web-research.server";
 import { retrieveChinaRegistryEvidence } from "./sources/china-registry.server";
 import { createOfficialRegistryTask, OFFICIAL_BROWSER_ASSISTED_PROVIDER } from "./sources/official-browser-assisted.server";
+import { OPEN_WEB_CHINA_REGISTRY_LABEL, OPEN_WEB_CHINA_REGISTRY_PROVIDER } from "./sources/open-web-china-registry.server";
 import { runConnectorEvidenceChecksDetailed, type ConnectorRunSummary } from "./connectors/findings.server";
 import { applyOutcomeGating, buildCanonicalChecklist } from "./checklist";
 import { computeOutcome, synthesiseNarrative } from "./synthesis.server";
@@ -116,6 +117,8 @@ export async function runInvestigation(
       chineseName: caseRow.supplier_chinese_name ?? null,
       country: order.supplier_country,
       website: order.website_marketplace_url,
+      productCategory: caseRow.product_category ?? null,
+      cityProvinceHint: caseRow.city_province_hint ?? null,
       resolved: initialResolved,
       extracted,
     });
@@ -140,7 +143,9 @@ export async function runInvestigation(
           ? "china_registry_panda360"
           : registryResult.provider === OFFICIAL_BROWSER_ASSISTED_PROVIDER
             ? "official_browser_assisted"
-            : "china_registry_auto";
+            : registryResult.provider === OPEN_WEB_CHINA_REGISTRY_PROVIDER
+              ? "open_web_china_registry"
+              : "china_registry_auto";
     const registryRunStatus =
       registryResult.status === "disabled" || registryResult.status === "pending_admin"
         ? "skipped"
@@ -152,7 +157,7 @@ export async function runInvestigation(
       case_id: caseId,
       job_id: opts.jobId ?? null,
       status: registryRunStatus,
-      mode: registryResult.provider === OFFICIAL_BROWSER_ASSISTED_PROVIDER ? "official_free" : registryResult.status === "success" ? "paid_enabled" : "paid_disabled",
+      mode: registryResult.provider === OFFICIAL_BROWSER_ASSISTED_PROVIDER || registryResult.provider === OPEN_WEB_CHINA_REGISTRY_PROVIDER ? "official_free" : registryResult.status === "success" ? "paid_enabled" : "paid_disabled",
       retrieved_at: registryResult.retrievedAt,
       confidence: registryResult.status === "success" ? "high" : "low",
       source_url: registryResult.sourceUrl,
@@ -162,6 +167,11 @@ export async function runInvestigation(
         provider: registryResult.provider,
         evidence_count: registryResult.evidenceCount,
         fields_returned: registryResult.fieldsReturned,
+        diagnostics: registryResult.rawResponse && typeof registryResult.rawResponse === "object" && "diagnostics" in (registryResult.rawResponse as any)
+          ? (registryResult.rawResponse as any).diagnostics
+          : registryResult.rawResponse && typeof registryResult.rawResponse === "object" && "open_web_registry" in (registryResult.rawResponse as any)
+            ? (registryResult.rawResponse as any).open_web_registry?.diagnostics
+            : null,
         raw_response: registryResult.status === "success" ? registryResult.rawResponse : null,
       },
     }).select("id").maybeSingle();
@@ -192,7 +202,7 @@ export async function runInvestigation(
         source_url: finding.source_url,
         retrieval_date: finding.retrieval_date,
         evidence_excerpt: finding.evidence_excerpt,
-        license_notes: `Created from configured China registry provider ${registryResult.sourceName}`,
+        license_notes: registryResult.provider === OPEN_WEB_CHINA_REGISTRY_PROVIDER ? OPEN_WEB_CHINA_REGISTRY_LABEL : `Created from configured China registry provider ${registryResult.sourceName}`,
       }).select("id").maybeSingle();
       registryFindings.push({
         ...finding,
@@ -240,7 +250,7 @@ export async function runInvestigation(
       connectorName: registryResult.sourceName,
       category: "corporate_registry",
       status: registryRunStatus,
-      mode: registryResult.provider === OFFICIAL_BROWSER_ASSISTED_PROVIDER ? "official_free" : registryResult.status === "success" ? "paid_enabled" : "paid_disabled",
+      mode: registryResult.provider === OFFICIAL_BROWSER_ASSISTED_PROVIDER || registryResult.provider === OPEN_WEB_CHINA_REGISTRY_PROVIDER ? "official_free" : registryResult.status === "success" ? "paid_enabled" : "paid_disabled",
       sourceUrl: registryResult.sourceUrl,
       retrievedAt: registryResult.retrievedAt,
       reason: registryResult.error ?? (registryResult.status === "success" ? `${registryResult.evidenceCount} registry evidence facts returned.` : "China registry provider not configured or did not return a selectable match."),
@@ -384,7 +394,8 @@ export async function runInvestigation(
       inspection_recommendation: synth.inspection_recommendation,
       testing_recommendation: synth.testing_recommendation,
       methodology:
-        "VerifyFirst stores every factual finding as structured evidence before report rendering. Every generated report includes the full 32-item canonical supplier-verification checklist. Paid registry, shipment, IAF and OpenSanctions connectors remain disabled until credentials are supplied. Generic web research is web intelligence only and cannot independently verify corporate registration, shipment history, certificate validity, sanctions status or litigation.",
+        "VerifyFirst stores every factual finding as structured evidence before report rendering. Every generated report includes the full 32-item canonical supplier-verification checklist. Paid registry, shipment, IAF and OpenSanctions connectors remain disabled until credentials are supplied. Generic web research is web intelligence only and cannot independently verify corporate registration, shipment history, certificate validity, sanctions status or litigation." +
+        (registryResult.provider === OPEN_WEB_CHINA_REGISTRY_PROVIDER ? ` ${OPEN_WEB_CHINA_REGISTRY_LABEL}` : ""),
       limitations:
         "No-result searches are not proof that no record exists. Missing or unconfigured source data is reported as not independently verified. Production-grade QCC, ImportGenius, IAF CertSearch and OpenSanctions results require licensed credentials.",
       sources_used: [...sourcesQueried, ...customerEvidence],

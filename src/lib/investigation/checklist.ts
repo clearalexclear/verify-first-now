@@ -109,6 +109,7 @@ const OFFICIAL_SOURCE_PATTERNS = [
   /qincheck/i,
   /panda360/i,
   /official browser-assisted verification/i,
+  /open-web registry intelligence.*official source/i,
   /china registry/i,
   /importgenius/i,
   /iaf/i,
@@ -170,7 +171,7 @@ function sourceIsFirecrawl(sourceName: string): boolean {
 }
 
 function sourceIsChinaRegistry(sourceName: string): boolean {
-  return /qincheck|panda360|official browser-assisted verification/i.test(sourceName);
+  return /qincheck|panda360|official browser-assisted verification|open-web registry intelligence/i.test(sourceName);
 }
 
 function sourceIsManual(sourceName: string): boolean {
