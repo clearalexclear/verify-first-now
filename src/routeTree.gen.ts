@@ -24,6 +24,7 @@ import { Route as OrderStatusTokenRouteImport } from './routes/order.status.$tok
 import { Route as ApiStripeWebhookRouteImport } from './routes/api/stripe/webhook'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
 import { Route as AuthenticatedAdminTemplatesRouteImport } from './routes/_authenticated/admin/templates'
+import { Route as AuthenticatedAdminOfficialRegistryRouteImport } from './routes/_authenticated/admin/official-registry'
 import { Route as AuthenticatedAdminManualEvidenceRouteImport } from './routes/_authenticated/admin/manual-evidence'
 import { Route as AuthenticatedAdminIntegrationDiagnosticsRouteImport } from './routes/_authenticated/admin/integration-diagnostics'
 import { Route as ApiPublicInvestigateCaseIdRouteImport } from './routes/api/public/investigate.$caseId'
@@ -104,6 +105,12 @@ const AuthenticatedAdminTemplatesRoute =
     path: '/templates',
     getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
+const AuthenticatedAdminOfficialRegistryRoute =
+  AuthenticatedAdminOfficialRegistryRouteImport.update({
+    id: '/official-registry',
+    path: '/official-registry',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
 const AuthenticatedAdminManualEvidenceRoute =
   AuthenticatedAdminManualEvidenceRouteImport.update({
     id: '/manual-evidence',
@@ -141,6 +148,7 @@ export interface FileRoutesByFullPath {
   '/upload/$token': typeof UploadTokenRoute
   '/admin/integration-diagnostics': typeof AuthenticatedAdminIntegrationDiagnosticsRoute
   '/admin/manual-evidence': typeof AuthenticatedAdminManualEvidenceRoute
+  '/admin/official-registry': typeof AuthenticatedAdminOfficialRegistryRoute
   '/admin/templates': typeof AuthenticatedAdminTemplatesRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
@@ -160,6 +168,7 @@ export interface FileRoutesByTo {
   '/upload/$token': typeof UploadTokenRoute
   '/admin/integration-diagnostics': typeof AuthenticatedAdminIntegrationDiagnosticsRoute
   '/admin/manual-evidence': typeof AuthenticatedAdminManualEvidenceRoute
+  '/admin/official-registry': typeof AuthenticatedAdminOfficialRegistryRoute
   '/admin/templates': typeof AuthenticatedAdminTemplatesRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
@@ -182,6 +191,7 @@ export interface FileRoutesById {
   '/upload/$token': typeof UploadTokenRoute
   '/_authenticated/admin/integration-diagnostics': typeof AuthenticatedAdminIntegrationDiagnosticsRoute
   '/_authenticated/admin/manual-evidence': typeof AuthenticatedAdminManualEvidenceRoute
+  '/_authenticated/admin/official-registry': typeof AuthenticatedAdminOfficialRegistryRoute
   '/_authenticated/admin/templates': typeof AuthenticatedAdminTemplatesRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
@@ -204,6 +214,7 @@ export interface FileRouteTypes {
     | '/upload/$token'
     | '/admin/integration-diagnostics'
     | '/admin/manual-evidence'
+    | '/admin/official-registry'
     | '/admin/templates'
     | '/admin/users'
     | '/api/stripe/webhook'
@@ -223,6 +234,7 @@ export interface FileRouteTypes {
     | '/upload/$token'
     | '/admin/integration-diagnostics'
     | '/admin/manual-evidence'
+    | '/admin/official-registry'
     | '/admin/templates'
     | '/admin/users'
     | '/api/stripe/webhook'
@@ -244,6 +256,7 @@ export interface FileRouteTypes {
     | '/upload/$token'
     | '/_authenticated/admin/integration-diagnostics'
     | '/_authenticated/admin/manual-evidence'
+    | '/_authenticated/admin/official-registry'
     | '/_authenticated/admin/templates'
     | '/_authenticated/admin/users'
     | '/api/stripe/webhook'
@@ -374,6 +387,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminTemplatesRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
+    '/_authenticated/admin/official-registry': {
+      id: '/_authenticated/admin/official-registry'
+      path: '/official-registry'
+      fullPath: '/admin/official-registry'
+      preLoaderRoute: typeof AuthenticatedAdminOfficialRegistryRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
     '/_authenticated/admin/manual-evidence': {
       id: '/_authenticated/admin/manual-evidence'
       path: '/manual-evidence'
@@ -408,6 +428,7 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedAdminRouteRouteChildren {
   AuthenticatedAdminIntegrationDiagnosticsRoute: typeof AuthenticatedAdminIntegrationDiagnosticsRoute
   AuthenticatedAdminManualEvidenceRoute: typeof AuthenticatedAdminManualEvidenceRoute
+  AuthenticatedAdminOfficialRegistryRoute: typeof AuthenticatedAdminOfficialRegistryRoute
   AuthenticatedAdminTemplatesRoute: typeof AuthenticatedAdminTemplatesRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
@@ -420,6 +441,8 @@ const AuthenticatedAdminRouteRouteChildren: AuthenticatedAdminRouteRouteChildren
       AuthenticatedAdminIntegrationDiagnosticsRoute,
     AuthenticatedAdminManualEvidenceRoute:
       AuthenticatedAdminManualEvidenceRoute,
+    AuthenticatedAdminOfficialRegistryRoute:
+      AuthenticatedAdminOfficialRegistryRoute,
     AuthenticatedAdminTemplatesRoute: AuthenticatedAdminTemplatesRoute,
     AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
     AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,

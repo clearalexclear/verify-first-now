@@ -2,6 +2,7 @@ import type { Finding } from "../types";
 import { getConnector, persistConnectorRun } from "./registry.server";
 import type { ConnectorResult, InvestigationConnector } from "./types";
 import { loadManualEvidenceFindings, MANUAL_SOURCE, MANUAL_SOURCE_LABEL } from "../sources/manual-evidence.server";
+import { loadOfficialRegistryFindings, OFFICIAL_BROWSER_ASSISTED_PROVIDER, OFFICIAL_BROWSER_ASSISTED_SOURCE } from "../sources/official-browser-assisted.server";
 
 const PAID_DISABLED_CONNECTORS = [
   "qcc_corporate_registry",
@@ -186,6 +187,21 @@ export async function runConnectorEvidenceChecksDetailed(args: {
       sourceUrl: null,
       retrievedAt: new Date().toISOString(),
       reason: `${manualFindings.length} active manual evidence ${manualFindings.length === 1 ? "entry" : "entries"}`,
+    });
+  }
+
+  const officialRegistryFindings = await loadOfficialRegistryFindings(args.caseId);
+  if (officialRegistryFindings.length > 0) {
+    findings.push(...officialRegistryFindings);
+    runs.push({
+      connectorId: OFFICIAL_BROWSER_ASSISTED_PROVIDER,
+      connectorName: OFFICIAL_BROWSER_ASSISTED_SOURCE,
+      category: "corporate_registry",
+      status: "success",
+      mode: "official_free",
+      sourceUrl: officialRegistryFindings[0]?.source_url ?? null,
+      retrievedAt: new Date().toISOString(),
+      reason: `${officialRegistryFindings.length} official browser-assisted registry evidence ${officialRegistryFindings.length === 1 ? "entry" : "entries"}`,
     });
   }
 

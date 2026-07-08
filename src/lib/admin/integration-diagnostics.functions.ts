@@ -28,6 +28,7 @@ interface ProviderReport {
     fieldsReturned?: string[];
     evidenceCount?: number | null;
   };
+  assistedTaskStatus?: "pending" | "completed" | "cancelled" | null;
   evidenceCount: number;
   lastEvidenceExcerpt: string | null;
   checklistItemsAffected: string[];
@@ -157,6 +158,31 @@ const PROVIDERS: Array<{
     paidDisabled: true,
   },
   {
+    id: "official_browser_assisted",
+    name: "Official browser-assisted verification",
+    category: "corporate_registry",
+    requiredEnv: [],
+    connectorRunId: "official_browser_assisted",
+    evidenceSourcePatterns: ["Official browser-assisted verification%"],
+    checklistItemsAffected: [
+      "legal_company_existence",
+      "chinese_legal_name",
+      "unified_social_credit_code",
+      "registration_status",
+      "incorporation_date",
+      "registered_capital",
+      "legal_representative",
+      "registered_address",
+      "business_scope",
+      "shareholders_beneficial_ownership",
+      "related_companies",
+      "litigation_court_records",
+      "enforcement_administrative_penalties",
+      "business_licence_validation",
+    ],
+    notes: "Admin-assisted official/public source fallback. Pending tasks are created when QINCheck and Panda360 are unavailable; verified evidence requires analyst citation or attachment.",
+  },
+  {
     id: "qcc_corporate_registry",
     name: "QCC International API",
     category: "corporate_registry",
@@ -271,6 +297,18 @@ export const getIntegrationDiagnostics = createServerFn({ method: "POST" })
         lastEvidenceExcerpt = latest?.[0]?.evidence_excerpt ?? null;
       }
 
+      let assistedTaskStatus: ProviderReport["assistedTaskStatus"] = null;
+      if (p.id === "official_browser_assisted") {
+        let tq = db
+          .from("official_registry_verification_tasks")
+          .select("status, updated_at")
+          .order("updated_at", { ascending: false })
+          .limit(1);
+        if (data.caseId) tq = tq.eq("case_id", data.caseId);
+        const { data: taskRows } = await tq;
+        assistedTaskStatus = taskRows?.[0]?.status ?? null;
+      }
+
       reports.push({
         id: p.id,
         name: p.name,
@@ -279,6 +317,7 @@ export const getIntegrationDiagnostics = createServerFn({ method: "POST" })
         requiredEnv: p.requiredEnv,
         envConfigured: env,
         lastRun,
+        assistedTaskStatus,
         evidenceCount,
         lastEvidenceExcerpt,
         checklistItemsAffected: p.checklistItemsAffected,

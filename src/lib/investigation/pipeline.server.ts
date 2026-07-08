@@ -5,6 +5,7 @@ import { screenUflpa } from "./sources/uflpa.server";
 import { screenAdverseMedia, screenLitigation } from "./sources/adverse-media.server";
 import { probeExportHistory, screenCertificates, screenWebsiteConsistency } from "./sources/web-research.server";
 import { retrieveChinaRegistryEvidence } from "./sources/china-registry.server";
+import { createOfficialRegistryTask, OFFICIAL_BROWSER_ASSISTED_PROVIDER } from "./sources/official-browser-assisted.server";
 import { runConnectorEvidenceChecksDetailed, type ConnectorRunSummary } from "./connectors/findings.server";
 import { applyOutcomeGating, buildCanonicalChecklist } from "./checklist";
 import { computeOutcome, synthesiseNarrative } from "./synthesis.server";
@@ -137,13 +138,21 @@ export async function runInvestigation(
         ? "china_registry_qincheck"
         : registryResult.provider === "panda360"
           ? "china_registry_panda360"
-          : "china_registry_auto";
+          : registryResult.provider === OFFICIAL_BROWSER_ASSISTED_PROVIDER
+            ? "official_browser_assisted"
+            : "china_registry_auto";
+    const registryRunStatus =
+      registryResult.status === "disabled" || registryResult.status === "pending_admin"
+        ? "skipped"
+        : registryResult.status === "ambiguous"
+          ? "not_found"
+          : registryResult.status;
     const { data: registryRun } = await db.from("connector_runs").insert({
       connector_id: registryConnectorId,
       case_id: caseId,
       job_id: opts.jobId ?? null,
-      status: registryResult.status === "disabled" ? "skipped" : registryResult.status === "ambiguous" ? "not_found" : registryResult.status,
-      mode: registryResult.status === "success" ? "paid_enabled" : "paid_disabled",
+      status: registryRunStatus,
+      mode: registryResult.provider === OFFICIAL_BROWSER_ASSISTED_PROVIDER ? "official_free" : registryResult.status === "success" ? "paid_enabled" : "paid_disabled",
       retrieved_at: registryResult.retrievedAt,
       confidence: registryResult.status === "success" ? "high" : "low",
       source_url: registryResult.sourceUrl,
@@ -156,6 +165,19 @@ export async function runInvestigation(
         raw_response: registryResult.status === "success" ? registryResult.rawResponse : null,
       },
     }).select("id").maybeSingle();
+    if (registryResult.status === "pending_admin") {
+      await createOfficialRegistryTask({
+        caseId,
+        jobId: opts.jobId ?? null,
+        searchTerms: [
+          resolved.registration_number,
+          resolved.legal_name_local,
+          caseRow.supplier_chinese_name,
+          order.supplier_company_name,
+        ].filter((item): item is string => typeof item === "string" && item.trim().length > 0),
+        reason: registryResult.error ?? "China registry APIs are unavailable; analyst official-source verification is required.",
+      });
+    }
     const registryFindings: Finding[] = [];
     for (const finding of registryResult.findings) {
       const { data: insertedEvidence } = await db.from("evidence_facts").insert({
@@ -217,8 +239,8 @@ export async function runInvestigation(
       connectorId: registryConnectorId,
       connectorName: registryResult.sourceName,
       category: "corporate_registry",
-      status: registryResult.status === "disabled" ? "skipped" : registryResult.status === "ambiguous" ? "not_found" : registryResult.status,
-      mode: registryResult.status === "success" ? "paid_enabled" : "paid_disabled",
+      status: registryRunStatus,
+      mode: registryResult.provider === OFFICIAL_BROWSER_ASSISTED_PROVIDER ? "official_free" : registryResult.status === "success" ? "paid_enabled" : "paid_disabled",
       sourceUrl: registryResult.sourceUrl,
       retrievedAt: registryResult.retrievedAt,
       reason: registryResult.error ?? (registryResult.status === "success" ? `${registryResult.evidenceCount} registry evidence facts returned.` : "China registry provider not configured or did not return a selectable match."),

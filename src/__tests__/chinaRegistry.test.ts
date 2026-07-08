@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildCanonicalChecklist } from "../lib/investigation/checklist";
+import { applyOutcomeGating, buildCanonicalChecklist, checklistResultsToFindings } from "../lib/investigation/checklist";
 import { chinaRegistryRecordToFindings, retrieveChinaRegistryEvidence } from "../lib/investigation/sources/china-registry.server";
+import { officialRegistryFieldsToFindings, OFFICIAL_BROWSER_ASSISTED_SOURCE } from "../lib/investigation/sources/official-browser-assisted.server";
+import { computeOutcome } from "../lib/investigation/synthesis.server";
 import type { Finding, InvestigationReport, ResolvedEntity } from "../lib/investigation/types";
 
 const baseResolvedEntity: ResolvedEntity = {
@@ -138,13 +140,25 @@ describe("China registry providers", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(2, expect.stringContaining("/wp-json/chinacheckup/v1/getFull?uscc=91440700MA4W123456"), expect.any(Object));
   });
 
-  it("returns not_configured when no provider key exists", async () => {
+  it("returns not_configured when a selected API provider key is missing", async () => {
+    const result = await retrieveChinaRegistryEvidence(input(), {
+      CHINA_REGISTRY_ENABLED: "true",
+      CHINA_REGISTRY_PROVIDER: "qincheck",
+    });
+
+    expect(result.status).toBe("not_configured");
+    expect(result.findings).toHaveLength(0);
+  });
+
+  it("returns a pending official-browser-assisted task outcome when auto providers are not configured", async () => {
     const result = await retrieveChinaRegistryEvidence(input(), {
       CHINA_REGISTRY_ENABLED: "true",
       CHINA_REGISTRY_PROVIDER: "auto",
     });
 
-    expect(result.status).toBe("not_configured");
+    expect(result.status).toBe("pending_admin");
+    expect(result.provider).toBe("official_browser_assisted");
+    expect(result.sourceName).toBe(OFFICIAL_BROWSER_ASSISTED_SOURCE);
     expect(result.findings).toHaveLength(0);
   });
 
@@ -267,5 +281,94 @@ describe("China registry providers", () => {
     ]) {
       expect(result.find((item) => item.id === id)?.status).toBe("NOT_VERIFIED");
     }
+  });
+
+  it("maps admin-confirmed official registry evidence to registry checklist items only", () => {
+    const findings = officialRegistryFieldsToFindings({
+      sourceName: "National Enterprise Credit Information Publicity System",
+      sourceUrl: "https://www.gsxt.gov.cn/",
+      retrievalDate: "2026-07-08T00:00:00.000Z",
+      citation: null,
+      attachmentPaths: ["official-registry/case/screenshot.png"],
+      chineseLegalName: "江门市长文贸易有限公司",
+      englishName: "Jiangmen Changwen Trading Co., Ltd.",
+      uscc: "91440700MA4W123456",
+      registrationStatus: "Active",
+      incorporationDate: "2017-05-12",
+      registeredCapital: "RMB 1,000,000",
+      registeredAddress: "Jiangmen City, Guangdong",
+      legalRepresentative: "Chen Wen",
+      businessScope: "Kitchenware export",
+      shareholdersOwnership: "Chen Wen",
+      relatedCompanies: "Related Co.",
+      litigationEnforcementPenalties: "Administrative penalty record available",
+      abnormalOperationRecords: "No current abnormal operation record shown",
+      businessLicenceMatchesOfficial: true,
+    }).map((finding, index) => ({ ...finding, evidence_ids: [`official_${index}`] }));
+    const result = buildCanonicalChecklist(mockReport(findings));
+
+    expect(result.find((item) => item.id === "legal_company_existence")?.status).toBe("PASS");
+    expect(result.find((item) => item.id === "unified_social_credit_code")?.evidence_classification).toBe("VERIFIED");
+    expect(result.find((item) => item.id === "business_licence_validation")?.status).toBe("PASS");
+    for (const id of ["sanctions_restricted_party", "uflpa_forced_labour", "us_shipment_export_history", "certificate_authenticity", "product_recall_history", "factory_vs_trader"]) {
+      expect(result.find((item) => item.id === id)?.status).toBe("NOT_VERIFIED");
+    }
+  });
+
+  it("does not allow official browser-assisted evidence without citation or attachment to become VERIFIED", () => {
+    const findings = officialRegistryFieldsToFindings({
+      sourceName: "Official source",
+      sourceUrl: null,
+      retrievalDate: "2026-07-08T00:00:00.000Z",
+      citation: null,
+      attachmentPaths: [],
+      chineseLegalName: "江门市长文贸易有限公司",
+      englishName: null,
+      uscc: "91440700MA4W123456",
+      registrationStatus: null,
+      incorporationDate: null,
+      registeredCapital: null,
+      registeredAddress: null,
+      legalRepresentative: null,
+      businessScope: null,
+      shareholdersOwnership: null,
+      relatedCompanies: null,
+      litigationEnforcementPenalties: null,
+      abnormalOperationRecords: null,
+      businessLicenceMatchesOfficial: false,
+    }).map((finding, index) => ({ ...finding, evidence_ids: [`official_missing_${index}`] }));
+    const result = buildCanonicalChecklist(mockReport(findings));
+
+    expect(result.find((item) => item.id === "legal_company_existence")?.status).toBe("NOT_VERIFIED");
+    expect(result.find((item) => item.id === "unified_social_credit_code")?.evidence_classification).toBe("NOT_INDEPENDENTLY_VERIFIED");
+  });
+
+  it("keeps the report paused when critical registry evidence is not confirmed", () => {
+    const findings = officialRegistryFieldsToFindings({
+      sourceName: "Official source",
+      sourceUrl: null,
+      retrievalDate: "2026-07-08T00:00:00.000Z",
+      citation: null,
+      attachmentPaths: [],
+      chineseLegalName: "江门市长文贸易有限公司",
+      englishName: null,
+      uscc: "91440700MA4W123456",
+      registrationStatus: "Active",
+      incorporationDate: null,
+      registeredCapital: null,
+      registeredAddress: null,
+      legalRepresentative: null,
+      businessScope: null,
+      shareholdersOwnership: null,
+      relatedCompanies: null,
+      litigationEnforcementPenalties: null,
+      abnormalOperationRecords: null,
+      businessLicenceMatchesOfficial: true,
+    }).map((finding, index) => ({ ...finding, evidence_ids: [`official_unconfirmed_${index}`] }));
+    const checklist = buildCanonicalChecklist(mockReport(findings));
+    const outcome = applyOutcomeGating(computeOutcome(checklistResultsToFindings(checklist)), checklist);
+
+    expect(outcome.outcome).toBe("PAUSE_PENDING_CLARIFICATION");
+    expect(outcome.blockers).toContain("Legal company existence is not independently verified.");
   });
 });
