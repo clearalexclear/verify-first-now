@@ -130,6 +130,18 @@ function OfficialRegistryPage() {
         <span>Official registry</span>
       </div>
 
+      <div className="rounded-lg border border-amber-300 bg-amber-50 text-amber-900 p-3 text-xs">
+        <div className="font-semibold">Manual backup only — not the main workflow.</div>
+        <div>
+          The main China registry flow is automated via QINCheck / Panda360 (search order: USCC → Chinese legal name → English name).
+          If neither <code>QINCHECK_API_KEY</code> nor <code>PANDA360_API_KEY</code> is configured, official registry verification
+          cannot be automated yet. Use this page only as an analyst override when a live provider lookup is unavailable —
+          never treat it as automatic retrieval of official registry data.
+          See <Link to="/admin/integration-diagnostics" className="underline">Integration diagnostics → China Registry Lookup</Link>.
+        </div>
+      </div>
+
+
       <Card>
         <CardHeader><CardTitle className="text-sm">Select case</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
