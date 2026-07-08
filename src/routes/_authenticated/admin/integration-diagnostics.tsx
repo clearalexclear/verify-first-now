@@ -130,6 +130,12 @@ function IntegrationDiagnostics() {
                     <div className="text-muted-foreground">
                       {p.lastRun.evidenceCount ?? p.evidenceCount} fact(s)
                     </div>
+                    {p.assistedTaskStatus && (
+                      <>
+                        <div className="mt-2 font-medium">Official-assisted task</div>
+                        <div className="text-muted-foreground">{p.assistedTaskStatus}</div>
+                      </>
+                    )}
                     {Array.isArray(p.lastRun.fieldsReturned) && p.lastRun.fieldsReturned.length > 0 && (
                       <>
                         <div className="mt-2 font-medium">Fields returned</div>

@@ -1,11 +1,13 @@
 import type { ExtractedDoc } from "../extract-documents.server";
 import type { Finding, FindingConfidence, ResolvedEntity } from "../types";
+import { OFFICIAL_BROWSER_ASSISTED_PROVIDER, OFFICIAL_BROWSER_ASSISTED_SOURCE } from "./official-browser-assisted.server";
 
 export const CHINA_REGISTRY_SOURCE = "China registry provider";
 export const QINCHECK_SOURCE = "QINCheck China registry";
 export const PANDA360_SOURCE = "Panda360 China registry";
 
-type ProviderName = "qincheck" | "panda360";
+type ApiProviderName = "qincheck" | "panda360";
+type ProviderName = ApiProviderName | typeof OFFICIAL_BROWSER_ASSISTED_PROVIDER;
 type ProviderPreference = ProviderName | "auto" | "disabled";
 
 export interface ChinaRegistrySearchInput {
@@ -45,7 +47,7 @@ class AmbiguousRegistryMatchError extends Error {
 }
 
 export interface ChinaRegistryResult {
-  status: "success" | "not_configured" | "not_found" | "ambiguous" | "error" | "disabled";
+  status: "success" | "not_configured" | "not_found" | "ambiguous" | "error" | "disabled" | "pending_admin";
   provider: ProviderName | null;
   sourceName: string;
   sourceUrl: string | null;
@@ -62,6 +64,7 @@ function providerPreference(env: Record<string, string | undefined>): ProviderPr
   const raw = (env.CHINA_REGISTRY_PROVIDER || "auto").trim().toLowerCase();
   if (raw === "qincheck") return "qincheck";
   if (raw === "panda360") return "panda360";
+  if (raw === OFFICIAL_BROWSER_ASSISTED_PROVIDER) return OFFICIAL_BROWSER_ASSISTED_PROVIDER;
   if (raw === "disabled") return "disabled";
   return "auto";
 }
@@ -324,7 +327,7 @@ async function runPanda360(term: string, apiKey: string, args: ChinaRegistrySear
   return normalizeRecord("panda360", fullRaw, fullUrl);
 }
 
-async function tryProvider(provider: ProviderName, args: ChinaRegistrySearchInput, env: Record<string, string | undefined>): Promise<ChinaRegistryResult> {
+async function tryProvider(provider: ApiProviderName, args: ChinaRegistrySearchInput, env: Record<string, string | undefined>): Promise<ChinaRegistryResult> {
   const retrievedAt = new Date().toISOString();
   const key = provider === "qincheck" ? env.QINCHECK_API_KEY : env.PANDA360_API_KEY;
   if (!key) {
@@ -400,13 +403,29 @@ export async function retrieveChinaRegistryEvidence(
   if (!enabled(env)) return result("disabled", { error: "CHINA_REGISTRY_ENABLED is not true." });
   const preference = providerPreference(env);
   if (preference === "disabled") return result("disabled", { error: "CHINA_REGISTRY_PROVIDER is disabled." });
-  const order: ProviderName[] = preference === "auto" ? ["qincheck", "panda360"] : [preference];
+  if (preference === OFFICIAL_BROWSER_ASSISTED_PROVIDER) {
+    return result("pending_admin", {
+      provider: OFFICIAL_BROWSER_ASSISTED_PROVIDER,
+      sourceName: OFFICIAL_BROWSER_ASSISTED_SOURCE,
+      error: "Official browser-assisted registry verification requires analyst completion.",
+    });
+  }
+  const order: ApiProviderName[] = preference === "auto" ? ["qincheck", "panda360"] : [preference];
   let last: ChinaRegistryResult | null = null;
+  const attempted: ChinaRegistryResult[] = [];
   for (const provider of order) {
     const current = await tryProvider(provider, args, env);
     if (current.status === "success") return current;
+    attempted.push(current);
     last = current;
     if (preference !== "auto") break;
+  }
+  if (preference === "auto" && attempted.every((current) => current.status === "not_configured")) {
+    return result("pending_admin", {
+      provider: OFFICIAL_BROWSER_ASSISTED_PROVIDER,
+      sourceName: OFFICIAL_BROWSER_ASSISTED_SOURCE,
+      error: "QINCheck and Panda360 are not configured. Official browser-assisted verification task is required.",
+    });
   }
   return last ?? result("not_configured", { error: "No China registry provider is configured." });
 }
