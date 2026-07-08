@@ -84,9 +84,21 @@ function OfficialRegistryPage() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedCaseId) return;
+    const contentFields: (keyof typeof form)[] = [
+      "chineseLegalName", "englishName", "uscc", "registrationStatus", "incorporationDate",
+      "registeredCapital", "registeredAddress", "legalRepresentative", "businessScope",
+      "shareholdersOwnership", "relatedCompanies", "litigationEnforcementPenalties", "abnormalOperationRecords",
+    ];
+    const hasAny = contentFields.some((k) => String(form[k] ?? "").trim().length > 0)
+      || (form.businessLicenceMatchesOfficial && (form.uscc.trim() || form.chineseLegalName.trim()));
+    if (!hasAny) {
+      toast.error("Enter at least one official registry finding (e.g. USCC, legal name, address).");
+      return;
+    }
     setSaving(true);
     try {
       const attachments = await filesToAttachments(files);
+
       const result = await saveEvidence({
         data: {
           caseId: selectedCaseId,
