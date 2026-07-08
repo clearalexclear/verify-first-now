@@ -40,15 +40,36 @@ function runBadge(s: string | null) {
 function IntegrationDiagnostics() {
   const [caseId, setCaseId] = useState("");
   const fn = useServerFn(getIntegrationDiagnostics);
+  const lookupFn = useServerFn(runChinaRegistryLookup);
   const q = useQuery({
     queryKey: ["integration-diagnostics", caseId],
     queryFn: () => fn({ data: caseId ? { caseId } : {} }),
   });
 
+  const [lookup, setLookup] = useState({ statedName: "", chineseName: "", uscc: "", englishName: "", website: "" });
+  const [lookupResult, setLookupResult] = useState<any>(null);
+  const [lookupBusy, setLookupBusy] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+
+  async function runLookup() {
+    setLookupBusy(true);
+    setLookupError(null);
+    setLookupResult(null);
+    try {
+      const res = await lookupFn({ data: lookup });
+      setLookupResult(res);
+    } catch (e: any) {
+      setLookupError(e?.message ?? "Lookup failed");
+    } finally {
+      setLookupBusy(false);
+    }
+  }
+
   return (
     <div className="p-6 space-y-4">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Integration diagnostics</h1>
+
         <p className="text-sm text-muted-foreground">
           Provider-by-provider status of the VerifyFirst investigation pipeline. Optionally scope
           to a specific case ID to see per-case run/evidence counts.
