@@ -481,14 +481,15 @@ describe("China registry providers", () => {
     }
   });
 
-  it("rejects unrelated Jiangmen open-web boilerplate entity and invalid USCC as supplier identity", () => {
+  it("rejects the real CODS Jiangmen boilerplate entity and invalid USCC as supplier identity", () => {
     const result = openWebRegistryFindingsFromSources([
       {
-        url: "https://example.gov.cn/help/industry-boilerplate",
-        title: "工商信息查询帮助",
-        snippet: "江门企业工商信息查询说明",
-        kind: "official",
+        url: "https://www.cods.org.cn/cods/dmcx/index.html",
+        title: "统一社会信用代码数据管理中心查询首页",
+        snippet: "统一社会信用代码、企业名称、法定代表人、注册资本、经营状态查询入口",
+        kind: "public_web",
         markdown: [
+          "统一社会信用代码数据管理中心",
           "主管单位：中国工商出版社有限公司",
           "统一社会信用代码: c7de186521b9b6a986",
           "法定代表人: 张三",
@@ -498,9 +499,9 @@ describe("China registry providers", () => {
         ].join("\n"),
       },
     ], "2026-07-09T00:00:00.000Z", input({
-      statedName: "Jiangmen Changwen Trading Co., Ltd.",
-      chineseName: "江门市长文贸易有限公司",
-      website: "https://changwen.example",
+      statedName: "Jiangmen Changwen Cookware & Kitchenware Co., Ltd.",
+      chineseName: null,
+      website: "https://cookwarecw.com",
     }));
     const checklist = buildCanonicalChecklist(mockReport(result.findings.map((finding, index) => ({ ...finding, evidence_ids: [`jiangmen_redflag_${index}`] }))));
 
@@ -511,9 +512,15 @@ describe("China registry providers", () => {
       expect.objectContaining({
         item: "Red flags and contradictions",
         status: "CAUTION",
-        evidence_excerpt: expect.stringContaining("Unrelated registry entity detected in search results; not accepted as supplier identity."),
+        evidence_excerpt: expect.stringContaining("Unrelated registry entity detected in open-web results; not accepted as supplier identity."),
+      }),
+      expect.objectContaining({
+        item: "Red flags and contradictions",
+        status: "CAUTION",
+        evidence_excerpt: expect.stringContaining("Invalid USCC-like value found in unrelated or weak public-web result; not accepted as supplier identity."),
       }),
     ]));
+    expect(result.findings.map((finding) => finding.evidence_excerpt).join("\n")).toContain("Open-web registry intelligence");
     expect(checklist.find((item) => item.id === "legal_company_existence")?.status).toBe("NOT_VERIFIED");
     expect(checklist.find((item) => item.id === "chinese_legal_name")?.status).toBe("NOT_VERIFIED");
     expect(checklist.find((item) => item.id === "unified_social_credit_code")?.status).toBe("NOT_VERIFIED");
