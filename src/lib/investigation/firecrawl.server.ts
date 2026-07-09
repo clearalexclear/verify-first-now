@@ -47,7 +47,7 @@ export interface FirecrawlSearchHit {
 
 export interface FirecrawlSearchResult {
   success?: boolean;
-  data?: FirecrawlSearchHit[];
+  data?: FirecrawlSearchHit[] | { web?: FirecrawlSearchHit[]; news?: FirecrawlSearchHit[]; images?: FirecrawlSearchHit[] };
   web?: FirecrawlSearchHit[];
 }
 
@@ -66,8 +66,12 @@ export async function fcSearch(query: string, opts: {
     if (opts.country) body.country = opts.country;
     if (opts.scrape) body.scrapeOptions = { formats: ["markdown"] };
     const json = await call<FirecrawlSearchResult>("/v2/search", body);
-    const arr = json.data ?? json.web ?? [];
-    return Array.isArray(arr) ? arr.slice(0, opts.limit ?? 5) : [];
+    // v2 shape: { data: { web: [...] } }. Legacy: { data: [...] } or { web: [...] }.
+    let arr: FirecrawlSearchHit[] = [];
+    if (Array.isArray(json.data)) arr = json.data;
+    else if (json.data && typeof json.data === "object") arr = (json.data.web ?? json.data.news ?? []) as FirecrawlSearchHit[];
+    else if (Array.isArray(json.web)) arr = json.web;
+    return arr.slice(0, opts.limit ?? 5);
   } catch (e) {
     console.warn("[fcSearch]", (e as Error).message);
     return [];
