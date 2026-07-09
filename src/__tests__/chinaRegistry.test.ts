@@ -508,21 +508,77 @@ describe("China registry providers", () => {
     expect(result.findings.some((finding) => finding.item === "Chinese legal name" && finding.evidence_excerpt.includes("中国工商出版社有限公司"))).toBe(false);
     expect(result.findings.some((finding) => finding.item === "Unified Social Credit Code" && /c7de186521b9b6a986/i.test(finding.evidence_excerpt))).toBe(false);
     expect(result.resolvedPatch).toBeNull();
-    expect(result.findings).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        item: "Red flags and contradictions",
-        status: "CAUTION",
-        evidence_excerpt: expect.stringContaining("Unrelated registry entity detected in open-web results; not accepted as supplier identity."),
-      }),
-      expect.objectContaining({
-        item: "Red flags and contradictions",
-        status: "CAUTION",
-        evidence_excerpt: expect.stringContaining("Invalid USCC-like value found in unrelated or weak public-web result; not accepted as supplier identity."),
-      }),
-    ]));
-    expect(result.findings.map((finding) => finding.evidence_excerpt).join("\n")).toContain("Open-web registry intelligence");
+    expect(result.findings.some((finding) => finding.item === "Red flags and contradictions" && finding.status === "CAUTION")).toBe(false);
+    expect(result.findings.some((finding) => finding.evidence_excerpt.includes("Invalid USCC-like value found"))).toBe(false);
+    expect(result.diagnostics.ignoredInvalidUsccCandidates).toBe(1);
+    expect(result.diagnostics.impactLevels?.diagnostic_only).toBe(1);
     expect(checklist.find((item) => item.id === "legal_company_existence")?.status).toBe("NOT_VERIFIED");
     expect(checklist.find((item) => item.id === "chinese_legal_name")?.status).toBe("NOT_VERIFIED");
+    expect(checklist.find((item) => item.id === "unified_social_credit_code")?.status).toBe("NOT_VERIFIED");
+  });
+
+  it("keeps unrelated invalid USCC-like Huawei search noise diagnostic-only", () => {
+    const result = openWebRegistryFindingsFromSources([
+      {
+        url: "https://noise.example/search",
+        title: "Random registry snippets",
+        snippet: "Some unrelated public data",
+        kind: "public_web",
+        markdown: "统一社会信用代码: c7de186521b9b6a986\n企业名称: 无关测试有限公司",
+      },
+      {
+        url: "https://www.huawei.com/en/corporate-information",
+        title: "Huawei corporate information",
+        snippet: "Huawei Technologies Co., Ltd. official website",
+        kind: "company_website",
+        markdown: [
+          "Huawei Technologies Co., Ltd.",
+          `企业名称: 华为技术有限公司 统一社会信用代码: ${validUscc}`,
+          "法定代表人: Ren Zhengfei",
+        ].join("\n"),
+      },
+    ], "2026-07-09T00:00:00.000Z", input({
+      statedName: "Huawei Technologies Co., Ltd.",
+      chineseName: "华为技术有限公司",
+      website: "https://www.huawei.com",
+    }));
+    const checklist = buildCanonicalChecklist(mockReport(result.findings.map((finding, index) => ({ ...finding, evidence_ids: [`huawei_${index}`] }))));
+
+    expect(result.findings.some((finding) => finding.evidence_excerpt.includes("Invalid USCC-like value found"))).toBe(false);
+    expect(result.diagnostics.ignoredInvalidUsccCandidates).toBe(1);
+    expect(result.findings.find((finding) => finding.item === "Unified Social Credit Code")?.evidence_excerpt).toContain(validUscc);
+    expect(checklist.find((item) => item.id === "red_flags_contradictions")?.status).not.toBe("CAUTION");
+  });
+
+  it("does not promote one weak German registry number or China-USCC noise for Siemens", () => {
+    const result = openWebRegistryFindingsFromSources([
+      {
+        url: "https://directory.example/siemens",
+        title: "Siemens AG profile",
+        snippet: "Siemens AG HRB 12300",
+        kind: "public_web",
+        markdown: "Siemens AG\nRegistration number: HRB 12300",
+      },
+      {
+        url: "https://noise.example/cn-registry",
+        title: "Unrelated CN registry snippet",
+        snippet: "统一社会信用代码 search result",
+        kind: "public_web",
+        markdown: "统一社会信用代码: c7de186521b9b6a986\n企业名称: 无关测试有限公司",
+      },
+    ], "2026-07-09T00:00:00.000Z", input({
+      statedName: "Siemens AG",
+      chineseName: null,
+      website: "https://www.siemens.com",
+      country: "Germany",
+    }));
+    const checklist = buildCanonicalChecklist(mockReport(result.findings.map((finding, index) => ({ ...finding, evidence_ids: [`siemens_${index}`] }))));
+
+    expect(result.resolvedPatch?.registration_number ?? null).toBeNull();
+    expect(result.findings.some((finding) => finding.item === "Unified Social Credit Code")).toBe(false);
+    expect(result.findings.some((finding) => /HRB 12300/.test(finding.evidence_excerpt))).toBe(false);
+    expect(result.findings.some((finding) => finding.evidence_excerpt.includes("Invalid USCC-like value found"))).toBe(false);
+    expect(result.diagnostics.ignoredInvalidUsccCandidates).toBe(1);
     expect(checklist.find((item) => item.id === "unified_social_credit_code")?.status).toBe("NOT_VERIFIED");
   });
 });
