@@ -114,7 +114,7 @@ function tokenizeEnglishName(value: string | null | undefined): string[] {
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
-    .filter((token) => token.length >= 4 && !["limited", "company", "corp", "corporation", "trading", "export", "import"].includes(token));
+    .filter((token) => token.length >= 4 && !["limited", "company", "corp", "corporation", "cookware", "kitchenware", "factory", "trading", "export", "import"].includes(token));
 }
 
 function websiteDomain(url: string | null | undefined): string | null {
@@ -192,6 +192,15 @@ function hasStrongSupplierIdentifier(text: string, context: SupplierContext): bo
   return false;
 }
 
+function hasExactSupplierNameOrDomain(text: string, context: SupplierContext): boolean {
+  const lower = text.toLowerCase();
+  const exactEnglish = clean(context.statedName);
+  return Boolean(
+    (exactEnglish && lower.includes(exactEnglish.toLowerCase())) ||
+      (context.domain && lower.includes(context.domain.toLowerCase())),
+  );
+}
+
 function hasSupplierIdentifierNear(text: string, value: string | null, context: SupplierContext): boolean {
   if (!value) return false;
   const window = windowAround(text, value, 320) ?? "";
@@ -210,6 +219,34 @@ function contextForInput(input: OpenWebRegistryInput): SupplierContext {
 
 function extractUsccCandidates(text: string): string[] {
   return Array.from(new Set((text.match(/[0-9A-Z]{18}/gi) ?? []).map((value) => value.toUpperCase())));
+}
+
+function isAcceptedSupplierIdentityCandidate(args: {
+  value: string | null;
+  field: keyof OpenWebRegistryExtract;
+  sourceText: string;
+  context?: SupplierContext;
+  acceptedChineseNames: Set<string>;
+}): boolean {
+  if (!args.value) return false;
+  if (!args.context) return true;
+  const { context, sourceText: text, value } = args;
+  const valueKey = normalize(value);
+  const linkedChineseName = args.field === "chineseLegalName" && (
+    (context.chineseName && normalize(context.chineseName) === valueKey) ||
+    args.acceptedChineseNames.has(valueKey)
+  );
+  if (linkedChineseName) return true;
+  if (hasExactSupplierNameOrDomain(text, context)) return true;
+  if (args.field === "uscc") {
+    return validateUsccChecksum(value) && hasExactSupplierNameOrDomain(text, context);
+  }
+  if (context.englishTokens.length >= 2) {
+    const lower = text.toLowerCase();
+    const hits = context.englishTokens.filter((token) => lower.includes(token)).length;
+    if (hits >= Math.min(2, context.englishTokens.length)) return true;
+  }
+  return false;
 }
 
 function extractFromText(text: string, context?: SupplierContext): OpenWebRegistryExtract {
@@ -265,7 +302,10 @@ function relevanceForSource(source: OpenWebRegistryEvidenceSource, context?: Sup
   }
   const extractedWithoutContext = extractFromText(text);
   if (!hasIdentifier && (extractedWithoutContext.chineseLegalName || candidates.length > 0)) {
-    redFlags.push("Unrelated registry entity detected in search results; not accepted as supplier identity.");
+    redFlags.push("Unrelated registry entity detected in open-web results; not accepted as supplier identity.");
+  }
+  if (candidates.some((candidate) => !validateUsccChecksum(candidate)) && !hasIdentifier) {
+    redFlags.push("Invalid USCC-like value found in unrelated or weak public-web result; not accepted as supplier identity.");
   }
   if (isIgnorableSource(source)) return { relevant: false, redFlags };
   if (source.kind === "public_web" && !/统一社会信用代码|信用代码|法定代表人|注册资本|经营状态|经营范围|工商信息/i.test(text)) {
@@ -367,10 +407,15 @@ function finding(args: {
   };
 }
 
-function bestSourceForField(sources: OpenWebRegistryEvidenceSource[], field: keyof OpenWebRegistryExtract): OpenWebRegistryEvidenceSource | null {
-  return sources.find((source) => source.kind === "official" && clean(extractFromText(sourceText(source))[field]))
-    ?? sources.find((source) => clean(extractFromText(sourceText(source))[field]))
-    ?? sources[0]
+interface ExtractedSource {
+  source: OpenWebRegistryEvidenceSource;
+  text: string;
+  extract: OpenWebRegistryExtract;
+}
+
+function bestSourceForField(entries: ExtractedSource[], field: keyof OpenWebRegistryExtract): OpenWebRegistryEvidenceSource | null {
+  return entries.find((entry) => entry.source.kind === "official" && clean(entry.extract[field]))?.source
+    ?? entries.find((entry) => clean(entry.extract[field]))?.source
     ?? null;
 }
 
@@ -378,18 +423,32 @@ function fieldFinding(args: {
   item: RegistryItem;
   section: Finding["section"];
   field: keyof OpenWebRegistryExtract;
-  extracts: OpenWebRegistryExtract[];
-  sources: OpenWebRegistryEvidenceSource[];
+  entries: ExtractedSource[];
   retrievedAt: string;
   weak: boolean;
   conflicts: string[];
+  context?: SupplierContext;
+  acceptedChineseNames: Set<string>;
 }): Finding | null {
-  const values = args.extracts.map((extract) => clean(extract[args.field]));
+  const acceptedEntries = args.entries.filter((entry) =>
+    isAcceptedSupplierIdentityCandidate({
+      value: clean(entry.extract[args.field]),
+      field: args.field,
+      sourceText: entry.text,
+      context: args.context,
+      acceptedChineseNames: args.acceptedChineseNames,
+    }),
+  );
+  const rejectedEntries = args.entries.filter((entry) => clean(entry.extract[args.field]) && !acceptedEntries.includes(entry));
+  if (rejectedEntries.length > 0 && ["chineseLegalName", "uscc", "registeredCapital", "registeredAddress", "legalRepresentative", "businessScope"].includes(args.field)) {
+    args.conflicts.push("Unrelated registry entity detected in open-web results; not accepted as supplier identity.");
+  }
+  const values = acceptedEntries.map((entry) => clean(entry.extract[args.field]));
   const selected = consensus(values);
   if (!selected.value) return null;
-  const source = bestSourceForField(args.sources, args.field);
+  const source = bestSourceForField(acceptedEntries, args.field);
   if (!source) return null;
-  const official = args.sources.some((candidate) => candidate.kind === "official" && clean(extractFromText(sourceText(candidate))[args.field]));
+  const official = acceptedEntries.some((entry) => entry.source.kind === "official" && clean(entry.extract[args.field]));
   let classification = classificationForField({
     value: selected.value,
     sourceCount: selected.count,
@@ -430,11 +489,15 @@ export function openWebRegistryFindingsFromSources(
     return relevance.relevant;
   });
   const qualitySources = relevantSources.filter((source) => source.kind === "official" || source.kind === "indexed_registry" || source.kind === "company_website" || source.kind === "court_or_enforcement");
-  const extracts = qualitySources.map((source) => extractFromText(sourceText(source), context));
+  const entries = qualitySources.map((source) => {
+    const text = sourceText(source);
+    return { source, text, extract: extractFromText(text, context) };
+  });
   const weak = qualitySources.length < 2 && !qualitySources.some((source) => source.kind === "official");
   const conflicts: string[] = [];
+  const acceptedChineseNames = new Set<string>();
   const maybe = (item: RegistryItem, section: Finding["section"], field: keyof OpenWebRegistryExtract) =>
-    fieldFinding({ item, section, field, extracts, sources: qualitySources, retrievedAt, weak, conflicts });
+    fieldFinding({ item, section, field, entries, retrievedAt, weak, conflicts, context, acceptedChineseNames });
   const findings = [
     maybe("Legal company existence", "legal_entity", "chineseLegalName") ?? maybe("Legal company existence", "legal_entity", "englishName"),
     maybe("Chinese legal name", "legal_entity", "chineseLegalName"),
@@ -451,6 +514,12 @@ export function openWebRegistryFindingsFromSources(
     maybe("Enforcement and administrative penalties", "litigation_enforcement", "enforcementPenaltyMentions"),
     maybe("Enforcement and administrative penalties", "litigation_enforcement", "abnormalOperationMentions"),
   ].filter((item): item is Finding => Boolean(item));
+  for (const finding of findings) {
+    if ((finding.item === "Chinese legal name" || finding.item === "Legal company existence") && /[\u4e00-\u9fa5]/.test(finding.evidence_excerpt)) {
+      const value = finding.evidence_excerpt.match(/: ([^.。]+)[.。]/)?.[1];
+      if (value) acceptedChineseNames.add(normalize(value));
+    }
+  }
   for (const redFlag of Array.from(new Set(redFlags))) {
     findings.push({
       section: "legal_entity",
@@ -460,7 +529,7 @@ export function openWebRegistryFindingsFromSources(
       source_name: OPEN_WEB_CHINA_REGISTRY_SOURCE,
       source_url: sources[0]?.url ?? null,
       retrieval_date: retrievedAt,
-      evidence_excerpt: redFlag,
+      evidence_excerpt: `${redFlag} ${OPEN_WEB_CHINA_REGISTRY_LABEL}`,
       evidence_classification: "INFERRED",
       buyer_impact: "The resolver found a registry-like entity that was not tied to the submitted supplier identifiers, so it was rejected as supplier identity evidence.",
       recommended_action: "Review the search result manually or verify the supplier through QINCheck, Panda360, QCC, or an official registry capture.",
@@ -482,17 +551,17 @@ export function openWebRegistryFindingsFromSources(
   const patch: Partial<ResolvedEntity> | null = name || uscc
     ? {
         matched: Boolean(name || uscc),
-        legal_name_en: extracts.map((item) => item.englishName).find(Boolean) ?? null,
-        legal_name_local: extracts.map((item) => item.chineseLegalName).find(Boolean) ?? null,
-        registration_number: uscc?.evidence_classification === "CONTRADICTED" ? null : extracts.map((item) => item.uscc).find(Boolean) ?? null,
-        registration_status: extracts.map((item) => item.registrationStatus).find(Boolean) ?? null,
-        registration_date: extracts.map((item) => item.incorporationDate).find(Boolean) ?? null,
-        registered_capital: extracts.map((item) => item.registeredCapital).find(Boolean) ?? null,
-        registered_address: extracts.map((item) => item.registeredAddress).find(Boolean) ?? null,
-        legal_representative: extracts.map((item) => item.legalRepresentative).find(Boolean) ?? null,
-        business_scope: extracts.map((item) => item.businessScope).find(Boolean) ?? null,
-        shareholders: unique(extracts.map((item) => item.shareholdersOwnership)),
-        related_companies: unique(extracts.map((item) => item.relatedCompanies)),
+        legal_name_en: entries.map((item) => item.extract.englishName).find(Boolean) ?? null,
+        legal_name_local: entries.map((item) => item.extract.chineseLegalName).find(Boolean) ?? null,
+        registration_number: uscc?.evidence_classification === "CONTRADICTED" ? null : entries.map((item) => item.extract.uscc).find(Boolean) ?? null,
+        registration_status: entries.map((item) => item.extract.registrationStatus).find(Boolean) ?? null,
+        registration_date: entries.map((item) => item.extract.incorporationDate).find(Boolean) ?? null,
+        registered_capital: entries.map((item) => item.extract.registeredCapital).find(Boolean) ?? null,
+        registered_address: entries.map((item) => item.extract.registeredAddress).find(Boolean) ?? null,
+        legal_representative: entries.map((item) => item.extract.legalRepresentative).find(Boolean) ?? null,
+        business_scope: entries.map((item) => item.extract.businessScope).find(Boolean) ?? null,
+        shareholders: unique(entries.map((item) => item.extract.shareholdersOwnership)),
+        related_companies: unique(entries.map((item) => item.extract.relatedCompanies)),
         confidence,
         sources: unique(qualitySources.map((source) => source.url)).map((url) => ({ name: OPEN_WEB_CHINA_REGISTRY_SOURCE, url })),
         notes: OPEN_WEB_CHINA_REGISTRY_LABEL,
@@ -514,7 +583,7 @@ export function openWebRegistryFindingsFromSources(
     rawResponse: {
       sources: qualitySources.map((source) => ({ url: source.url, title: source.title, kind: source.kind, snippet: source.snippet.slice(0, 800) })),
       rejected_sources: sources.length - qualitySources.length,
-      extracts,
+      extracts: entries.map((entry) => entry.extract),
       conflicts,
       diagnostics,
     },
