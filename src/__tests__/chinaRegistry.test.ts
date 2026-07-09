@@ -420,8 +420,8 @@ describe("China registry providers", () => {
 
   it("classifies multi-source open-web match as CORROBORATED", () => {
     const result = openWebRegistryFindingsFromSources([
-      publicSource({ url: "https://www.alibaba.com/supplier/changwen", kind: "marketplace", title: "Alibaba profile" }),
-      publicSource({ url: "https://www.made-in-china.com/showroom/changwen", kind: "marketplace", title: "Made-in-China profile" }),
+      publicSource({ url: "https://www.qcc.com/firm/changwen", kind: "indexed_registry", title: "QCC public profile" }),
+      publicSource({ url: "https://aiqicha.baidu.com/company_detail/changwen", kind: "indexed_registry", title: "Aiqicha public profile" }),
     ]);
     const uscc = result.findings.find((finding) => finding.item === "Unified Social Credit Code");
 
@@ -446,7 +446,7 @@ describe("China registry providers", () => {
 
   it("classifies single weak open-web source as NOT_INDEPENDENTLY_VERIFIED", () => {
     const result = openWebRegistryFindingsFromSources([
-      publicSource({ url: "https://supplier-blog.example/changwen", kind: "public_web" }),
+      publicSource({ url: "https://www.tianyancha.com/company/changwen", kind: "indexed_registry" }),
     ]);
     const checklist = buildCanonicalChecklist(mockReport(result.findings.map((finding, index) => ({ ...finding, evidence_ids: [`open_weak_${index}`] }))));
 
@@ -479,5 +479,43 @@ describe("China registry providers", () => {
     for (const id of ["sanctions_restricted_party", "uflpa_forced_labour", "us_shipment_export_history", "certificate_authenticity", "product_recall_history", "factory_vs_trader"]) {
       expect(checklist.find((item) => item.id === id)?.status).toBe("NOT_VERIFIED");
     }
+  });
+
+  it("rejects unrelated Jiangmen open-web boilerplate entity and invalid USCC as supplier identity", () => {
+    const result = openWebRegistryFindingsFromSources([
+      {
+        url: "https://example.gov.cn/help/industry-boilerplate",
+        title: "工商信息查询帮助",
+        snippet: "江门企业工商信息查询说明",
+        kind: "official",
+        markdown: [
+          "主管单位：中国工商出版社有限公司",
+          "统一社会信用代码: c7de186521b9b6a986",
+          "法定代表人: 张三",
+          "注册资本: 1000万元",
+          "经营状态: 存续",
+          "经营范围: 出版物出版",
+        ].join("\n"),
+      },
+    ], "2026-07-09T00:00:00.000Z", input({
+      statedName: "Jiangmen Changwen Trading Co., Ltd.",
+      chineseName: "江门市长文贸易有限公司",
+      website: "https://changwen.example",
+    }));
+    const checklist = buildCanonicalChecklist(mockReport(result.findings.map((finding, index) => ({ ...finding, evidence_ids: [`jiangmen_redflag_${index}`] }))));
+
+    expect(result.findings.some((finding) => finding.item === "Chinese legal name" && finding.evidence_excerpt.includes("中国工商出版社有限公司"))).toBe(false);
+    expect(result.findings.some((finding) => finding.item === "Unified Social Credit Code" && /c7de186521b9b6a986/i.test(finding.evidence_excerpt))).toBe(false);
+    expect(result.resolvedPatch).toBeNull();
+    expect(result.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        item: "Red flags and contradictions",
+        status: "CAUTION",
+        evidence_excerpt: expect.stringContaining("Unrelated registry entity detected in search results; not accepted as supplier identity."),
+      }),
+    ]));
+    expect(checklist.find((item) => item.id === "legal_company_existence")?.status).toBe("NOT_VERIFIED");
+    expect(checklist.find((item) => item.id === "chinese_legal_name")?.status).toBe("NOT_VERIFIED");
+    expect(checklist.find((item) => item.id === "unified_social_credit_code")?.status).toBe("NOT_VERIFIED");
   });
 });
