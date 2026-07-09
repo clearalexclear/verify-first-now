@@ -2,17 +2,17 @@
 // Goes through the Lovable connector gateway so the connection key is rotated
 // and audited centrally. Never exposes FIRECRAWL_API_KEY to the browser.
 
-const GATEWAY = "https://connector-gateway.lovable.dev/firecrawl";
+// Firecrawl is a direct-API connector (not gateway-backed). Call api.firecrawl.dev
+// directly with FIRECRAWL_API_KEY as the bearer token. The connector-gateway path
+// returns 401 "Credential not found" for direct-API connectors.
+const GATEWAY = "https://api.firecrawl.dev";
 
 function authHeaders() {
-  const LOVABLE_API_KEY = process.env.LOVABLE_API_KEY;
   const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY;
-  if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY missing");
   if (!FIRECRAWL_API_KEY) throw new Error("FIRECRAWL_API_KEY missing — connect Firecrawl in Settings → Connectors.");
   return {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${LOVABLE_API_KEY}`,
-    "X-Connection-Api-Key": FIRECRAWL_API_KEY,
+    Authorization: `Bearer ${FIRECRAWL_API_KEY}`,
   } as Record<string, string>;
 }
 
@@ -47,7 +47,7 @@ export interface FirecrawlSearchHit {
 
 export interface FirecrawlSearchResult {
   success?: boolean;
-  data?: FirecrawlSearchHit[];
+  data?: FirecrawlSearchHit[] | { web?: FirecrawlSearchHit[]; news?: FirecrawlSearchHit[]; images?: FirecrawlSearchHit[] };
   web?: FirecrawlSearchHit[];
 }
 
@@ -66,8 +66,12 @@ export async function fcSearch(query: string, opts: {
     if (opts.country) body.country = opts.country;
     if (opts.scrape) body.scrapeOptions = { formats: ["markdown"] };
     const json = await call<FirecrawlSearchResult>("/v2/search", body);
-    const arr = json.data ?? json.web ?? [];
-    return Array.isArray(arr) ? arr.slice(0, opts.limit ?? 5) : [];
+    // v2 shape: { data: { web: [...] } }. Legacy: { data: [...] } or { web: [...] }.
+    let arr: FirecrawlSearchHit[] = [];
+    if (Array.isArray(json.data)) arr = json.data;
+    else if (json.data && typeof json.data === "object") arr = (json.data.web ?? json.data.news ?? []) as FirecrawlSearchHit[];
+    else if (Array.isArray(json.web)) arr = json.web;
+    return arr.slice(0, opts.limit ?? 5);
   } catch (e) {
     console.warn("[fcSearch]", (e as Error).message);
     return [];
