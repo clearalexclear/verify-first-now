@@ -74,6 +74,14 @@ export interface OpenWebRegistryResult {
   error?: string;
 }
 
+interface SupplierContext {
+  statedName: string;
+  chineseName: string | null;
+  domain: string | null;
+  knownUscc: string | null;
+  englishTokens: string[];
+}
+
 interface OpenWebRegistryDeps {
   search?: typeof fcSearch;
   scrape?: typeof fcScrape;
@@ -101,6 +109,14 @@ function normalize(value: string | null | undefined): string {
     .trim();
 }
 
+function tokenizeEnglishName(value: string | null | undefined): string[] {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length >= 4 && !["limited", "company", "corp", "corporation", "trading", "export", "import"].includes(token));
+}
+
 function websiteDomain(url: string | null | undefined): string | null {
   if (!url) return null;
   try {
@@ -118,6 +134,14 @@ function sourceKind(url: string, submittedDomain: string | null): OpenWebRegistr
   if (/alibaba|1688\.com|made-in-china|globalsources/i.test(host)) return "marketplace";
   if (submittedDomain && host === submittedDomain) return "company_website";
   return "public_web";
+}
+
+function isIgnorableSource(source: OpenWebRegistryEvidenceSource): boolean {
+  const text = `${source.url}\n${source.title}\n${source.snippet}`.toLowerCase();
+  return (
+    /\.(pdf)(?:$|[?#])/i.test(source.url) ||
+    /login|captcha|help|guide|manual|form|download|template|publication|publisher|press|copyright|about-us|contact-us/i.test(text)
+  );
 }
 
 export function validateUsccChecksum(uscc: string | null | undefined): boolean {
@@ -142,11 +166,69 @@ function firstMatch(text: string, patterns: RegExp[]): string | null {
   return null;
 }
 
-function extractFromText(text: string): OpenWebRegistryExtract {
+function windowAround(text: string, needle: string, radius = 220): string | null {
+  const index = text.toLowerCase().indexOf(needle.toLowerCase());
+  if (index < 0) return null;
+  return text.slice(Math.max(0, index - radius), Math.min(text.length, index + needle.length + radius));
+}
+
+function registryLabelNear(text: string, value: string | null): boolean {
+  if (!value) return false;
+  const window = windowAround(text, value) ?? text.slice(0, 600);
+  return /企业名称|公司名称|统一社会信用代码|信用代码|法定代表人|注册资本|经营状态|登记状态|经营范围|工商信息/i.test(window);
+}
+
+function hasStrongSupplierIdentifier(text: string, context: SupplierContext): boolean {
+  const lower = text.toLowerCase();
+  const exactEnglish = clean(context.statedName);
+  if (exactEnglish && lower.includes(exactEnglish.toLowerCase())) return true;
+  if (context.chineseName && text.includes(context.chineseName)) return true;
+  if (context.domain && lower.includes(context.domain.toLowerCase())) return true;
+  if (context.knownUscc && lower.includes(context.knownUscc.toLowerCase())) return true;
+  if (context.englishTokens.length >= 2) {
+    const hits = context.englishTokens.filter((token) => lower.includes(token)).length;
+    if (hits >= Math.min(2, context.englishTokens.length)) return true;
+  }
+  return false;
+}
+
+function hasSupplierIdentifierNear(text: string, value: string | null, context: SupplierContext): boolean {
+  if (!value) return false;
+  const window = windowAround(text, value, 320) ?? "";
+  return hasStrongSupplierIdentifier(window, context);
+}
+
+function contextForInput(input: OpenWebRegistryInput): SupplierContext {
   return {
-    chineseLegalName: firstMatch(text, [/([\u4e00-\u9fa5（）()]{4,}(?:有限公司|有限责任公司|股份有限公司))/]),
+    statedName: input.statedName,
+    chineseName: input.chineseName ?? input.resolved.legal_name_local,
+    domain: websiteDomain(input.website),
+    knownUscc: input.resolved.registration_number,
+    englishTokens: tokenizeEnglishName(input.statedName || input.resolved.legal_name_en),
+  };
+}
+
+function extractUsccCandidates(text: string): string[] {
+  return Array.from(new Set((text.match(/[0-9A-Z]{18}/gi) ?? []).map((value) => value.toUpperCase())));
+}
+
+function extractFromText(text: string, context?: SupplierContext): OpenWebRegistryExtract {
+  const rawChineseName = firstMatch(text, [/([\u4e00-\u9fa5（）()]{4,}(?:有限公司|有限责任公司|股份有限公司))/]);
+  const rawUscc = firstMatch(text, [/(?:统一社会信用代码|信用代码|USCC|Unified Social Credit Code)[：:\s]*([0-9A-Z]{18})/i, /([0-9A-Z]{18})/]);
+  const chineseLegalName =
+    rawChineseName &&
+    (!context || (registryLabelNear(text, rawChineseName) && hasSupplierIdentifierNear(text, rawChineseName, context)))
+      ? rawChineseName
+      : null;
+  const uscc =
+    rawUscc &&
+    (!context || (validateUsccChecksum(rawUscc) && hasSupplierIdentifierNear(text, rawUscc, context)))
+      ? rawUscc
+      : null;
+  return {
+    chineseLegalName,
     englishName: firstMatch(text, [/([A-Z][A-Za-z0-9&.,'’\-\s]{4,}(?:Co\.?,?\s*Ltd\.?|Company Limited|Limited))/i]),
-    uscc: firstMatch(text, [/[统一社会信用代码|信用代码|USCC|Unified Social Credit Code][：:\s]*([0-9A-Z]{18})/i, /([0-9A-Z]{18})/]),
+    uscc,
     registrationStatus: firstMatch(text, [/(?:经营状态|登记状态|注册状态|Status)[：:\s]*([^\n\r，,。；;]{2,40})/i]),
     incorporationDate: firstMatch(text, [/(?:成立日期|注册日期|成立时间|Incorporation Date|Established)[：:\s]*(\d{4}[-年/.]\d{1,2}[-月/.]\d{1,2})/i]),
     registeredCapital: firstMatch(text, [/(?:注册资本|Registered Capital)[：:\s]*([^\n\r，,。；;]{2,40})/i]),
@@ -169,6 +251,27 @@ function extractFromText(text: string): OpenWebRegistryExtract {
 
 function sourceText(source: OpenWebRegistryEvidenceSource): string {
   return `${source.title}\n${source.snippet}\n${source.markdown}`.slice(0, 12_000);
+}
+
+function relevanceForSource(source: OpenWebRegistryEvidenceSource, context?: SupplierContext): { relevant: boolean; redFlags: string[] } {
+  const text = sourceText(source);
+  const redFlags: string[] = [];
+  if (!context) return { relevant: true, redFlags };
+  const hasIdentifier = hasStrongSupplierIdentifier(text, context);
+  const candidates = extractUsccCandidates(text);
+  const invalidCandidates = candidates.filter((candidate) => !validateUsccChecksum(candidate));
+  if (invalidCandidates.length > 0 && hasIdentifier) {
+    redFlags.push(`Invalid USCC candidate found near supplier context: ${invalidCandidates[0]}`);
+  }
+  const extractedWithoutContext = extractFromText(text);
+  if (!hasIdentifier && (extractedWithoutContext.chineseLegalName || candidates.length > 0)) {
+    redFlags.push("Unrelated registry entity detected in search results; not accepted as supplier identity.");
+  }
+  if (isIgnorableSource(source)) return { relevant: false, redFlags };
+  if (source.kind === "public_web" && !/统一社会信用代码|信用代码|法定代表人|注册资本|经营状态|经营范围|工商信息/i.test(text)) {
+    return { relevant: false, redFlags };
+  }
+  return { relevant: hasIdentifier, redFlags };
 }
 
 export function buildOpenWebRegistryQueries(input: OpenWebRegistryInput): string[] {
@@ -317,12 +420,21 @@ function fieldFinding(args: {
 export function openWebRegistryFindingsFromSources(
   sources: OpenWebRegistryEvidenceSource[],
   retrievedAt = new Date().toISOString(),
+  input?: OpenWebRegistryInput,
 ): Pick<OpenWebRegistryResult, "findings" | "resolvedPatch" | "fieldsReturned" | "diagnostics" | "rawResponse" | "status"> {
-  const extracts = sources.map((source) => extractFromText(sourceText(source)));
-  const weak = sources.length < 2 && !sources.some((source) => source.kind === "official");
+  const context = input ? contextForInput(input) : undefined;
+  const redFlags: string[] = [];
+  const relevantSources = sources.filter((source) => {
+    const relevance = relevanceForSource(source, context);
+    redFlags.push(...relevance.redFlags);
+    return relevance.relevant;
+  });
+  const qualitySources = relevantSources.filter((source) => source.kind === "official" || source.kind === "indexed_registry" || source.kind === "company_website" || source.kind === "court_or_enforcement");
+  const extracts = qualitySources.map((source) => extractFromText(sourceText(source), context));
+  const weak = qualitySources.length < 2 && !qualitySources.some((source) => source.kind === "official");
   const conflicts: string[] = [];
   const maybe = (item: RegistryItem, section: Finding["section"], field: keyof OpenWebRegistryExtract) =>
-    fieldFinding({ item, section, field, extracts, sources, retrievedAt, weak, conflicts });
+    fieldFinding({ item, section, field, extracts, sources: qualitySources, retrievedAt, weak, conflicts });
   const findings = [
     maybe("Legal company existence", "legal_entity", "chineseLegalName") ?? maybe("Legal company existence", "legal_entity", "englishName"),
     maybe("Chinese legal name", "legal_entity", "chineseLegalName"),
@@ -339,6 +451,21 @@ export function openWebRegistryFindingsFromSources(
     maybe("Enforcement and administrative penalties", "litigation_enforcement", "enforcementPenaltyMentions"),
     maybe("Enforcement and administrative penalties", "litigation_enforcement", "abnormalOperationMentions"),
   ].filter((item): item is Finding => Boolean(item));
+  for (const redFlag of Array.from(new Set(redFlags))) {
+    findings.push({
+      section: "legal_entity",
+      item: "Red flags and contradictions",
+      status: "CAUTION",
+      confidence: "medium",
+      source_name: OPEN_WEB_CHINA_REGISTRY_SOURCE,
+      source_url: sources[0]?.url ?? null,
+      retrieval_date: retrievedAt,
+      evidence_excerpt: redFlag,
+      evidence_classification: "INFERRED",
+      buyer_impact: "The resolver found a registry-like entity that was not tied to the submitted supplier identifiers, so it was rejected as supplier identity evidence.",
+      recommended_action: "Review the search result manually or verify the supplier through QINCheck, Panda360, QCC, or an official registry capture.",
+    });
+  }
 
   const fieldsReturned = Array.from(new Set(findings.map((item) => item.item)));
   const allClassifications = findings.map((item) => item.evidence_classification ?? "NOT_INDEPENDENTLY_VERIFIED");
@@ -367,13 +494,13 @@ export function openWebRegistryFindingsFromSources(
         shareholders: unique(extracts.map((item) => item.shareholdersOwnership)),
         related_companies: unique(extracts.map((item) => item.relatedCompanies)),
         confidence,
-        sources: unique(sources.map((source) => source.url)).map((url) => ({ name: OPEN_WEB_CHINA_REGISTRY_SOURCE, url })),
+        sources: unique(qualitySources.map((source) => source.url)).map((url) => ({ name: OPEN_WEB_CHINA_REGISTRY_SOURCE, url })),
         notes: OPEN_WEB_CHINA_REGISTRY_LABEL,
       }
     : null;
   const diagnostics = {
       searchesRun: [],
-      sourcesFound: sources.length,
+      sourcesFound: qualitySources.length,
       fieldsExtracted: fieldsReturned,
       conflicts,
       confidence,
@@ -385,7 +512,8 @@ export function openWebRegistryFindingsFromSources(
     resolvedPatch: patch,
     fieldsReturned,
     rawResponse: {
-      sources: sources.map((source) => ({ url: source.url, title: source.title, kind: source.kind, snippet: source.snippet.slice(0, 800) })),
+      sources: qualitySources.map((source) => ({ url: source.url, title: source.title, kind: source.kind, snippet: source.snippet.slice(0, 800) })),
+      rejected_sources: sources.length - qualitySources.length,
       extracts,
       conflicts,
       diagnostics,
@@ -438,7 +566,7 @@ export async function runOpenWebChinaRegistryResolver(
       kind,
     });
   }
-  const mapped = openWebRegistryFindingsFromSources(sources);
+  const mapped = openWebRegistryFindingsFromSources(sources, new Date().toISOString(), input);
   mapped.diagnostics.searchesRun = queries;
   if (mapped.rawResponse && typeof mapped.rawResponse === "object") {
     (mapped.rawResponse as { diagnostics?: unknown }).diagnostics = mapped.diagnostics;
