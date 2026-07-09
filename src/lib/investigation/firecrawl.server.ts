@@ -2,17 +2,17 @@
 // Goes through the Lovable connector gateway so the connection key is rotated
 // and audited centrally. Never exposes FIRECRAWL_API_KEY to the browser.
 
-const GATEWAY = "https://connector-gateway.lovable.dev/firecrawl";
+// Firecrawl is a direct-API connector (not gateway-backed). Call api.firecrawl.dev
+// directly with FIRECRAWL_API_KEY as the bearer token. The connector-gateway path
+// returns 401 "Credential not found" for direct-API connectors.
+const GATEWAY = "https://api.firecrawl.dev";
 
 function authHeaders() {
-  const LOVABLE_API_KEY = process.env.LOVABLE_API_KEY;
   const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY;
-  if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY missing");
   if (!FIRECRAWL_API_KEY) throw new Error("FIRECRAWL_API_KEY missing — connect Firecrawl in Settings → Connectors.");
   return {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${LOVABLE_API_KEY}`,
-    "X-Connection-Api-Key": FIRECRAWL_API_KEY,
+    Authorization: `Bearer ${FIRECRAWL_API_KEY}`,
   } as Record<string, string>;
 }
 
