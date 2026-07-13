@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { applyOutcomeGating, buildCanonicalChecklist, checklistResultsToFindings } from "../lib/investigation/checklist";
 import { chinaRegistryRecordToFindings, retrieveChinaRegistryEvidence } from "../lib/investigation/sources/china-registry.server";
 import { officialRegistryFieldsToFindings, OFFICIAL_BROWSER_ASSISTED_SOURCE } from "../lib/investigation/sources/official-browser-assisted.server";
-import { openWebRegistryFindingsFromSources, validateUsccChecksum, type OpenWebRegistryEvidenceSource } from "../lib/investigation/sources/open-web-china-registry.server";
+import { isStrictUsccCandidate, openWebRegistryFindingsFromSources, validateUsccChecksum, type OpenWebRegistryEvidenceSource } from "../lib/investigation/sources/open-web-china-registry.server";
 import { computeOutcome } from "../lib/investigation/synthesis.server";
 import type { Finding, InvestigationReport, ResolvedEntity } from "../lib/investigation/types";
 
@@ -547,6 +547,38 @@ describe("China registry providers", () => {
     expect(result.findings.some((finding) => finding.evidence_excerpt.includes("Invalid USCC-like value found"))).toBe(false);
     expect(result.diagnostics.ignoredInvalidUsccCandidates).toBe(1);
     expect(result.findings.find((finding) => finding.item === "Unified Social Credit Code")?.evidence_excerpt).toContain(validUscc);
+    expect(checklist.find((item) => item.id === "red_flags_contradictions")?.status).not.toBe("CAUTION");
+  });
+
+  it("ignores Huawei alphabetic and page-code fragments as USCC noise", () => {
+    for (const token of ["TELECOMMUNICATIONS", "CUSTOMDIALOGCONTRO", "REGISTERSYSTEMINFO", "HWB000000287503000"]) {
+      expect(isStrictUsccCandidate(token)).toBe(false);
+      expect(validateUsccChecksum(token)).toBe(false);
+    }
+    expect(validateUsccChecksum("914403001922038216")).toBe(true);
+
+    const result = openWebRegistryFindingsFromSources([
+      {
+        url: "https://www.huawei.com/en/corporate-information",
+        title: "Huawei Technologies Co., Ltd. corporate page",
+        snippet: "Huawei Technologies Co., Ltd. official website",
+        kind: "company_website",
+        markdown: [
+          "Huawei Technologies Co., Ltd.",
+          "TELECOMMUNICATIONS CUSTOMDIALOGCONTRO REGISTERSYSTEMINFO HWB000000287503000",
+          "企业名称: 华为技术有限公司 统一社会信用代码: 914403001922038216",
+        ].join("\n"),
+      },
+    ], "2026-07-13T00:00:00.000Z", input({
+      statedName: "Huawei Technologies Co., Ltd.",
+      chineseName: "华为技术有限公司",
+      website: "https://www.huawei.com",
+    }));
+    const checklist = buildCanonicalChecklist(mockReport(result.findings.map((finding, index) => ({ ...finding, evidence_ids: [`huawei_noise_${index}`] }))));
+
+    expect(result.diagnostics.ignoredInvalidUsccCandidates).toBe(4);
+    expect(result.findings.some((finding) => /TELECOMMUNICATIONS|CUSTOMDIALOGCONTRO|REGISTERSYSTEMINFO|HWB000000287503000/.test(finding.evidence_excerpt))).toBe(false);
+    expect(result.findings.find((finding) => finding.item === "Unified Social Credit Code")?.evidence_excerpt).toContain("914403001922038216");
     expect(checklist.find((item) => item.id === "red_flags_contradictions")?.status).not.toBe("CAUTION");
   });
 

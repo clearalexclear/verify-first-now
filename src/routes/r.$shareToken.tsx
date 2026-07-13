@@ -215,7 +215,6 @@ function ChecklistItem({ item }: { item: ChecklistReportResult }) {
             ))}
           </ul>
         )}
-        <p className="mt-1">Evidence IDs: {item.evidence_ids.length ? item.evidence_ids.join(", ") : "none"}</p>
       </div>
     </article>
   );
