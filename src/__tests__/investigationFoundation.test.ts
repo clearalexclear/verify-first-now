@@ -7,6 +7,8 @@ import { verifyStripeSignature } from "../lib/payments/stripe-webhook.server";
 import { buildCanonicalChecklist, CANONICAL_CHECKLIST, CHECKLIST_COUNT, detectChecklistContradictions, applyOutcomeGating } from "../lib/investigation/checklist";
 import { renderReportPdf } from "../lib/investigation/pdf.server";
 import type { Finding, InvestigationReport, ResolvedEntity } from "../lib/investigation/types";
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { fileURLToPath } from "node:url";
 
 async function stripeSignature(raw: string, secret: string, timestamp = Math.floor(Date.now() / 1000)) {
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
@@ -87,6 +89,20 @@ function mockReport(overrides: Partial<InvestigationReport> = {}): Investigation
     sources_used: [],
     ...overrides,
   };
+}
+
+async function extractPdfText(pdf: Uint8Array): Promise<string> {
+  const standardFontDataUrl = fileURLToPath(new URL("../../node_modules/pdfjs-dist/standard_fonts/", import.meta.url));
+  const loadingTask = getDocument({ data: pdf.slice(), disableWorker: true, standardFontDataUrl } as any);
+  const doc = await loadingTask.promise;
+  const chunks: string[] = [];
+  for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber++) {
+    const page = await doc.getPage(pageNumber);
+    const content = await page.getTextContent();
+    chunks.push(content.items.map((item: any) => item.str).join(" "));
+  }
+  await loadingTask.destroy();
+  return chunks.join("\n").replace(/\s+/g, " ").trim();
 }
 
 describe("payment security", () => {
@@ -228,6 +244,66 @@ describe("canonical checklist", () => {
     const pdf = await renderReportPdf(report);
     expect(pdf.byteLength).toBeGreaterThan(1000);
     expect(report.checklist_results).toHaveLength(32);
+  });
+
+  it("renders Chinese supplier names in the PDF", async () => {
+    const report = mockReport({
+      supplier_input: {
+        ...mockReport().supplier_input,
+        chinese_name: "江门市昌文厨具有限公司",
+      },
+      resolved_entity: {
+        ...baseResolvedEntity,
+        legal_name_local: "江门市昌文厨具有限公司",
+      },
+    });
+    report.checklist_results = buildCanonicalChecklist(report);
+
+    const text = await extractPdfText(await renderReportPdf(report));
+    expect(text).toContain("江门市昌文厨具有限公司");
+    expect(text).not.toMatch(/\[\d+-char non-Latin\]/);
+  });
+
+  it("removes internal UUIDs from rendered PDF sections", async () => {
+    const uuid = "3d8f8267-0b39-4d9c-9c2f-6d25b1a2e034";
+    const report = mockReport({
+      executive_summary: `Executive summary cites evidence_ids: ${uuid}.`,
+      buyer_implications: `Buyer implication should not expose ${uuid}.`,
+      recommended_safeguards: `Recommended safeguards should hide evidence_ids=${uuid}.`,
+    });
+    report.checklist_results = buildCanonicalChecklist(report);
+    report.checklist_results[0] = {
+      ...report.checklist_results[0],
+      explanation: `Explanation references evidence_ids: ${uuid}.`,
+      evidence_ids: [uuid],
+    };
+
+    const text = await extractPdfText(await renderReportPdf(report));
+    expect(text).not.toMatch(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i);
+    expect(text).not.toMatch(/evidence_ids/i);
+  });
+
+  it("does not render misleading status labels or orphaned buyer impact levels", async () => {
+    const report = mockReport();
+    report.checklist_results = buildCanonicalChecklist(report);
+    const actions = report.checklist_results.findIndex((item) => item.id === "recommended_next_actions");
+    expect(actions).toBeGreaterThan(-1);
+    report.checklist_results[actions] = {
+      ...report.checklist_results[actions],
+      status: "NOT_APPLICABLE",
+      recommended_action: "Use staged payments and resolve unresolved checks before payment.",
+    };
+    report.checklist_results[0] = {
+      ...report.checklist_results[0],
+      status: "NOT_VERIFIED",
+      evidence_ids: ["ev_visible"],
+      source_names: ["Analyst verification"],
+      buyer_impact: "HIGH",
+    };
+
+    const text = await extractPdfText(await renderReportPdf(report));
+    expect(text).not.toMatch(/Recommended next actions\s+Not applicable/i);
+    expect(text).not.toMatch(/Buyer impact:\s*HIGH/i);
   });
 
   it("Jiangmen Changwen mock report contains all 32 items", () => {

@@ -5,6 +5,7 @@ import {
   type PDFFont,
   type PDFPage,
 } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
 import {
   CLASSIFICATION_LABEL,
   CONFIDENCE_LABEL,
@@ -42,6 +43,7 @@ interface Ctx {
   y: number;
   regular: PDFFont;
   bold: PDFFont;
+  cjkRegular: PDFFont | null;
   footnotes: FootnoteMap;
 }
 
@@ -74,20 +76,45 @@ function wrap(text: string, font: PDFFont, size: number, maxWidth: number): stri
   return lines;
 }
 
-function asciiSafe(s: string): string {
+const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
+
+function customerFacingText(s: string): string {
   return (s || "")
+    .replace(/\bevidence[_ -]?ids?\s*[:=]\s*(?:\[[^\]]*\]|[0-9a-f,\s-]{20,})/gi, "evidence references")
+    .replace(UUID_PATTERN, "internal reference")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function pdfSafe(s: string, cjkAvailable: boolean): string {
+  const normalized = (s || "")
     .replace(/[‘’]/g, "'")
     .replace(/[“”]/g, '"')
     .replace(/–|—/g, "-")
     .replace(/…/g, "...")
-    .replace(/[^\x20-\x7E]+/g, (m) => `[${m.length}-char non-Latin]`);
+    .replace(/[\u200B-\u200F]/g, "");
+  return [...normalized].filter((char) => {
+    const code = char.charCodeAt(0);
+    if (code < 32) return false;
+    return cjkAvailable || code <= 126;
+  }).join("");
+}
+
+function needsCjkFont(text: string): boolean {
+  return /[^\x20-\x7E]/.test(text);
+}
+
+function fontForText(ctx: Ctx, text: string, bold = false): PDFFont {
+  if (needsCjkFont(text) && ctx.cjkRegular) return ctx.cjkRegular;
+  return bold ? ctx.bold : ctx.regular;
 }
 
 function drawWrapped(ctx: Ctx, text: string, opts: { size?: number; bold?: boolean; color?: ReturnType<typeof rgb>; gap?: number } = {}) {
   const size = opts.size ?? 10;
-  const font = opts.bold ? ctx.bold : ctx.regular;
+  const safe = pdfSafe(customerFacingText(text), Boolean(ctx.cjkRegular));
+  const font = fontForText(ctx, safe, opts.bold);
   const color = opts.color ?? TEXT;
-  const lines = wrap(asciiSafe(text), font, size, CONTENT_W);
+  const lines = wrap(safe, font, size, CONTENT_W);
   const lh = size * 1.35;
   ensureSpace(ctx, lh * lines.length + 2);
   for (const line of lines) {
@@ -100,13 +127,15 @@ function drawWrapped(ctx: Ctx, text: string, opts: { size?: number; bold?: boole
 
 function drawSectionHeader(ctx: Ctx, title: string) {
   ensureSpace(ctx, 38);
+  const safeTitle = pdfSafe(customerFacingText(title), Boolean(ctx.cjkRegular));
+  const font = fontForText(ctx, safeTitle, true);
   ctx.y -= 6;
   ctx.page.drawRectangle({ x: MARGIN, y: ctx.y - 22, width: CONTENT_W, height: 26, color: NAVY });
-  ctx.page.drawText(asciiSafe(title), {
+  ctx.page.drawText(safeTitle, {
     x: MARGIN + 10,
     y: ctx.y - 16,
     size: 12,
-    font: ctx.bold,
+    font,
     color: rgb(1, 1, 1),
   });
   ctx.y -= 32;
@@ -160,13 +189,16 @@ function checklistForReport(r: InvestigationReport): ChecklistReportResult[] {
 
 function drawChecklistItem(ctx: Ctx, item: ChecklistReportResult) {
   ensureSpace(ctx, 92);
-  const badgeW = statusBadgeWidth(ctx.bold, item.status);
-  const titleLines = wrap(asciiSafe(item.title), ctx.bold, 10, CONTENT_W - badgeW - 10);
-  ctx.page.drawText(titleLines[0], { x: MARGIN, y: ctx.y - 10, size: 10, font: ctx.bold, color: NAVY });
-  drawStatusBadge(ctx, item.status, MARGIN + CONTENT_W - badgeW, ctx.y - 10, badgeW);
+  const displayStatus = displayStatusForItem(item);
+  const badgeW = statusBadgeWidth(ctx.bold, displayStatus);
+  const title = pdfSafe(customerFacingText(item.title), Boolean(ctx.cjkRegular));
+  const titleFont = fontForText(ctx, title, true);
+  const titleLines = wrap(title, titleFont, 10, CONTENT_W - badgeW - 10);
+  ctx.page.drawText(titleLines[0], { x: MARGIN, y: ctx.y - 10, size: 10, font: titleFont, color: NAVY });
+  drawStatusBadge(ctx, displayStatus, MARGIN + CONTENT_W - badgeW, ctx.y - 10, badgeW);
   ctx.y -= 14;
   for (let i = 1; i < titleLines.length; i++) {
-    ctx.page.drawText(titleLines[i], { x: MARGIN, y: ctx.y - 10, size: 10, font: ctx.bold, color: NAVY });
+    ctx.page.drawText(titleLines[i], { x: MARGIN, y: ctx.y - 10, size: 10, font: titleFont, color: NAVY });
     ctx.y -= 14;
   }
 
@@ -197,11 +229,50 @@ function drawChecklistItem(ctx: Ctx, item: ChecklistReportResult) {
   if (item.missing_information_required.length) {
     drawWrapped(ctx, "Missing information required: " + item.missing_information_required.join("; "), { size: 9.5, color: RED });
   }
-  if (item.buyer_impact) drawWrapped(ctx, "Buyer impact: " + item.buyer_impact, { size: 9.5 });
+  if (item.buyer_impact && !/^\s*(LOW|MEDIUM|HIGH)\s*$/i.test(item.buyer_impact)) drawWrapped(ctx, "Buyer impact: " + item.buyer_impact, { size: 9.5 });
   if (item.recommended_action) drawWrapped(ctx, "Recommended action: " + item.recommended_action, { size: 9.5 });
   ctx.y -= 6;
   ctx.page.drawLine({ start: { x: MARGIN, y: ctx.y }, end: { x: MARGIN + CONTENT_W, y: ctx.y }, thickness: 0.5, color: LIGHT });
   ctx.y -= 10;
+}
+
+function displayStatusForItem(item: ChecklistReportResult): FindingStatus {
+  if (item.id === "recommended_next_actions" && item.recommended_action.trim()) return "CAUTION";
+  if (item.status === "NOT_VERIFIED" && item.evidence_ids.length > 0 && item.evidence_classification !== "NOT_INDEPENDENTLY_VERIFIED") {
+    return item.evidence_classification === "CONTRADICTED" ? "CAUTION" : item.status;
+  }
+  return item.status;
+}
+
+async function tryReadFont(path: string): Promise<Uint8Array | null> {
+  try {
+    const fs = await import("node:fs/promises");
+    return await fs.readFile(path);
+  } catch {
+    return null;
+  }
+}
+
+async function embedCjkFont(doc: PDFDocument): Promise<PDFFont | null> {
+  doc.registerFontkit(fontkit);
+  const candidates = [
+    process.env.VERIFYFIRST_CJK_FONT_PATH,
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    "/System/Library/Fonts/STHeiti Medium.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf",
+  ].filter(Boolean) as string[];
+  for (const candidate of candidates) {
+    const bytes = await tryReadFont(candidate);
+    if (!bytes) continue;
+    try {
+      return await doc.embedFont(bytes, { subset: true });
+    } catch {
+      continue;
+    }
+  }
+  return null;
 }
 
 function drawStatusSummary(ctx: Ctx, checklist: ChecklistReportResult[]) {
@@ -289,12 +360,14 @@ export async function renderReportPdf(r: InvestigationReport): Promise<Uint8Arra
   const doc = await PDFDocument.create();
   const regular = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const cjkRegular = await embedCjkFont(doc);
   const ctx: Ctx = {
     doc,
     page: doc.addPage([PAGE_W, PAGE_H]),
     y: PAGE_H - MARGIN,
     regular,
     bold,
+    cjkRegular,
     footnotes: { order: [], index: new Map() },
   };
 
