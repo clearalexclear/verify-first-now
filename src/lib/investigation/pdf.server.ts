@@ -18,6 +18,7 @@ import {
   type InvestigationReport,
   type ReportSectionKey,
 } from "./types";
+import { VERIFYFIRST_CJK_FONT_BASE64 } from "./cjk-font-subset";
 
 const NAVY = rgb(0x0f / 255, 0x2a / 255, 0x43 / 255);
 const GREEN = rgb(0x16 / 255, 0xa3 / 255, 0x4a / 255);
@@ -253,8 +254,22 @@ async function tryReadFont(path: string): Promise<Uint8Array | null> {
   }
 }
 
+function decodeBase64Font(base64: string): Uint8Array {
+  const compact = base64.replace(/\s+/g, "");
+  if (typeof Buffer !== "undefined") return new Uint8Array(Buffer.from(compact, "base64"));
+  const binary = globalThis.atob(compact);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
 async function embedCjkFont(doc: PDFDocument): Promise<PDFFont | null> {
   doc.registerFontkit(fontkit);
+  try {
+    return await doc.embedFont(decodeBase64Font(VERIFYFIRST_CJK_FONT_BASE64), { subset: true });
+  } catch {
+    // Fall back to configured/system fonts if the bundled subset cannot be embedded.
+  }
   const candidates = [
     process.env.VERIFYFIRST_CJK_FONT_PATH,
     "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
