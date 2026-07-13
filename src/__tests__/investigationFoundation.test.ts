@@ -7,7 +7,7 @@ import { verifyStripeSignature } from "../lib/payments/stripe-webhook.server";
 import { buildCanonicalChecklist, CANONICAL_CHECKLIST, CHECKLIST_COUNT, detectChecklistContradictions, applyOutcomeGating } from "../lib/investigation/checklist";
 import { renderReportPdf } from "../lib/investigation/pdf.server";
 import type { Finding, InvestigationReport, ResolvedEntity } from "../lib/investigation/types";
-import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { getDocument, VerbosityLevel } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { fileURLToPath } from "node:url";
 
 async function stripeSignature(raw: string, secret: string, timestamp = Math.floor(Date.now() / 1000)) {
@@ -93,7 +93,7 @@ function mockReport(overrides: Partial<InvestigationReport> = {}): Investigation
 
 async function extractPdfText(pdf: Uint8Array): Promise<string> {
   const standardFontDataUrl = fileURLToPath(new URL("../../node_modules/pdfjs-dist/standard_fonts/", import.meta.url));
-  const loadingTask = getDocument({ data: pdf.slice(), disableWorker: true, standardFontDataUrl } as any);
+  const loadingTask = getDocument({ data: pdf.slice(), disableWorker: true, standardFontDataUrl, verbosity: VerbosityLevel.ERRORS } as any);
   const doc = await loadingTask.promise;
   const chunks: string[] = [];
   for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber++) {
@@ -254,14 +254,20 @@ describe("canonical checklist", () => {
       },
       resolved_entity: {
         ...baseResolvedEntity,
-        legal_name_local: "江门市昌文厨具有限公司",
+        legal_name_local: "华为技术有限公司",
+        registered_address: "深圳市龙岗区坂田华为总部办公楼",
       },
     });
     report.checklist_results = buildCanonicalChecklist(report);
 
     const text = await extractPdfText(await renderReportPdf(report));
     expect(text).toContain("江门市昌文厨具有限公司");
+    expect(text).toContain("华为技术有限公司");
+    expect(text).toContain("深圳市龙岗区坂田华为总部办公楼");
     expect(text).not.toMatch(/\[\d+-char non-Latin\]/);
+    expect(text).not.toMatch(/Chinese legal name:\s*\./);
+    expect(text).not.toMatch(/Local name:\s*\./);
+    expect(text).not.toMatch(/Local name:\s*Commercial recommendation/);
   });
 
   it("removes internal UUIDs from rendered PDF sections", async () => {
