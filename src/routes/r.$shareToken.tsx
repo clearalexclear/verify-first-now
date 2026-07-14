@@ -4,7 +4,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { Button } from "@/components/ui/button";
 import { Download, Printer } from "lucide-react";
-import type { ChecklistReportResult, FindingStatus, InvestigationReport } from "@/lib/investigation/types";
+import type { ChecklistReportResult, FindingStatus, InvestigationReport, VerifiedReportDecision } from "@/lib/investigation/types";
 import {
   CLASSIFICATION_LABEL,
   CONFIDENCE_LABEL,
