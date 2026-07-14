@@ -270,6 +270,32 @@ describe("canonical checklist", () => {
     expect(text).not.toMatch(/Local name:\s*Commercial recommendation/);
   });
 
+  it("does not render evidence-reference placeholders in buyer-facing report text", async () => {
+    const report = mockReport({
+      executive_summary: "Public summary is ready (evidence references).",
+      buyer_implications: "Buyer should not see evidence references or empty citation placeholders.",
+      recommended_safeguards: "Safeguards should cite available sources only.",
+    });
+    report.checklist_results = buildCanonicalChecklist(report);
+
+    const text = await extractPdfText(await renderReportPdf(report));
+    expect(text).not.toMatch(/evidence references/i);
+    expect(text).not.toMatch(/\(\s*\)/);
+  });
+
+  it("does not partially render common Chinese registry labels", async () => {
+    const report = mockReport({
+      executive_summary: "Uploaded 营业执照 lists 统一社会信用代码, 法定代表人, 注册地址 and 经营范围.",
+    });
+    report.checklist_results = buildCanonicalChecklist(report);
+
+    const text = await extractPdfText(await renderReportPdf(report));
+    expect(text).toContain("Business License");
+    expect(text).toContain("Unified Social Credit Code");
+    expect(text).not.toMatch(/Business License\s*\(营\)/);
+    expect(text).not.toMatch(/\(营\)|\(统一\)|\(法定\)|\(注册\)|\(经营\)/);
+  });
+
   it("removes internal UUIDs from rendered PDF sections", async () => {
     const uuid = "3d8f8267-0b39-4d9c-9c2f-6d25b1a2e034";
     const report = mockReport({
@@ -310,6 +336,15 @@ describe("canonical checklist", () => {
     const text = await extractPdfText(await renderReportPdf(report));
     expect(text).not.toMatch(/Recommended next actions\s+Not applicable/i);
     expect(text).not.toMatch(/Buyer impact:\s*HIGH/i);
+  });
+
+  it("prints full GSXT/CODS registry guidance at most once", async () => {
+    const report = mockReport();
+    report.checklist_results = buildCanonicalChecklist(report);
+
+    const text = await extractPdfText(await renderReportPdf(report));
+    const occurrences = text.match(/Registration status can be confirmed free at the official Chinese registry/g) ?? [];
+    expect(occurrences).toHaveLength(1);
   });
 
   it("Jiangmen Changwen mock report contains all 32 items", () => {
