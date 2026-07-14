@@ -128,6 +128,7 @@ const FIRECRAWL_RESTRICTED_SECTIONS: ReportSectionKey[] = [
 ];
 
 function blank(def: ChecklistDefinition, now: string): ChecklistResult {
+  const chinaRegistryGuidance = def.paid_connector_dependency?.includes("China registry provider");
   return {
     ...def,
     status: "NOT_VERIFIED",
@@ -138,7 +139,9 @@ function blank(def: ChecklistDefinition, now: string): ChecklistResult {
     evidence_ids: [],
     explanation: "No independent source evidence is available for this checklist item.",
     buyer_impact: "This item cannot be relied on until evidence is retrieved from an appropriate source.",
-    recommended_action: def.paid_connector_dependency
+    recommended_action: chinaRegistryGuidance
+      ? "Registration status can be confirmed free at the official Chinese registry: GSXT / National Enterprise Credit Information Publicity System, or CODS / USCC lookup where applicable. This report does not claim official active-status verification unless official/API evidence is captured."
+      : def.paid_connector_dependency
       ? `Connect ${def.paid_connector_dependency} or verify this item manually before relying on it.`
       : "Request the missing evidence and re-run the investigation.",
     missing_information_required: [],
@@ -251,7 +254,7 @@ function registryFieldResult(
   out.source_urls = unique(resolved.sources.map((s) => s.url));
   out.explanation = `${fieldLabel}: ${text}. This is not treated as an official registry verification until QCC evidence is available.`;
   out.buyer_impact = `${fieldLabel} is visible in the investigation record but cannot be relied on as an official corporate-registry fact.`;
-  out.recommended_action = "Verify against QCC International API or official Chinese registry records before relying on this item.";
+  out.recommended_action = "Registration status can be confirmed free at the official Chinese registry: GSXT / National Enterprise Credit Information Publicity System, or CODS / USCC lookup where applicable. This report does not claim official active-status verification unless official/API evidence is captured.";
   return out;
 }
 

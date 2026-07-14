@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as VerifiedReportRouteImport } from './routes/verified-report'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SampleReportRouteImport } from './routes/sample-report'
 import { Route as PrivacyRouteImport } from './routes/privacy'
@@ -31,6 +32,11 @@ import { Route as AuthenticatedAdminIntegrationDiagnosticsRouteImport } from './
 import { Route as ApiPublicInvestigateCaseIdRouteImport } from './routes/api/public/investigate.$caseId'
 import { Route as AuthenticatedAdminCasesCaseIdRouteImport } from './routes/_authenticated/admin/cases.$caseId'
 
+const VerifiedReportRoute = VerifiedReportRouteImport.update({
+  id: '/verified-report',
+  path: '/verified-report',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
@@ -150,6 +156,7 @@ export interface FileRoutesByFullPath {
   '/privacy': typeof PrivacyRoute
   '/sample-report': typeof SampleReportRoute
   '/terms': typeof TermsRoute
+  '/verified-report': typeof VerifiedReportRoute
   '/admin': typeof AuthenticatedAdminRouteRouteWithChildren
   '/r/$shareToken': typeof RShareTokenRoute
   '/upload/$token': typeof UploadTokenRoute
@@ -172,6 +179,7 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/sample-report': typeof SampleReportRoute
   '/terms': typeof TermsRoute
+  '/verified-report': typeof VerifiedReportRoute
   '/r/$shareToken': typeof RShareTokenRoute
   '/upload/$token': typeof UploadTokenRoute
   '/admin/integration-diagnostics': typeof AuthenticatedAdminIntegrationDiagnosticsRoute
@@ -195,6 +203,7 @@ export interface FileRoutesById {
   '/privacy': typeof PrivacyRoute
   '/sample-report': typeof SampleReportRoute
   '/terms': typeof TermsRoute
+  '/verified-report': typeof VerifiedReportRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRouteRouteWithChildren
   '/r/$shareToken': typeof RShareTokenRoute
   '/upload/$token': typeof UploadTokenRoute
@@ -219,6 +228,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/sample-report'
     | '/terms'
+    | '/verified-report'
     | '/admin'
     | '/r/$shareToken'
     | '/upload/$token'
@@ -241,6 +251,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/sample-report'
     | '/terms'
+    | '/verified-report'
     | '/r/$shareToken'
     | '/upload/$token'
     | '/admin/integration-diagnostics'
@@ -263,6 +274,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/sample-report'
     | '/terms'
+    | '/verified-report'
     | '/_authenticated/admin'
     | '/r/$shareToken'
     | '/upload/$token'
@@ -287,6 +299,7 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   SampleReportRoute: typeof SampleReportRoute
   TermsRoute: typeof TermsRoute
+  VerifiedReportRoute: typeof VerifiedReportRoute
   RShareTokenRoute: typeof RShareTokenRoute
   UploadTokenRoute: typeof UploadTokenRoute
   ApiStripeWebhookRoute: typeof ApiStripeWebhookRoute
@@ -295,6 +308,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/verified-report': {
+      id: '/verified-report'
+      path: '/verified-report'
+      fullPath: '/verified-report'
+      preLoaderRoute: typeof VerifiedReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/terms': {
       id: '/terms'
       path: '/terms'
@@ -504,6 +524,7 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   SampleReportRoute: SampleReportRoute,
   TermsRoute: TermsRoute,
+  VerifiedReportRoute: VerifiedReportRoute,
   RShareTokenRoute: RShareTokenRoute,
   UploadTokenRoute: UploadTokenRoute,
   ApiStripeWebhookRoute: ApiStripeWebhookRoute,
@@ -512,3 +533,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

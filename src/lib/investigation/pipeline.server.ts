@@ -10,6 +10,7 @@ import { OPEN_WEB_CHINA_REGISTRY_LABEL, OPEN_WEB_CHINA_REGISTRY_PROVIDER } from 
 import { runConnectorEvidenceChecksDetailed, type ConnectorRunSummary } from "./connectors/findings.server";
 import { applyOutcomeGating, buildCanonicalChecklist } from "./checklist";
 import { computeOutcome, synthesiseNarrative } from "./synthesis.server";
+import { buildVerifiedReportConsistency, extractVerifiedBusinessLicenceFields, extractVerifiedInvoiceFields, type VerifiedCertificateFields } from "./verified-report.server";
 import { renderReportPdf } from "./pdf.server";
 import { emailReport, emailInvestigationFailed } from "./email.server";
 import { persistFindingEvidence } from "./evidence.server";
@@ -50,7 +51,7 @@ export async function runInvestigation(
     .from("supplier_cases")
     .select(`
       id, case_reference, status, product_category, destination_market,
-      estimated_order_value, customer_concerns, supplier_chinese_name
+      estimated_order_value, customer_concerns, supplier_chinese_name, package
     `)
     .eq("id", caseId)
     .maybeSingle();
@@ -275,10 +276,34 @@ export async function runInvestigation(
       });
     }
 
+    const isVerifiedReport = String(caseRow.package) === "verified_report";
+    const verifiedConsistency = isVerifiedReport
+      ? buildVerifiedReportConsistency({
+          supplierName: order.supplier_company_name,
+          website: order.website_marketplace_url,
+          country: order.supplier_country,
+          productCategory: caseRow.product_category ?? "",
+          destinationMarket,
+          orderValue: caseRow.estimated_order_value ?? "",
+          businessLicence: extractVerifiedBusinessLicenceFields(extracted.find((doc) => /business_licen[cs]e/i.test(`${doc.category} ${doc.doc_type} ${doc.filename}`))),
+          proformaInvoice: extractVerifiedInvoiceFields(extracted.find((doc) => /pro.?forma|invoice|quotation|payment/i.test(`${doc.category} ${doc.doc_type} ${doc.filename}`))),
+          certificates: extracted
+            .filter((doc) => /certificate|test_report|test report/i.test(`${doc.category} ${doc.doc_type} ${doc.filename}`))
+            .map((doc): VerifiedCertificateFields => ({
+              holderName: doc.extracted_entities.company_name_en ?? doc.extracted_entities.company_name_zh ?? null,
+              certificateName: doc.extracted_entities.certificate_number ?? doc.filename,
+              requiredForOrder: false,
+            })),
+        })
+      : null;
+    if (verifiedConsistency) findings.push(...verifiedConsistency.findings);
+
     const evidenceBackedFindings = await persistFindingEvidence(caseId, findings, opts.jobId ?? null);
     await log("evidence_added", { stage: "risk_screening", findings: evidenceBackedFindings.length });
 
-    const overall = computeOutcome(evidenceBackedFindings);
+    const overall = verifiedConsistency
+      ? { overall: verifiedConsistency.overallRisk, outcome: verifiedConsistency.finalOutcome }
+      : computeOutcome(evidenceBackedFindings);
     const synth = await synthesiseNarrative({
       supplier: {
         name: order.supplier_company_name,
@@ -403,12 +428,23 @@ export async function runInvestigation(
       customer_evidence: customerEvidence,
       sources_unavailable: sourcesUnavailable,
       critical_blockers: [],
+      verified_report_decision: verifiedConsistency?.decision,
     };
     report.checklist_results = buildCanonicalChecklist(report);
 
     // Apply post-checklist outcome gating: never allow GO / PROCEED_WITH_SAFEGUARDS while
     // critical identity, sanctions, or licence items remain NOT_VERIFIED.
-    const gated = applyOutcomeGating(overall, report.checklist_results as any, { paymentDetailsProvided: false });
+    const hardStop = report.checklist_results.find((item) => ["sanctions_restricted_party", "uflpa_forced_labour"].includes(item.id) && item.status === "FAIL");
+    const gated = isVerifiedReport
+      ? {
+          overall: hardStop ? "critical" as const : report.overall_risk_rating,
+          outcome: hardStop ? "NO_GO" as const : report.final_outcome,
+          blockers: [
+            ...(verifiedConsistency?.decision.deal_specific_blockers ?? []),
+            ...(hardStop ? [`${hardStop.title} is a hard blocker.`] : []),
+          ],
+        }
+      : applyOutcomeGating(overall, report.checklist_results as any, { paymentDetailsProvided: false });
     if (gated.outcome !== report.final_outcome || gated.overall !== report.overall_risk_rating) {
       report.final_outcome = gated.outcome;
       report.overall_risk_rating = gated.overall;
@@ -433,8 +469,8 @@ export async function runInvestigation(
         case_id: caseId,
         version_number: nextVersion,
         status: "final",
-        overall_risk_rating: overall.overall,
-        final_outcome: mapOutcome(overall.outcome),
+        overall_risk_rating: report.overall_risk_rating,
+        final_outcome: mapOutcome(report.final_outcome),
         executive_summary: synth.executive_summary,
         key_findings: synth.key_findings,
         buyer_implications: synth.buyer_implications,
@@ -491,8 +527,8 @@ export async function runInvestigation(
         customerName: order.customer_name,
         orderReference: order.order_reference,
         supplierName: order.supplier_company_name,
-        overallRating: overall.overall,
-        finalOutcome: OUTCOME_LABEL[overall.outcome],
+        overallRating: report.overall_risk_rating,
+        finalOutcome: OUTCOME_LABEL[report.final_outcome],
         reportUrl,
         pdfBytes,
       });
@@ -510,8 +546,8 @@ export async function runInvestigation(
     await db.from("supplier_cases").update({
       status: deliver ? "delivered" : "report_ready",
       investigation_completed_at: new Date().toISOString(),
-      overall_risk_rating: overall.overall,
-      suggested_outcome: mapOutcome(overall.outcome),
+      overall_risk_rating: report.overall_risk_rating,
+      suggested_outcome: mapOutcome(report.final_outcome),
       completion_pct: 100,
     }).eq("id", caseId);
 

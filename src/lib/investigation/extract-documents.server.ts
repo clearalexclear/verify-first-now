@@ -20,6 +20,26 @@ export interface ExtractedDoc {
     certificate_number: string | null;
     validity_dates: string | null;
   };
+  business_licence?: {
+    chineseLegalName: string | null;
+    englishName: string | null;
+    uscc: string | null;
+    registeredAddress: string | null;
+    legalRepresentative: string | null;
+    businessScope: string | null;
+    licenceDate: string | null;
+  };
+  proforma_invoice?: {
+    issuerSellerEntity: string | null;
+    beneficiaryName: string | null;
+    bankAccountName: string | null;
+    bankCountry: string | null;
+    invoiceAddress: string | null;
+    currency: string | null;
+    orderAmount: string | null;
+    productDescription: string | null;
+    buyerName: string | null;
+  };
   summary: string;
 }
 
@@ -59,10 +79,18 @@ export async function extractDocument(args: {
     `This is a supplier document tagged as "${args.category ?? "unknown"}". ` +
     "Extract: doc_type, company_name_en, company_name_zh, usci_number (Chinese 统一社会信用代码 if present), " +
     "registered_address, contact, dates (any visible), amounts, certificate_authority, certificate_number, " +
-    "validity_dates, and a 1–3 sentence factual summary. Respond as JSON exactly matching:\n" +
+    "validity_dates. If this is a business licence, also extract business_licence: chineseLegalName, englishName, uscc, " +
+    "registeredAddress, legalRepresentative, businessScope, licenceDate. If this is a proforma invoice, also extract " +
+    "proforma_invoice: issuerSellerEntity, beneficiaryName, bankAccountName, bankCountry, invoiceAddress, currency, " +
+    "orderAmount, productDescription, buyerName. Add a 1–3 sentence factual summary. Respond as JSON exactly matching:\n" +
     `{"doc_type":"","extracted_entities":{"company_name_en":null,"company_name_zh":null,` +
     `"usci_number":null,"registered_address":null,"contact":null,"dates":[],"amounts":[],` +
-    `"certificate_authority":null,"certificate_number":null,"validity_dates":null},"summary":""}`;
+    `"certificate_authority":null,"certificate_number":null,"validity_dates":null},` +
+    `"business_licence":{"chineseLegalName":null,"englishName":null,"uscc":null,"registeredAddress":null,` +
+    `"legalRepresentative":null,"businessScope":null,"licenceDate":null},` +
+    `"proforma_invoice":{"issuerSellerEntity":null,"beneficiaryName":null,"bankAccountName":null,` +
+    `"bankCountry":null,"invoiceAddress":null,"currency":null,"orderAmount":null,` +
+    `"productDescription":null,"buyerName":null},"summary":""}`;
 
   const content = isImage
     ? [

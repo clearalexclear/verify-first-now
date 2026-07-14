@@ -4,7 +4,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-const demoInput = z.object({
+export const demoInput = z.object({
   supplier_name: z.string().trim().min(2).max(300),
   supplier_website: z.string().trim().min(3).max(500),
   supplier_country: z.string().trim().min(2).max(100),
