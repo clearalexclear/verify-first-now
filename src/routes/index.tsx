@@ -78,20 +78,31 @@ function Hero() {
           <p className="mt-6 text-lg leading-relaxed text-muted-foreground sm:text-xl">
             Independent verification reports on Chinese and Vietnamese suppliers. We work for you — never paid by the factory. Report delivered in 72 hours.
           </p>
-          <div className="mt-10 flex flex-col items-center gap-3">
+          <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
             <Button
               asChild
               size="lg"
               className="h-14 bg-navy px-8 text-base font-semibold text-navy-foreground hover:bg-navy/90"
             >
-              <Link to="/order" search={{ tier: "standard" }}>
-                Verify a Supplier — €490 <ArrowRight className="ml-2 h-4 w-4" />
+              <Link to="/demo">
+                Run instant risk scan — €49 <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
-            <Link to="/sample-report" className="text-sm font-medium text-navy underline-offset-4 hover:underline">
-              See a sample report →
-            </Link>
+            <Button
+              asChild
+              variant="outline"
+              size="lg"
+              className="h-14 border-navy/30 px-8 text-base font-semibold text-navy hover:bg-navy/5"
+            >
+              <Link to="/verified-report">
+                Get verified report — €490
+              </Link>
+            </Button>
           </div>
+          <Link to="/sample-report" className="mt-4 inline-block text-sm font-medium text-navy underline-offset-4 hover:underline">
+            See a sample report →
+          </Link>
+
         </div>
       </div>
     </section>
