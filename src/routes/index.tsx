@@ -432,7 +432,7 @@ function CTA() {
           Verify your supplier before you wire the deposit.
         </h2>
         <p className="mt-4 text-base text-navy-foreground/80">
-          Independent. 72 hours. €490.
+          Instant Scan €49 · Verified Report €490. Independent, no supplier kickbacks.
         </p>
         <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
           <Button
@@ -440,7 +440,14 @@ function CTA() {
             size="lg"
             className="h-12 bg-success px-8 text-base font-semibold text-success-foreground hover:bg-success/90"
           >
-            <Link to="/order" search={{ tier: "standard" }}>Verify a Supplier — €490</Link>
+            <Link to="/demo">Run instant risk scan — €49</Link>
+          </Button>
+          <Button
+            asChild
+            size="lg"
+            className="h-12 bg-navy-foreground px-8 text-base font-semibold text-navy hover:bg-navy-foreground/90"
+          >
+            <Link to="/verified-report">Get verified report — €490</Link>
           </Button>
           <Button
             asChild
@@ -451,6 +458,7 @@ function CTA() {
             <Link to="/sample-report">See a sample report</Link>
           </Button>
         </div>
+
       </div>
     </section>
   );
