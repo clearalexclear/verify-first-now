@@ -98,9 +98,10 @@ function VerifiedReportPage() {
           <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-navy text-navy-foreground">
             <ShieldCheck className="h-6 w-6" />
           </div>
-          <h1 className="text-3xl font-bold text-navy">Verified Supplier Report</h1>
+          <p className="text-xs font-semibold uppercase tracking-wider text-success">Verified Supplier Report · €490 · 72-hour delivery</p>
+          <h1 className="mt-2 text-3xl font-bold text-navy">Verified Supplier Report</h1>
           <p className="mt-3 text-muted-foreground">
-            Send us what the supplier sent you. We check whether the story holds together before you wire money.
+            Send us what your supplier sent you. We check whether the legal, invoice, bank and product story holds together before you pay — and return a clear <span className="font-semibold text-navy">Payment decision: Proceed / Pause / No-Go</span> with deal-specific blockers and exact next actions. Business licence and proforma invoice are required; certificates and test reports are optional.
           </p>
         </div>
 
