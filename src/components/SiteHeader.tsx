@@ -13,9 +13,15 @@ export function SiteHeader() {
           <Link to="/sample-report" className="hover:text-foreground">Sample report</Link>
           <Link to="/" hash="faq" className="hover:text-foreground">FAQ</Link>
         </nav>
-        <Button asChild size="sm" className="bg-navy text-navy-foreground hover:bg-navy/90">
-          <Link to="/order" search={{ tier: "standard" }}>Verify a supplier</Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button asChild size="sm" variant="outline" className="hidden sm:inline-flex">
+            <Link to="/demo">Instant scan €49</Link>
+          </Button>
+          <Button asChild size="sm" className="bg-navy text-navy-foreground hover:bg-navy/90">
+            <Link to="/verified-report">Verified report €490</Link>
+          </Button>
+        </div>
+
       </div>
     </header>
   );
