@@ -59,9 +59,10 @@ function DemoPage() {
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-navy text-navy-foreground">
             <ShieldCheck className="h-6 w-6" />
           </div>
-          <h1 className="text-3xl font-bold text-navy sm:text-4xl">Run a supplier risk scan</h1>
+          <p className="text-xs font-semibold uppercase tracking-wider text-success">Instant Supplier Risk Scan · from €49</p>
+          <h1 className="mt-2 text-3xl font-bold text-navy sm:text-4xl">Automated supplier risk pre-screen — before you wire money</h1>
           <p className="mt-3 text-muted-foreground">
-            Enter a supplier below. We'll run the live VerifyFirst pipeline (China registry, RDAP, UFLPA, CPSC, adverse media, web research) and generate a real buyer report. No payment or documents required.
+            Enter a supplier below. We run the live VerifyFirst pipeline — open-web China registry (GSXT/CODS-style), RDAP, UFLPA, CPSC, sanctions, adverse media — and return an honest risk summary. No payment, no uploads. Documents may be requested only as a next-step safeguard, never up front.
           </p>
         </div>
 
