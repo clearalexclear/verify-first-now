@@ -108,7 +108,7 @@ function DemoPage() {
             {busy ? (
               <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Running investigation… (30–90 seconds)</>
             ) : (
-              "Run supplier risk scan"
+              "Run instant risk scan"
             )}
           </Button>
           <p className="text-center text-xs text-muted-foreground">
