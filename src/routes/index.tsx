@@ -223,48 +223,40 @@ function WhatWeCheck() {
   );
 }
 
-const TIERS = [
+const PRODUCTS = [
   {
-    id: "standard" as const,
-    name: "Standard",
+    id: "instant" as const,
+    name: "Instant Supplier Risk Scan",
+    price: "€49",
+    priceNote: "or €99 with priority analyst review",
+    tagline: "Automated supplier risk pre-screen before you wire money.",
+    features: [
+      "Open-web China business-registry lookup (GSXT/CODS-style, honest NOT_VERIFIED)",
+      "RDAP domain age and ownership",
+      "UFLPA, CPSC, sanctions and adverse-media screening",
+      "Automated red-flag summary in minutes",
+      "No uploads required — documents may be requested only as a next-step safeguard",
+    ],
+    cta: "Run instant risk scan",
+    href: "/demo" as const,
+    highlighted: false,
+  },
+  {
+    id: "verified" as const,
+    name: "Verified Supplier Report",
     price: "€490",
-    delivery: "72-hour delivery",
+    priceNote: "72-hour delivery · analyst-reviewed",
+    tagline: "Send us what your supplier sent you. We check whether the legal, invoice, bank and product story holds together before you pay.",
     features: [
-      "Full desk verification report",
-      "Legal entity & business scope",
-      "Export history analysis",
-      "Certification authenticity",
-      "Red flag screening",
-      "GO / CAUTION / NO-GO rating",
+      "Business licence and proforma invoice consistency check (required)",
+      "Certificates and test reports optional",
+      "Entity ↔ payment-beneficiary matching",
+      "Payment decision: Proceed / Pause / No-Go with deal-specific blockers",
+      "Exact next actions to demand from the supplier before you wire",
     ],
-    cta: "Order Standard",
-  },
-  {
-    id: "priority" as const,
-    name: "Priority",
-    price: "€690",
-    delivery: "24-hour delivery",
-    features: [
-      "Everything in Standard",
-      "24-hour delivery",
-      "30-minute debrief call with analyst",
-      "Priority email support",
-    ],
-    cta: "Order Priority",
+    cta: "Get verified report",
+    href: "/verified-report" as const,
     highlighted: true,
-  },
-  {
-    id: "onsite" as const,
-    name: "On-Site",
-    price: "€1,290",
-    delivery: "7-day delivery",
-    features: [
-      "Everything in Priority",
-      "Physical factory visit (China & Vietnam)",
-      "Photo & video evidence",
-      "Local inspector on the ground",
-    ],
-    cta: "Order On-Site",
   },
 ];
 
@@ -273,33 +265,32 @@ function Pricing() {
     <section id="pricing" className="border-b border-border py-20 sm:py-24">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <div className="mx-auto max-w-2xl text-center">
-          <h2 className="text-3xl font-bold tracking-tight text-navy sm:text-4xl">Pricing</h2>
+          <h2 className="text-3xl font-bold tracking-tight text-navy sm:text-4xl">Two products, one goal: don't wire the wrong supplier.</h2>
           <p className="mt-4 text-muted-foreground">
-            One supplier, one flat fee. No subscriptions, no surprises.
+            Start with an automated pre-screen. Upgrade to a document-based Verified Report before you pay.
           </p>
         </div>
-        <div className="mt-14 grid gap-6 lg:grid-cols-3">
-          {TIERS.map((t) => (
+        <div className="mt-14 grid gap-6 lg:grid-cols-2">
+          {PRODUCTS.map((p) => (
             <div
-              key={t.id}
+              key={p.id}
               className={`relative flex flex-col rounded-2xl border bg-card p-8 ${
-                t.highlighted
-                  ? "border-navy shadow-xl ring-1 ring-navy/10 lg:-translate-y-3"
-                  : "border-border"
+                p.highlighted ? "border-navy shadow-xl ring-1 ring-navy/10" : "border-border"
               }`}
             >
-              {t.highlighted && (
+              {p.highlighted && (
                 <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-navy px-3 py-1 text-xs font-semibold uppercase tracking-wide text-navy-foreground">
-                  Most popular
+                  Recommended before payment
                 </span>
               )}
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{t.name}</h3>
-              <div className="mt-4 flex items-baseline gap-2">
-                <span className="text-4xl font-bold text-navy">{t.price}</span>
+              <h3 className="text-lg font-bold text-navy">{p.name}</h3>
+              <p className="mt-2 text-sm text-muted-foreground">{p.tagline}</p>
+              <div className="mt-5 flex items-baseline gap-2">
+                <span className="text-4xl font-bold text-navy">{p.price}</span>
               </div>
-              <p className="mt-1 text-sm font-medium text-success">{t.delivery}</p>
+              <p className="mt-1 text-sm font-medium text-success">{p.priceNote}</p>
               <ul className="mt-6 space-y-3 text-sm">
-                {t.features.map((f) => (
+                {p.features.map((f) => (
                   <li key={f} className="flex gap-2.5 text-foreground">
                     <Check className="mt-0.5 h-4 w-4 shrink-0 text-success" />
                     <span>{f}</span>
@@ -309,21 +300,25 @@ function Pricing() {
               <Button
                 asChild
                 className={`mt-8 w-full ${
-                  t.highlighted
+                  p.highlighted
                     ? "bg-navy text-navy-foreground hover:bg-navy/90"
                     : "bg-foreground text-background hover:bg-foreground/90"
                 }`}
                 size="lg"
               >
-                <Link to="/order" search={{ tier: t.id }}>{t.cta}</Link>
+                <Link to={p.href}>{p.cta}</Link>
               </Button>
             </div>
           ))}
         </div>
+        <p className="mx-auto mt-8 max-w-3xl text-center text-xs text-muted-foreground">
+          We do not claim official registry verification unless official or API-sourced evidence exists. Items without independent official proof are reported as <span className="font-mono font-semibold">NOT_VERIFIED</span> — we never fabricate registry data. Chinese GSXT / CODS guidance is included honestly, including when the source is a public-web mirror.
+        </p>
       </div>
     </section>
   );
 }
+
 
 function HowItWorks() {
   const steps = [
