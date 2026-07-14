@@ -239,3 +239,77 @@ function Meta({ label, value, mono }: { label: string; value: string; mono?: boo
     </div>
   );
 }
+
+const DECISION_STYLE: Record<VerifiedReportDecision["payment_decision"], string> = {
+  PROCEED: "bg-success text-success-foreground",
+  PAUSE: "bg-amber-500 text-white",
+  NO_GO: "bg-destructive text-destructive-foreground",
+};
+
+const DECISION_LABEL: Record<VerifiedReportDecision["payment_decision"], string> = {
+  PROCEED: "Proceed (with safeguards)",
+  PAUSE: "Pause — clarify before you wire",
+  NO_GO: "Do NOT wire — hard blockers",
+};
+
+const CONSISTENCY_LABEL: Record<VerifiedReportDecision["entity_payment_consistency"], string> = {
+  MATCH: "Entity ↔ payment beneficiary: match",
+  MINOR_ISSUES: "Entity ↔ payment beneficiary: minor issues",
+  MISMATCH: "Entity ↔ payment beneficiary: MISMATCH",
+  NOT_VERIFIED: "Entity ↔ payment beneficiary: not verified",
+};
+
+function VerifiedReportDecisionPanel({ decision }: { decision: VerifiedReportDecision }) {
+  return (
+    <section className="mt-8 rounded-2xl border-2 border-navy bg-card p-6 sm:p-8 print:break-inside-avoid">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-navy/70">Verified Supplier Report — Payment decision</p>
+          <h2 className="mt-1 text-2xl font-bold text-navy">Before you wire the money</h2>
+        </div>
+        <span className={`inline-flex rounded-lg px-5 py-3 text-lg font-bold ${DECISION_STYLE[decision.payment_decision]}`}>
+          {DECISION_LABEL[decision.payment_decision]}
+        </span>
+      </div>
+
+      <p className="mt-4 text-sm font-semibold text-navy">{CONSISTENCY_LABEL[decision.entity_payment_consistency]}</p>
+
+      {decision.deal_specific_blockers.length > 0 && (
+        <div className="mt-5 rounded-md border border-destructive/40 bg-destructive/5 p-4">
+          <p className="text-sm font-semibold text-destructive">Deal-specific blockers</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-destructive">
+            {decision.deal_specific_blockers.map((b, i) => <li key={i}>{b}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {decision.why.length > 0 && (
+        <div className="mt-5">
+          <p className="text-sm font-semibold text-navy">Why this decision</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+            {decision.why.map((w, i) => <li key={i}>{w}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {decision.documents_checked.length > 0 && (
+        <div className="mt-5">
+          <p className="text-sm font-semibold text-navy">Documents checked</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+            {decision.documents_checked.map((d, i) => <li key={i}>{d}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {decision.ask_supplier_before_payment.length > 0 && (
+        <div className="mt-5 rounded-md border border-amber-300 bg-amber-50 p-4">
+          <p className="text-sm font-semibold text-amber-900">Ask the supplier BEFORE you wire</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-900">
+            {decision.ask_supplier_before_payment.map((a, i) => <li key={i}>{a}</li>)}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
