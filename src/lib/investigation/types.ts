@@ -149,6 +149,16 @@ export interface InvestigationReport {
   customer_evidence?: SourceEntry[];
   sources_unavailable?: UnavailableSource[];
   critical_blockers?: string[];
+  verified_report_decision?: VerifiedReportDecision;
+}
+
+export interface VerifiedReportDecision {
+  payment_decision: "PROCEED" | "PAUSE" | "NO_GO";
+  why: string[];
+  deal_specific_blockers: string[];
+  entity_payment_consistency: "MATCH" | "MINOR_ISSUES" | "MISMATCH" | "NOT_VERIFIED";
+  documents_checked: string[];
+  ask_supplier_before_payment: string[];
 }
 
 export const SECTION_TITLES: Record<ReportSectionKey, string> = {

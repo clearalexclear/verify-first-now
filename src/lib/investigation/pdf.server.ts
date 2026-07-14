@@ -325,6 +325,24 @@ function drawBlockersBox(ctx: Ctx, blockers: string[]) {
   ctx.y -= 6;
 }
 
+function drawVerifiedDecisionBox(ctx: Ctx, r: InvestigationReport) {
+  const decision = r.verified_report_decision;
+  if (!decision) return;
+  ensureSpace(ctx, 150);
+  const label = `Payment decision: ${decision.payment_decision === "NO_GO" ? "No-Go" : decision.payment_decision === "PAUSE" ? "Pause" : "Proceed"}`;
+  const color = decision.payment_decision === "NO_GO" ? RED : decision.payment_decision === "PAUSE" ? AMBER : GREEN;
+  ctx.y -= 4;
+  ctx.page.drawRectangle({ x: MARGIN, y: ctx.y - 24, width: CONTENT_W, height: 28, color });
+  ctx.page.drawText(label, { x: MARGIN + 10, y: ctx.y - 17, size: 12, font: ctx.bold, color: rgb(1, 1, 1) });
+  ctx.y -= 34;
+  drawWrapped(ctx, `Entity/payment consistency: ${decision.entity_payment_consistency.replace(/_/g, " ")}`, { size: 9.5, bold: true });
+  drawWrapped(ctx, `Documents checked: ${decision.documents_checked.length ? decision.documents_checked.join("; ") : "No required documents checked"}`, { size: 9.5 });
+  if (decision.why.length) drawWrapped(ctx, "Why: " + decision.why.join(" "), { size: 9.5 });
+  if (decision.deal_specific_blockers.length) drawWrapped(ctx, "Deal-specific blockers: " + decision.deal_specific_blockers.join(" "), { size: 9.5, color: RED });
+  if (decision.ask_supplier_before_payment.length) drawWrapped(ctx, "Ask supplier before payment: " + decision.ask_supplier_before_payment.join(" "), { size: 9.5 });
+  ctx.y -= 6;
+}
+
 function drawCover(ctx: Ctx, r: InvestigationReport) {
   ctx.page.drawRectangle({ x: 0, y: PAGE_H - 110, width: PAGE_W, height: 110, color: NAVY });
   ctx.page.drawText("VerifyFirst", { x: MARGIN, y: PAGE_H - 55, size: 26, font: ctx.bold, color: rgb(1, 1, 1) });
@@ -365,6 +383,7 @@ function drawCover(ctx: Ctx, r: InvestigationReport) {
   drawWrapped(ctx, "Report generated: " + r.generated_at.slice(0, 19).replace("T", " ") + " UTC", { size: 10, gap: 10 });
 
   drawStatusSummary(ctx, checklistForReport(r));
+  drawVerifiedDecisionBox(ctx, r);
   drawBlockersBox(ctx, r.critical_blockers ?? []);
 
   drawSectionHeader(ctx, "Executive summary");
