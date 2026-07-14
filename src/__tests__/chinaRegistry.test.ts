@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { applyOutcomeGating, buildCanonicalChecklist, checklistResultsToFindings } from "../lib/investigation/checklist";
 import { chinaRegistryRecordToFindings, retrieveChinaRegistryEvidence } from "../lib/investigation/sources/china-registry.server";
 import { officialRegistryFieldsToFindings, OFFICIAL_BROWSER_ASSISTED_SOURCE } from "../lib/investigation/sources/official-browser-assisted.server";
-import { isStrictUsccCandidate, openWebRegistryFindingsFromSources, validateUsccChecksum, type OpenWebRegistryEvidenceSource } from "../lib/investigation/sources/open-web-china-registry.server";
+import { cleanMarketingEntityName, isStrictUsccCandidate, openWebRegistryFindingsFromSources, validateUsccChecksum, type OpenWebRegistryEvidenceSource } from "../lib/investigation/sources/open-web-china-registry.server";
 import { computeOutcome } from "../lib/investigation/synthesis.server";
 import type { Finding, InvestigationReport, ResolvedEntity } from "../lib/investigation/types";
 
@@ -612,5 +612,43 @@ describe("China registry providers", () => {
     expect(result.findings.some((finding) => finding.evidence_excerpt.includes("Invalid USCC-like value found"))).toBe(false);
     expect(result.diagnostics.ignoredInvalidUsccCandidates).toBe(1);
     expect(checklist.find((item) => item.id === "unified_social_credit_code")?.status).toBe("NOT_VERIFIED");
+  });
+
+  it("strips SEO marketing prefixes before promoting resolved English entity names", () => {
+    const polluted = "OEM ODM Factory China Jiangmen Changwen Cookware & Kitchenware Co., Ltd.";
+    expect(cleanMarketingEntityName(polluted, "Jiangmen Changwen Cookware & Kitchenware Co., Ltd.")).toBe("Jiangmen Changwen Cookware & Kitchenware Co., Ltd.");
+
+    const result = openWebRegistryFindingsFromSources([
+      {
+        url: "https://cookwarecw.com/about",
+        title: polluted,
+        snippet: "Jiangmen Changwen Cookware & Kitchenware Co., Ltd cookware supplier",
+        kind: "company_website",
+        markdown: [
+          polluted,
+          `Unified Social Credit Code: ${validUscc}`,
+          "Status: Active",
+        ].join("\n"),
+      },
+      {
+        url: "https://www.qcc.com/firm/changwen",
+        title: polluted,
+        snippet: "Jiangmen Changwen Cookware & Kitchenware Co., Ltd public company profile",
+        kind: "indexed_registry",
+        markdown: [
+          polluted,
+          `Unified Social Credit Code: ${validUscc}`,
+          "Status: Active",
+        ].join("\n"),
+      },
+    ], "2026-07-14T00:00:00.000Z", input({
+      statedName: "Jiangmen Changwen Cookware & Kitchenware Co., Ltd.",
+      chineseName: null,
+      website: "https://cookwarecw.com",
+    }));
+
+    expect(result.resolvedPatch?.legal_name_en).toBe("Jiangmen Changwen Cookware & Kitchenware Co., Ltd.");
+    expect(result.findings.some((finding) => finding.evidence_excerpt.includes("OEM ODM Factory China"))).toBe(false);
+    expect(result.findings.find((finding) => finding.item === "Legal company existence")?.evidence_excerpt).toContain("Jiangmen Changwen Cookware & Kitchenware Co., Ltd");
   });
 });

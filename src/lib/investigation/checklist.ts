@@ -127,6 +127,11 @@ const FIRECRAWL_RESTRICTED_SECTIONS: ReportSectionKey[] = [
   "sanctions_forced_labour",
 ];
 
+const FULL_CHINA_REGISTRY_GUIDANCE =
+  "Registration status can be confirmed free at the official Chinese registry: GSXT / National Enterprise Credit Information Publicity System, or CODS / USCC lookup where applicable. This report does not claim official active-status verification unless official/API evidence is captured.";
+const SHORT_CHINA_REGISTRY_GUIDANCE =
+  "Official registry confirmation still required. Confirm through GSXT/CODS or an official registry capture before relying on this field.";
+
 function blank(def: ChecklistDefinition, now: string): ChecklistResult {
   const chinaRegistryGuidance = def.paid_connector_dependency?.includes("China registry provider");
   return {
@@ -140,7 +145,7 @@ function blank(def: ChecklistDefinition, now: string): ChecklistResult {
     explanation: "No independent source evidence is available for this checklist item.",
     buyer_impact: "This item cannot be relied on until evidence is retrieved from an appropriate source.",
     recommended_action: chinaRegistryGuidance
-      ? "Registration status can be confirmed free at the official Chinese registry: GSXT / National Enterprise Credit Information Publicity System, or CODS / USCC lookup where applicable. This report does not claim official active-status verification unless official/API evidence is captured."
+      ? def.id === "legal_company_existence" ? FULL_CHINA_REGISTRY_GUIDANCE : SHORT_CHINA_REGISTRY_GUIDANCE
       : def.paid_connector_dependency
       ? `Connect ${def.paid_connector_dependency} or verify this item manually before relying on it.`
       : "Request the missing evidence and re-run the investigation.",
@@ -254,7 +259,7 @@ function registryFieldResult(
   out.source_urls = unique(resolved.sources.map((s) => s.url));
   out.explanation = `${fieldLabel}: ${text}. This is not treated as an official registry verification until QCC evidence is available.`;
   out.buyer_impact = `${fieldLabel} is visible in the investigation record but cannot be relied on as an official corporate-registry fact.`;
-  out.recommended_action = "Registration status can be confirmed free at the official Chinese registry: GSXT / National Enterprise Credit Information Publicity System, or CODS / USCC lookup where applicable. This report does not claim official active-status verification unless official/API evidence is captured.";
+  out.recommended_action = def.id === "legal_company_existence" ? FULL_CHINA_REGISTRY_GUIDANCE : SHORT_CHINA_REGISTRY_GUIDANCE;
   return out;
 }
 

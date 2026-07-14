@@ -111,6 +111,28 @@ function normalize(value: string | null | undefined): string {
     .trim();
 }
 
+export function cleanMarketingEntityName(value: string | null | undefined, submittedName?: string | null): string | null {
+  let out = clean(value);
+  if (!out) return null;
+  const original = out;
+  const stripOnce = /^(?:(?:OEM|ODM|OBM|Factory|China|Manufacturer|Supplier|Professional|Custom|Wholesale|Exporter)\s+)+(.+)$/i;
+  for (let i = 0; i < 4; i++) {
+    const next = out.replace(stripOnce, "$1").trim();
+    if (next === out) break;
+    out = next;
+  }
+  const legalSuffix = out.match(/^(.+?\b(?:Co\.?,?\s*Ltd\.?|Company Limited|Limited|LLC|Inc\.?|Corp\.?|Corporation)\.?)/i);
+  if (legalSuffix) out = legalSuffix[1].trim();
+  out = out.replace(/^[\s,;:|/-]+|[\s,;:|/-]+$/g, "");
+  if (!out) return original;
+  const submitted = normalize(submittedName);
+  if (!submitted) return out;
+  const cleaned = normalize(out);
+  const before = normalize(original);
+  if (cleaned === submitted || cleaned.includes(submitted) || submitted.includes(cleaned)) return out;
+  return before === submitted || before.includes(submitted) || submitted.includes(before) ? out : original;
+}
+
 function tokenizeEnglishName(value: string | null | undefined): string[] {
   return (value ?? "")
     .toLowerCase()
@@ -254,6 +276,7 @@ function isAcceptedSupplierIdentityCandidate(args: {
 function extractFromText(text: string, context?: SupplierContext): OpenWebRegistryExtract {
   const rawChineseName = firstMatch(text, [/([\u4e00-\u9fa5（）()]{4,}(?:有限公司|有限责任公司|股份有限公司))/]);
   const rawUscc = firstMatch(text, [/(?:统一社会信用代码|信用代码|USCC|Unified Social Credit Code)[：:\s]*([0-9A-Z]{18})/i, /([0-9A-Z]{18})/]);
+  const rawEnglishName = firstMatch(text, [/([A-Z][A-Za-z0-9&.,'’\-\s]{4,}(?:Co\.?,?\s*Ltd\.?|Company Limited|Limited))/i]);
   const chineseLegalName =
     rawChineseName &&
     (!context || (registryLabelNear(text, rawChineseName) && hasSupplierIdentifierNear(text, rawChineseName, context)))
@@ -266,7 +289,7 @@ function extractFromText(text: string, context?: SupplierContext): OpenWebRegist
       : null;
   return {
     chineseLegalName,
-    englishName: firstMatch(text, [/([A-Z][A-Za-z0-9&.,'’\-\s]{4,}(?:Co\.?,?\s*Ltd\.?|Company Limited|Limited))/i]),
+    englishName: cleanMarketingEntityName(rawEnglishName, context?.statedName),
     uscc,
     registrationStatus: firstMatch(text, [/(?:经营状态|登记状态|注册状态|Status)[：:\s]*([^\n\r，,。；;]{2,40})/i]),
     incorporationDate: firstMatch(text, [/(?:成立日期|注册日期|成立时间|Incorporation Date|Established)[：:\s]*(\d{4}[-年/.]\d{1,2}[-月/.]\d{1,2})/i]),

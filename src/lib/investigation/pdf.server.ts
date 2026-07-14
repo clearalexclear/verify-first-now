@@ -81,9 +81,17 @@ const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{
 
 function customerFacingText(s: string): string {
   return (s || "")
-    .replace(/\bevidence[_ -]?ids?\s*[:=]\s*(?:\[[^\]]*\]|[0-9a-f,\s-]{20,})/gi, "evidence references")
-    .replace(UUID_PATTERN, "internal reference")
+    .replace(/\(?\s*evidence references\s*\)?/gi, "")
+    .replace(/\bevidence[_ -]?ids?\s*[:=]\s*(?:\[[^\]]*\]|[0-9a-f,\s-]{20,})[.;,]?\s*/gi, "")
+    .replace(UUID_PATTERN, "")
+    .replace(/营业执照/g, "Business License")
+    .replace(/统一社会信用代码/g, "Unified Social Credit Code")
+    .replace(/法定代表人/g, "Legal representative")
+    .replace(/注册地址/g, "Registered address")
+    .replace(/经营范围/g, "Business scope")
+    .replace(/\((?:[\u4e00-\u9fff]\s*){1,3}\)/g, "")
     .replace(/\s+/g, " ")
+    .replace(/\s+([.;,])/g, "$1")
     .trim();
 }
 
