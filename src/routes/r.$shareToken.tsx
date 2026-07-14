@@ -126,10 +126,12 @@ function ReportPage() {
           </dl>
         </header>
 
+        {r.verified_report_decision && <VerifiedReportDecisionPanel decision={r.verified_report_decision} />}
+
         <Section title="Executive summary">
           <p className="whitespace-pre-wrap leading-relaxed">{r.executive_summary || "(not generated)"}</p>
           <p className="mt-4 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
-            This report contains {checklist.length} canonical VerifyFirst checklist items. NOT_VERIFIED means evidence is missing or the available source is not sufficient to verify that item.
+            This report contains {checklist.length} canonical VerifyFirst checklist items. NOT_VERIFIED means evidence is missing or the available source is not sufficient to verify that item. {r.verified_report_decision ? "The Payment decision above reflects the consistency of the documents you provided (business licence, proforma invoice, and any certificates)." : "This is an automated pre-screen (Instant Scan). Documents were not required; if you plan to wire money, upgrade to a Verified Supplier Report so we can check the invoice, bank and entity consistency against your supplier's paperwork."}
           </p>
         </Section>
 
