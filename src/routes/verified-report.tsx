@@ -147,7 +147,7 @@ function VerifiedReportPage() {
             {error && <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
 
             <Button disabled={busy} className="bg-navy text-navy-foreground hover:bg-navy/90">
-              {busy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating case...</> : "Create verified report case"}
+              {busy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating case...</> : "Get verified report"}
             </Button>
           </form>
         )}
