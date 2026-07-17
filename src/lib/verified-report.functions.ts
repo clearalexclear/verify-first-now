@@ -6,7 +6,7 @@ const MAX_BYTES_PER_FILE = 10 * 1024 * 1024;
 
 const documentSchema = z.object({
   filename: z.string().min(1).max(300),
-  category: z.enum(["business_licence", "proforma_invoice", "certificate"]),
+  category: z.enum(["business_licence", "proforma_invoice", "certificate", "certificate_or_test_report"]),
   contentType: z.string().min(1).max(200),
   fileBase64: z.string().min(1),
 });
@@ -26,6 +26,32 @@ const verifiedReportSchema = z.object({
 });
 
 export type SubmitVerifiedReportInput = z.infer<typeof verifiedReportSchema>;
+export type VerifiedReportDocumentCategory = SubmitVerifiedReportInput["documents"][number]["category"];
+
+interface VerifiedReportSubmitDeps {
+  supabaseAdmin: any;
+  env?: Record<string, string | undefined>;
+  createInvestigationJob?: (args: { orderId: string; caseId: string; reason?: string | null }) => Promise<{ jobId: string; created: boolean; status: string }>;
+  runJobById?: (jobId: string, workerId?: string, opts?: { deliver?: boolean; allowRerun?: boolean }) => Promise<unknown>;
+}
+
+export function verifiedReportBypassEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return env.VERIFYFIRST_BYPASS_STRIPE_FOR_VERIFIED_REPORTS === "true";
+}
+
+export function normalizeVerifiedReportDocumentCategory(category: VerifiedReportDocumentCategory): "business_licence" | "proforma_invoice" | "certificate_or_test_report" {
+  return category === "certificate" ? "certificate_or_test_report" : category;
+}
+
+export function missingVerifiedReportDocuments(data: Pick<SubmitVerifiedReportInput, "documents" | "supplier_refused_licence">): string[] {
+  const normalized = data.documents.map((doc) => normalizeVerifiedReportDocumentCategory(doc.category));
+  const missing = [
+    !normalized.includes("business_licence") ? "Business licence" : null,
+    !normalized.includes("proforma_invoice") ? "Proforma invoice" : null,
+  ].filter((item): item is string => Boolean(item));
+  if (data.supplier_refused_licence && !missing.includes("Business licence")) missing.push("Business licence refusal explanation");
+  return missing;
+}
 
 function randomToken(len = 40): string {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -45,17 +71,23 @@ export const submitVerifiedReport = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => verifiedReportSchema.parse(input))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { createTestInvestigationJobForOrder } = await import("@/lib/investigation/job-queue.server");
+    const { runInvestigationJobById } = await import("@/lib/investigation/worker.server");
 
-    const hasLicence = data.documents.some((doc) => doc.category === "business_licence");
-    const hasInvoice = data.documents.some((doc) => doc.category === "proforma_invoice");
-    const missing = [
-      !hasLicence ? "Business licence" : null,
-      !hasInvoice ? "Proforma invoice" : null,
-    ].filter((item): item is string => Boolean(item));
-    if (data.supplier_refused_licence && !missing.includes("Business licence")) missing.push("Business licence refusal explanation");
+    return submitVerifiedReportImpl(data, {
+      supabaseAdmin,
+      env: process.env,
+      createInvestigationJob: createTestInvestigationJobForOrder,
+      runJobById: runInvestigationJobById,
+    });
+  });
 
+export async function submitVerifiedReportImpl(data: SubmitVerifiedReportInput, deps: VerifiedReportSubmitDeps) {
+    const { supabaseAdmin } = deps;
+    const missing = missingVerifiedReportDocuments(data);
     const statusToken = randomToken(40);
     const incomplete = missing.length > 0 || data.supplier_refused_licence;
+    const bypassStripe = verifiedReportBypassEnabled(deps.env) && !incomplete;
 
     const { data: customer } = await supabaseAdmin
       .from("customers")
@@ -90,7 +122,7 @@ export const submitVerifiedReport = createServerFn({ method: "POST" })
         customer_company: data.customer_company,
         customer_email: data.customer_email,
         estimated_order_value: data.order_value,
-        payment_status: "pending",
+        payment_status: bypassStripe ? "bypassed_test" : "pending",
         customer_id: customer?.id ?? null,
         supplier_id: supplier?.id ?? null,
       }])
@@ -110,7 +142,7 @@ export const submitVerifiedReport = createServerFn({ method: "POST" })
         package: "verified_report",
         deadline: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
         upload_token: statusToken,
-        status: incomplete ? "review_required" : "payment_pending",
+        status: incomplete ? "review_required" : bypassStripe ? "investigation_queued" : "payment_pending",
         customer_concerns: data.supplier_refused_licence ? "Supplier refused to provide business licence." : null,
       })
       .select("id, case_reference")
@@ -127,6 +159,7 @@ export const submitVerifiedReport = createServerFn({ method: "POST" })
         incomplete,
         missing_required_documents: missing,
         supplier_refused_licence: data.supplier_refused_licence,
+        payment_bypassed_for_test: bypassStripe,
       } as any,
     });
 
@@ -135,6 +168,7 @@ export const submitVerifiedReport = createServerFn({ method: "POST" })
       if (!ALLOWED_EXTS.includes(ext)) continue;
       const bin = Buffer.from(doc.fileBase64, "base64");
       if (bin.byteLength === 0 || bin.byteLength > MAX_BYTES_PER_FILE) continue;
+      const category = normalizeVerifiedReportDocumentCategory(doc.category);
       const safeName = doc.filename.replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 200);
       const path = `${caseRow.id}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}-${safeName}`;
       const { error: uploadErr } = await supabaseAdmin.storage
@@ -145,18 +179,45 @@ export const submitVerifiedReport = createServerFn({ method: "POST" })
         case_id: caseRow.id,
         filename: doc.filename,
         storage_path: path,
-        note: doc.category,
+        note: category,
       });
       await supabaseAdmin.from("case_activity_log").insert({
         case_id: caseRow.id,
         action: "document_uploaded",
-        payload: { filename: doc.filename, category: doc.category, bytes: bin.byteLength } as any,
+        payload: { filename: doc.filename, category, bytes: bin.byteLength } as any,
       });
     }
 
+    let bypassMessage: string | null = null;
+    let jobId: string | null = null;
+    if (bypassStripe) {
+      // TEMPORARY TEST MODE: this branch exists only for end-to-end Verified Supplier
+      // Report testing while Stripe checkout is not enabled. Production remains protected
+      // unless VERIFYFIRST_BYPASS_STRIPE_FOR_VERIFIED_REPORTS=true is explicitly set.
+      const job = await deps.createInvestigationJob?.({
+        orderId: orderRow.id as string,
+        caseId: caseRow.id as string,
+        reason: "temporary verified_report Stripe bypass test mode",
+      });
+      jobId = job?.jobId ?? null;
+      await supabaseAdmin.from("orders").update({ payment_status: "bypassed_test" }).eq("id", orderRow.id);
+      await supabaseAdmin.from("case_activity_log").insert({
+        case_id: caseRow.id,
+        action: "status_changed",
+        payload: {
+          to: "investigation_queued",
+          payment_bypassed_for_test: true,
+          job_id: jobId,
+          message: "Test mode: payment bypassed. Investigation started.",
+        } as any,
+      });
+      if (jobId) await deps.runJobById?.(jobId, `verified-report-bypass-${caseRow.id}`, { deliver: false, allowRerun: false });
+      bypassMessage = "Test mode: payment bypassed. Investigation started.";
+    }
+
     const origin =
-      process.env.PUBLIC_SITE_URL ||
-      process.env.VITE_PUBLIC_SITE_URL ||
+      deps.env?.PUBLIC_SITE_URL ||
+      deps.env?.VITE_PUBLIC_SITE_URL ||
       "https://verify-first-now.lovable.app";
 
     return {
@@ -166,5 +227,8 @@ export const submitVerifiedReport = createServerFn({ method: "POST" })
       statusUrl: `${origin}/order/status/${statusToken}`,
       incomplete,
       missingRequiredDocuments: missing,
+      paymentBypassedForTest: bypassStripe,
+      investigationJobId: jobId,
+      message: bypassMessage,
     };
-  });
+}

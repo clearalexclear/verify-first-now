@@ -10,7 +10,7 @@ import { OPEN_WEB_CHINA_REGISTRY_LABEL, OPEN_WEB_CHINA_REGISTRY_PROVIDER } from 
 import { runConnectorEvidenceChecksDetailed, type ConnectorRunSummary } from "./connectors/findings.server";
 import { applyOutcomeGating, buildCanonicalChecklist } from "./checklist";
 import { computeOutcome, synthesiseNarrative } from "./synthesis.server";
-import { buildVerifiedReportConsistency, extractVerifiedBusinessLicenceFields, extractVerifiedInvoiceFields, type VerifiedCertificateFields } from "./verified-report.server";
+import { buildVerifiedReportConsistency, extractVerifiedBusinessLicenceFields, extractVerifiedInvoiceFields, selectVerifiedReportEvidenceDocs, type VerifiedCertificateFields } from "./verified-report.server";
 import { renderReportPdf } from "./pdf.server";
 import { emailReport, emailInvestigationFailed } from "./email.server";
 import { persistFindingEvidence } from "./evidence.server";
@@ -277,6 +277,7 @@ export async function runInvestigation(
     }
 
     const isVerifiedReport = String(caseRow.package) === "verified_report";
+    const verifiedDocs = isVerifiedReport ? selectVerifiedReportEvidenceDocs(extracted) : null;
     const verifiedConsistency = isVerifiedReport
       ? buildVerifiedReportConsistency({
           supplierName: order.supplier_company_name,
@@ -285,10 +286,9 @@ export async function runInvestigation(
           productCategory: caseRow.product_category ?? "",
           destinationMarket,
           orderValue: caseRow.estimated_order_value ?? "",
-          businessLicence: extractVerifiedBusinessLicenceFields(extracted.find((doc) => /business_licen[cs]e/i.test(`${doc.category} ${doc.doc_type} ${doc.filename}`))),
-          proformaInvoice: extractVerifiedInvoiceFields(extracted.find((doc) => /pro.?forma|invoice|quotation|payment/i.test(`${doc.category} ${doc.doc_type} ${doc.filename}`))),
-          certificates: extracted
-            .filter((doc) => /certificate|test_report|test report/i.test(`${doc.category} ${doc.doc_type} ${doc.filename}`))
+          businessLicence: extractVerifiedBusinessLicenceFields(verifiedDocs?.businessLicence),
+          proformaInvoice: extractVerifiedInvoiceFields(verifiedDocs?.proformaInvoice),
+          certificates: (verifiedDocs?.certificates ?? [])
             .map((doc): VerifiedCertificateFields => ({
               holderName: doc.extracted_entities.company_name_en ?? doc.extracted_entities.company_name_zh ?? null,
               certificateName: doc.extracted_entities.certificate_number ?? doc.filename,

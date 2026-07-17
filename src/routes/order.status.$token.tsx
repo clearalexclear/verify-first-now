@@ -58,6 +58,15 @@ function StatusPage() {
   const isDone = status?.status === "delivered" || status?.status === "report_ready";
   const isFailed = status?.status === "investigation_failed";
   const isPaymentPending = status?.status === "payment_pending";
+  const isVerifiedReport = status?.package === "verified_report";
+  const bypassActivity = status?.activity.find((a) => {
+    try {
+      const payload = JSON.parse(a.payload || "null") as { payment_bypassed_for_test?: boolean; message?: string };
+      return Boolean(payload?.payment_bypassed_for_test);
+    } catch {
+      return false;
+    }
+  });
 
   const completedStages = new Set(
     (status?.activity ?? [])
@@ -94,9 +103,17 @@ function StatusPage() {
 
           {!isDone && !isFailed && (
             <div className="mt-6 rounded-lg border border-border bg-muted/30 p-5 text-sm leading-relaxed">
-              {isPaymentPending ? (
+              {bypassActivity ? (
+                <>
+                  Test mode: payment bypassed. Investigation started.
+                </>
+              ) : isPaymentPending ? (
                 <>
                   Your order is saved, but the investigation has not started. It will begin only after Stripe confirms payment server-side.
+                </>
+              ) : isVerifiedReport ? (
+                <>
+                  Business licence and proforma invoice are required for the verified report. Certificates/test reports are optional. Your investigation is running in the background; refresh this page for the report link.
                 </>
               ) : (
                 <>
@@ -133,7 +150,9 @@ function StatusPage() {
           {isDone && status?.shareToken && (
             <div className="mt-8 rounded-lg border border-success/30 bg-success/5 p-5">
               <p className="text-sm">
-                We have emailed the report to <strong>{status.customerEmail}</strong>.
+                {bypassActivity
+                  ? "Test mode: payment bypassed. Investigation completed and the report is ready for review."
+                  : <>We have emailed the report to <strong>{status.customerEmail}</strong>.</>}
               </p>
               <div className="mt-4">
                 <Button asChild className="bg-navy text-navy-foreground hover:bg-navy/90">
