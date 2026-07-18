@@ -13,7 +13,7 @@ export const getOrderStatusByToken = createServerFn({ method: "POST" })
     const { data: c } = await supabaseAdmin
       .from("supplier_cases")
       .select(
-        `id, case_reference, status, investigation_error,
+        `id, case_reference, status, investigation_error, package,
          orders(order_reference, supplier_company_name, customer_email)`,
       )
       .eq("upload_token", data.token)
@@ -52,6 +52,7 @@ export const getOrderStatusByToken = createServerFn({ method: "POST" })
       supplierName: order?.supplier_company_name ?? "",
       customerEmail: order?.customer_email ?? "",
       status: c.status as string,
+      package: c.package as string | null,
       error: (c.investigation_error as string) ?? null,
       shareToken,
       signature,

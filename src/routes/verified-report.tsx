@@ -19,7 +19,7 @@ export const Route = createFileRoute("/verified-report")({
   component: VerifiedReportPage,
 });
 
-type DocCategory = "business_licence" | "proforma_invoice" | "certificate";
+type DocCategory = "business_licence" | "proforma_invoice" | "certificate_or_test_report";
 
 interface PendingDoc {
   file: File;
@@ -43,7 +43,7 @@ function VerifiedReportPage() {
   const submit = useServerFn(submitVerifiedReport);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ statusUrl: string; missingRequiredDocuments: string[] } | null>(null);
+  const [result, setResult] = useState<{ statusUrl: string; missingRequiredDocuments: string[]; message?: string | null; paymentBypassedForTest?: boolean } | null>(null);
   const [docs, setDocs] = useState<PendingDoc[]>([]);
   const [form, setForm] = useState({
     supplier_name: "",
@@ -67,7 +67,7 @@ function VerifiedReportPage() {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
-    setDocs((current) => [...current.filter((doc) => doc.category !== category || category === "certificate"), { file, category }]);
+    setDocs((current) => [...current.filter((doc) => doc.category !== category || category === "certificate_or_test_report"), { file, category }]);
   };
 
   async function onSubmit(event: React.FormEvent) {
@@ -82,7 +82,12 @@ function VerifiedReportPage() {
         fileBase64: await fileToBase64(doc.file),
       })));
       const response = await submit({ data: { ...form, documents: payloadDocs } });
-      setResult({ statusUrl: response.statusUrl, missingRequiredDocuments: response.missingRequiredDocuments });
+      setResult({
+        statusUrl: response.statusUrl,
+        missingRequiredDocuments: response.missingRequiredDocuments,
+        message: response.message,
+        paymentBypassedForTest: response.paymentBypassedForTest,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create verified report case.");
     } finally {
@@ -113,7 +118,11 @@ function VerifiedReportPage() {
                 The case is incomplete and paused until we receive: {result.missingRequiredDocuments.join("; ")}.
               </p>
             ) : (
-              <p className="mt-2 text-sm text-muted-foreground">Your verified report case is ready for payment setup.</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {result.paymentBypassedForTest
+                  ? result.message || "Test mode: payment bypassed. Investigation started."
+                  : "Your verified report case is ready for payment setup."}
+              </p>
             )}
             <Button asChild className="mt-5 bg-navy text-navy-foreground hover:bg-navy/90">
               <a href={result.statusUrl}>Open case status</a>
@@ -136,7 +145,7 @@ function VerifiedReportPage() {
             <div className="grid gap-4 sm:grid-cols-3">
               <UploadField label="Business licence required" doc={docs.find((doc) => doc.category === "business_licence")} onChange={addDoc("business_licence")} />
               <UploadField label="Proforma invoice required" doc={docs.find((doc) => doc.category === "proforma_invoice")} onChange={addDoc("proforma_invoice")} />
-              <UploadField label="Certificates optional" doc={docs.find((doc) => doc.category === "certificate")} onChange={addDoc("certificate")} />
+              <UploadField label="Certificates/test reports optional" doc={docs.find((doc) => doc.category === "certificate_or_test_report")} onChange={addDoc("certificate_or_test_report")} />
             </div>
 
             <label className="flex items-start gap-2 text-sm text-muted-foreground">
@@ -147,7 +156,7 @@ function VerifiedReportPage() {
             {error && <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
 
             <Button disabled={busy} className="bg-navy text-navy-foreground hover:bg-navy/90">
-              {busy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating case...</> : "Get verified report"}
+              {busy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating case...</> : "Start verified report"}
             </Button>
           </form>
         )}

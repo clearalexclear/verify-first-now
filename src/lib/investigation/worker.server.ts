@@ -7,13 +7,54 @@ import {
 } from "./job-queue.server";
 import { runInvestigation } from "./pipeline.server";
 
+type WorkerJob = {
+  id: string;
+  order_id: string;
+  case_id: string;
+  attempt_count: number;
+  max_attempts: number;
+};
+
 export async function runInvestigationWorkerOnce(
   workerId = `worker-${crypto.randomUUID()}`,
   opts: { deliver?: boolean; allowRerun?: boolean } = {},
 ) {
   const job = await claimNextInvestigationJob(workerId);
-  if (!job) return { claimed: false };
+  if (!job) return { claimed: false, status: "idle" as const, error: null };
+  return processInvestigationJob(job, opts);
+}
 
+export async function runInvestigationJobById(
+  jobId: string,
+  workerId = `worker-${crypto.randomUUID()}`,
+  opts: { deliver?: boolean; allowRerun?: boolean } = {},
+) {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const db = supabaseAdmin as any;
+  const now = new Date().toISOString();
+  const { data: job, error } = await db
+    .from("investigation_jobs")
+    .update({
+      status: "running",
+      locked_at: now,
+      locked_by: workerId,
+      started_at: now,
+      attempt_count: 1,
+      updated_at: now,
+    })
+    .eq("id", jobId)
+    .eq("status", "queued")
+    .select("id, order_id, case_id, attempt_count, max_attempts")
+    .maybeSingle();
+  if (error) throw new Error(`Could not claim investigation job ${jobId}: ${error.message}`);
+  if (!job) return { claimed: false, jobId, status: "idle" as const, error: null };
+  return processInvestigationJob(job, opts);
+}
+
+async function processInvestigationJob(
+  job: WorkerJob,
+  opts: { deliver?: boolean; allowRerun?: boolean } = {},
+) {
   try {
     await runStep({
       jobId: job.id,

@@ -52,6 +52,21 @@ export interface VerifiedReportConsistencyResult {
   missingRequiredDocuments: string[];
 }
 
+export function selectVerifiedReportEvidenceDocs(extracted: ExtractedDoc[]) {
+  const businessLicence =
+    extracted.find((doc) => doc.category === "business_licence")
+    ?? extracted.find((doc) => /business_licen[cs]e/i.test(`${doc.doc_type} ${doc.filename}`));
+  const proformaInvoice =
+    extracted.find((doc) => doc.category === "proforma_invoice")
+    ?? extracted.find((doc) => /pro.?forma|invoice|quotation|payment/i.test(`${doc.doc_type} ${doc.filename}`));
+  const certificates = extracted.filter((doc) =>
+    doc.category === "certificate_or_test_report" ||
+    doc.category === "certificate" ||
+    /certificate|test_report|test report/i.test(`${doc.doc_type} ${doc.filename}`),
+  );
+  return { businessLicence, proformaInvoice, certificates };
+}
+
 const LICENCE_SOURCE = "supplier-provided business licence";
 const INVOICE_SOURCE = "supplier-provided proforma invoice";
 const CERT_SOURCE = "supplier-provided certificate/test report";
