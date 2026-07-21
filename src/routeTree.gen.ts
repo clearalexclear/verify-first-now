@@ -13,11 +13,11 @@ import { Route as VerifiedReportRouteImport } from './routes/verified-report'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SampleReportRouteImport } from './routes/sample-report'
 import { Route as PrivacyRouteImport } from './routes/privacy'
-import { Route as OrderRouteImport } from './routes/order'
 import { Route as DemoRouteImport } from './routes/demo'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as OrderIndexRouteImport } from './routes/order.index'
 import { Route as UploadTokenRouteImport } from './routes/upload.$token'
 import { Route as RShareTokenRouteImport } from './routes/r.$shareToken'
 import { Route as AuthenticatedAdminRouteRouteImport } from './routes/_authenticated/admin/route'
@@ -52,11 +52,6 @@ const PrivacyRoute = PrivacyRouteImport.update({
   path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
-const OrderRoute = OrderRouteImport.update({
-  id: '/order',
-  path: '/order',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const DemoRoute = DemoRouteImport.update({
   id: '/demo',
   path: '/demo',
@@ -74,6 +69,11 @@ const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrderIndexRoute = OrderIndexRouteImport.update({
+  id: '/order/',
+  path: '/order/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const UploadTokenRoute = UploadTokenRouteImport.update({
@@ -97,9 +97,9 @@ const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   getParentRoute: () => AuthenticatedAdminRouteRoute,
 } as any)
 const OrderStatusTokenRoute = OrderStatusTokenRouteImport.update({
-  id: '/status/$token',
-  path: '/status/$token',
-  getParentRoute: () => OrderRoute,
+  id: '/order/status/$token',
+  path: '/order/status/$token',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiStripeWebhookRoute = ApiStripeWebhookRouteImport.update({
   id: '/api/stripe/webhook',
@@ -152,7 +152,6 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/demo': typeof DemoRoute
-  '/order': typeof OrderRouteWithChildren
   '/privacy': typeof PrivacyRoute
   '/sample-report': typeof SampleReportRoute
   '/terms': typeof TermsRoute
@@ -160,6 +159,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AuthenticatedAdminRouteRouteWithChildren
   '/r/$shareToken': typeof RShareTokenRoute
   '/upload/$token': typeof UploadTokenRoute
+  '/order/': typeof OrderIndexRoute
   '/admin/integration-diagnostics': typeof AuthenticatedAdminIntegrationDiagnosticsRoute
   '/admin/manual-evidence': typeof AuthenticatedAdminManualEvidenceRoute
   '/admin/official-registry': typeof AuthenticatedAdminOfficialRegistryRoute
@@ -175,13 +175,13 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/demo': typeof DemoRoute
-  '/order': typeof OrderRouteWithChildren
   '/privacy': typeof PrivacyRoute
   '/sample-report': typeof SampleReportRoute
   '/terms': typeof TermsRoute
   '/verified-report': typeof VerifiedReportRoute
   '/r/$shareToken': typeof RShareTokenRoute
   '/upload/$token': typeof UploadTokenRoute
+  '/order': typeof OrderIndexRoute
   '/admin/integration-diagnostics': typeof AuthenticatedAdminIntegrationDiagnosticsRoute
   '/admin/manual-evidence': typeof AuthenticatedAdminManualEvidenceRoute
   '/admin/official-registry': typeof AuthenticatedAdminOfficialRegistryRoute
@@ -199,7 +199,6 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/demo': typeof DemoRoute
-  '/order': typeof OrderRouteWithChildren
   '/privacy': typeof PrivacyRoute
   '/sample-report': typeof SampleReportRoute
   '/terms': typeof TermsRoute
@@ -207,6 +206,7 @@ export interface FileRoutesById {
   '/_authenticated/admin': typeof AuthenticatedAdminRouteRouteWithChildren
   '/r/$shareToken': typeof RShareTokenRoute
   '/upload/$token': typeof UploadTokenRoute
+  '/order/': typeof OrderIndexRoute
   '/_authenticated/admin/integration-diagnostics': typeof AuthenticatedAdminIntegrationDiagnosticsRoute
   '/_authenticated/admin/manual-evidence': typeof AuthenticatedAdminManualEvidenceRoute
   '/_authenticated/admin/official-registry': typeof AuthenticatedAdminOfficialRegistryRoute
@@ -224,7 +224,6 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/demo'
-    | '/order'
     | '/privacy'
     | '/sample-report'
     | '/terms'
@@ -232,6 +231,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/r/$shareToken'
     | '/upload/$token'
+    | '/order/'
     | '/admin/integration-diagnostics'
     | '/admin/manual-evidence'
     | '/admin/official-registry'
@@ -247,13 +247,13 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/demo'
-    | '/order'
     | '/privacy'
     | '/sample-report'
     | '/terms'
     | '/verified-report'
     | '/r/$shareToken'
     | '/upload/$token'
+    | '/order'
     | '/admin/integration-diagnostics'
     | '/admin/manual-evidence'
     | '/admin/official-registry'
@@ -270,7 +270,6 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/auth'
     | '/demo'
-    | '/order'
     | '/privacy'
     | '/sample-report'
     | '/terms'
@@ -278,6 +277,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin'
     | '/r/$shareToken'
     | '/upload/$token'
+    | '/order/'
     | '/_authenticated/admin/integration-diagnostics'
     | '/_authenticated/admin/manual-evidence'
     | '/_authenticated/admin/official-registry'
@@ -295,14 +295,15 @@ export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
   DemoRoute: typeof DemoRoute
-  OrderRoute: typeof OrderRouteWithChildren
   PrivacyRoute: typeof PrivacyRoute
   SampleReportRoute: typeof SampleReportRoute
   TermsRoute: typeof TermsRoute
   VerifiedReportRoute: typeof VerifiedReportRoute
   RShareTokenRoute: typeof RShareTokenRoute
   UploadTokenRoute: typeof UploadTokenRoute
+  OrderIndexRoute: typeof OrderIndexRoute
   ApiStripeWebhookRoute: typeof ApiStripeWebhookRoute
+  OrderStatusTokenRoute: typeof OrderStatusTokenRoute
   ApiPublicInvestigateCaseIdRoute: typeof ApiPublicInvestigateCaseIdRoute
 }
 
@@ -336,13 +337,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/order': {
-      id: '/order'
-      path: '/order'
-      fullPath: '/order'
-      preLoaderRoute: typeof OrderRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/demo': {
       id: '/demo'
       path: '/demo'
@@ -369,6 +363,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/order/': {
+      id: '/order/'
+      path: '/order'
+      fullPath: '/order/'
+      preLoaderRoute: typeof OrderIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/upload/$token': {
@@ -401,10 +402,10 @@ declare module '@tanstack/react-router' {
     }
     '/order/status/$token': {
       id: '/order/status/$token'
-      path: '/status/$token'
+      path: '/order/status/$token'
       fullPath: '/order/status/$token'
       preLoaderRoute: typeof OrderStatusTokenRouteImport
-      parentRoute: typeof OrderRoute
+      parentRoute: typeof rootRouteImport
     }
     '/api/stripe/webhook': {
       id: '/api/stripe/webhook'
@@ -505,31 +506,32 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
 const AuthenticatedRouteRouteWithChildren =
   AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
 
-interface OrderRouteChildren {
-  OrderStatusTokenRoute: typeof OrderStatusTokenRoute
-}
-
-const OrderRouteChildren: OrderRouteChildren = {
-  OrderStatusTokenRoute: OrderStatusTokenRoute,
-}
-
-const OrderRouteWithChildren = OrderRoute._addFileChildren(OrderRouteChildren)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
   DemoRoute: DemoRoute,
-  OrderRoute: OrderRouteWithChildren,
   PrivacyRoute: PrivacyRoute,
   SampleReportRoute: SampleReportRoute,
   TermsRoute: TermsRoute,
   VerifiedReportRoute: VerifiedReportRoute,
   RShareTokenRoute: RShareTokenRoute,
   UploadTokenRoute: UploadTokenRoute,
+  OrderIndexRoute: OrderIndexRoute,
   ApiStripeWebhookRoute: ApiStripeWebhookRoute,
+  OrderStatusTokenRoute: OrderStatusTokenRoute,
   ApiPublicInvestigateCaseIdRoute: ApiPublicInvestigateCaseIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
