@@ -105,7 +105,10 @@ function hasReliableChineseField(value: string | null | undefined, minCjk = 6): 
   if (!v) return false;
   if (!/[\u3400-\u9fff]/.test(v)) return true;
   if (/[�]|[\uFFFD]/.test(v)) return false;
-  return cjkCount(v) >= minCjk;
+  const digitCount = (v.match(/\d/g) ?? []).length;
+  const cjk = cjkCount(v);
+  if (digitCount > cjk && cjk < 8) return false;
+  return cjk >= minCjk;
 }
 
 function cleanLicenceChineseField(
@@ -305,6 +308,8 @@ export function buildVerifiedReportConsistency(input: VerifiedReportConsistencyI
   if (input.businessLicence) {
     const parts = [
       input.businessLicence.extractionUncertain?.chineseLegalName && "Chinese legal name could not be reliably extracted from the uploaded licence.",
+      input.businessLicence.extractionUncertain?.registeredAddress && "Registered address could not be reliably extracted from the uploaded licence.",
+      input.businessLicence.extractionUncertain?.businessScope && "Business scope could not be reliably extracted from the uploaded licence.",
       input.businessLicence.chineseLegalName && `Chinese legal name: ${input.businessLicence.chineseLegalName}`,
       input.businessLicence.englishName && `English name: ${input.businessLicence.englishName}`,
       input.businessLicence.uscc && `USCC: ${input.businessLicence.uscc}`,
@@ -397,7 +402,7 @@ export function buildVerifiedReportConsistency(input: VerifiedReportConsistencyI
       blockers.push("Invoice requests payment to a personal bank account.");
       entityPaymentConsistency = "MISMATCH";
     } else if (!beneficiary) {
-      const message = "Payment beneficiary not extracted from proforma invoice — cannot confirm payee matches licence holder.";
+      const message = "Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder.";
       why.push(message);
       asks.push("Ask the supplier to provide a proforma invoice or bank letter showing the payment beneficiary legal name.");
       entityPaymentConsistency = "NOT_VERIFIED";

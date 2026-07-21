@@ -283,6 +283,54 @@ describe("canonical checklist", () => {
     expect(text).not.toMatch(/\(\s*\)/);
   });
 
+  it("does not render garbled Chinese OCR fields in buyer-facing report text", async () => {
+    const report = mockReport({
+      executive_summary: "Licence OCR returned Chinese legal name: 江市有限公司 and registered address: 江市江区3地1141406.",
+      buyer_implications: "Do not rely on 江市有限公司 as the licence entity.",
+      findings: [{
+        ...baseFinding,
+        section: "certificates_documents",
+        item: "Business licence validation",
+        status: "CAUTION",
+        source_name: "supplier-provided business licence",
+        evidence_excerpt: "Chinese legal name: 江市有限公司; Registered address: 江市江区3地1141406; Chinese legal name could not be reliably extracted from the uploaded licence. Registered address could not be reliably extracted from the uploaded licence.",
+        evidence_ids: ["ev_ocr"],
+        evidence_classification: "SUPPLIER_CLAIMED",
+      }],
+    });
+    report.checklist_results = buildCanonicalChecklist(report);
+
+    const text = await extractPdfText(await renderReportPdf(report));
+    expect(text).toContain("Chinese legal name could not be reliably extracted from the uploaded licence.");
+    expect(text).toContain("Registered address could not be reliably extracted from the uploaded licence.");
+    expect(text).not.toContain("江市有限公司");
+    expect(text).not.toContain("江市江区3地1141406");
+  });
+
+  it("renders the Verified Report decision panel for Pause reports", async () => {
+    const report = mockReport({
+      final_outcome: "PAUSE_PENDING_CLARIFICATION",
+      overall_risk_rating: "high",
+      verified_report_decision: {
+        payment_decision: "PAUSE",
+        entity_payment_consistency: "NOT_VERIFIED",
+        documents_checked: ["Business licence", "Proforma invoice"],
+        why: ["Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder."],
+        deal_specific_blockers: [],
+        ask_supplier_before_payment: ["Ask the supplier to provide a proforma invoice or bank letter showing the payment beneficiary legal name."],
+      },
+    });
+    report.checklist_results = buildCanonicalChecklist(report);
+
+    const text = await extractPdfText(await renderReportPdf(report));
+    expect(text).toContain("Payment decision: Pause");
+    expect(text).toContain("Entity/payment consistency: NOT VERIFIED");
+    expect(text).toContain("Documents checked: Business licence; Proforma invoice");
+    expect(text).toContain("Why: Payment beneficiary was not extracted from the proforma invoice - cannot confirm payee matches licence holder.");
+    expect(text).toContain("Deal-specific blockers: None identified from the extracted payment fields.");
+    expect(text).toContain("Ask supplier before payment: Ask the supplier to provide a proforma invoice or bank letter showing the payment beneficiary legal name.");
+  });
+
   it("does not partially render common Chinese registry labels", async () => {
     const report = mockReport({
       executive_summary: "Uploaded 营业执照 lists 统一社会信用代码, 法定代表人, 注册地址 and 经营范围.",
@@ -313,6 +361,53 @@ describe("canonical checklist", () => {
     const text = await extractPdfText(await renderReportPdf(report));
     expect(text).not.toMatch(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i);
     expect(text).not.toMatch(/evidence_ids/i);
+  });
+
+  it("does not pass adverse media from weak web search", () => {
+    const adverse = buildCanonicalChecklist(mockReport({
+      findings: [{
+        ...baseFinding,
+        section: "digital_footprint",
+        item: "Adverse media screening",
+        status: "PASS",
+        source_name: "Public web search (Firecrawl)",
+        evidence_excerpt: "",
+        evidence_ids: [],
+        evidence_classification: "INFERRED",
+      }],
+    })).find((item) => item.id === "adverse_media");
+    expect(adverse?.status).toBe("NOT_VERIFIED");
+    expect(adverse?.evidence_classification).toBe("NOT_INDEPENDENTLY_VERIFIED");
+  });
+
+  it("does not render garbled export snippets or source titles", async () => {
+    const report = mockReport({
+      findings: [{
+        ...baseFinding,
+        section: "export_history",
+        item: "Export and shipment history",
+        status: "NOT_VERIFIED",
+        source_name: "名称Unified Social Credit Code注册",
+        source_url: "https://www.globalsources.com/manufacturers/cookware.html",
+        evidence_excerpt: "No reliable shipment-history evidence identified from public sources. deveirter gnirts 代码 国Unified Social Credit Code公",
+        evidence_ids: [],
+        evidence_classification: "NOT_INDEPENDENTLY_VERIFIED",
+      }],
+      sources_queried: [{
+        name: "名称Unified Social Credit Code注册",
+        url: "https://www.globalsources.com/manufacturers/cookware.html",
+        retrieved_at: "2026-07-21T00:00:00.000Z",
+        category: "screening",
+      }],
+    });
+    report.checklist_results = buildCanonicalChecklist(report);
+
+    const text = await extractPdfText(await renderReportPdf(report));
+    expect(text).toContain("No reliable shipment-history evidence identified from public sources.");
+    expect(text).toContain("Shipping aggregator result");
+    expect(text).not.toContain("名称Unified Social Credit Code注册");
+    expect(text).not.toContain("国Unified Social Credit Code公");
+    expect(text).not.toMatch(/deveirter|gnirts|代码/);
   });
 
   it("does not render misleading status labels or orphaned buyer impact levels", async () => {

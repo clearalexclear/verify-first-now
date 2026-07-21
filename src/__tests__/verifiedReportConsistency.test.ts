@@ -87,7 +87,7 @@ describe("Verified Supplier Report consistency engine", () => {
     expect(result.decision.entity_payment_consistency).toBe("NOT_VERIFIED");
     expect(result.decision.deal_specific_blockers).not.toContain("Invoice beneficiary differs from the licensed supplier legal name.");
     expect(result.findings.find((finding) => finding.item === "Payment beneficiary not extracted")?.evidence_excerpt)
-      .toBe("Payment beneficiary not extracted from proforma invoice — cannot confirm payee matches licence holder.");
+      .toBe("Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder.");
   });
 
   it("does not create a beneficiary blocker when extracted beneficiary matches", () => {
@@ -146,7 +146,7 @@ describe("Verified Supplier Report consistency engine", () => {
         chineseLegalName: "江市有限公司",
         englishName: "Yangjiang Justa Industry&trade Co., Ltd.",
         uscc: "914403001922038216",
-        registeredAddress: "江市",
+        registeredAddress: "江市江区3地1141406",
         legalRepresentative: "陈",
         businessScope: "厨具",
         licenceDate: null,
@@ -165,7 +165,10 @@ describe("Verified Supplier Report consistency engine", () => {
     });
     const licenceFinding = result.findings.find((finding) => finding.item === "Business licence validation");
     expect(licenceFinding?.evidence_excerpt).toContain("Chinese legal name could not be reliably extracted from the uploaded licence.");
+    expect(licenceFinding?.evidence_excerpt).toContain("Registered address could not be reliably extracted from the uploaded licence.");
+    expect(licenceFinding?.evidence_excerpt).toContain("Business scope could not be reliably extracted from the uploaded licence.");
     expect(licenceFinding?.evidence_excerpt).not.toContain("江市有限公司");
+    expect(licenceFinding?.evidence_excerpt).not.toContain("江市江区3地1141406");
     expect(result.decision.deal_specific_blockers.join(" ")).not.toContain("Yangjiang Justa Industry&trade Co., Ltd.\" does not clearly match licence name \"江市有限公司");
   });
 
