@@ -28,6 +28,13 @@ export interface ExtractedDoc {
     legalRepresentative: string | null;
     businessScope: string | null;
     licenceDate: string | null;
+    extractionUncertain?: {
+      chineseLegalName?: boolean;
+      registeredAddress?: boolean;
+      businessScope?: boolean;
+      legalRepresentative?: boolean;
+      reason?: string;
+    };
   };
   proforma_invoice?: {
     issuerSellerEntity: string | null;
@@ -46,7 +53,8 @@ export interface ExtractedDoc {
 const PROMPT_SYSTEM =
   "You extract structured information from supplier-due-diligence documents " +
   "(business licences, certificates, invoices, quotations). Return ONLY JSON. " +
-  "Do NOT invent fields. Use null for missing fields. Do not output explanations.";
+  "Do NOT invent fields. Use null for missing or unreadable fields. " +
+  "For Chinese text, preserve the exact visible characters; if characters are cropped, blurry, or only partly readable, return null instead of a partial guess. Do not output explanations.";
 
 function mimeFromExt(filename: string): string {
   const ext = filename.toLowerCase().split(".").pop() ?? "";

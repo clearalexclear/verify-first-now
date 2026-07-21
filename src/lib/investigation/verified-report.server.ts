@@ -10,6 +10,13 @@ export interface VerifiedBusinessLicenceFields {
   legalRepresentative: string | null;
   businessScope: string | null;
   licenceDate: string | null;
+  extractionUncertain?: {
+    chineseLegalName?: boolean;
+    registeredAddress?: boolean;
+    businessScope?: boolean;
+    legalRepresentative?: boolean;
+    reason?: string;
+  };
 }
 
 export interface VerifiedInvoiceFields {
@@ -74,8 +81,46 @@ const ENGINE_SOURCE = "Verified Supplier Report consistency engine";
 
 function clean(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  const trimmed = value.replace(/\s+/g, " ").trim();
+  const trimmed = value.replace(/\s+/g, " ").replace(/[\uFFFD�]+/g, "").trim();
   return trimmed.length ? trimmed : null;
+}
+
+function cjkCount(value: string | null | undefined): number {
+  return (value?.match(/[\u3400-\u9fff]/g) ?? []).length;
+}
+
+function hasMeaningfulChineseCompanyName(value: string | null | undefined): boolean {
+  const v = clean(value);
+  if (!v) return false;
+  if (!/[\u3400-\u9fff]/.test(v)) return true;
+  if (!/(有限公司|有限责任公司|股份有限公司|集团有限公司|公司)$/.test(v)) return false;
+  const beforeSuffix = v
+    .replace(/(有限责任公司|股份有限公司|集团有限公司|有限公司|公司)$/, "")
+    .replace(/[省市县区镇乡街道号\d\s()（）-]/g, "");
+  return cjkCount(v) >= 8 && cjkCount(beforeSuffix) >= 3;
+}
+
+function hasReliableChineseField(value: string | null | undefined, minCjk = 6): boolean {
+  const v = clean(value);
+  if (!v) return false;
+  if (!/[\u3400-\u9fff]/.test(v)) return true;
+  if (/[�]|[\uFFFD]/.test(v)) return false;
+  return cjkCount(v) >= minCjk;
+}
+
+function cleanLicenceChineseField(
+  value: string | null,
+  kind: "chineseLegalName" | "registeredAddress" | "businessScope" | "legalRepresentative",
+  uncertain: NonNullable<VerifiedBusinessLicenceFields["extractionUncertain"]>,
+): string | null {
+  if (!value) return null;
+  const reliable = kind === "chineseLegalName"
+    ? hasMeaningfulChineseCompanyName(value)
+    : hasReliableChineseField(value, kind === "legalRepresentative" ? 2 : 6);
+  if (reliable) return value;
+  uncertain[kind] = true;
+  uncertain.reason = uncertain.reason ?? "One or more Chinese fields were partially extracted by OCR/vision and were withheld from report logic.";
+  return null;
 }
 
 function normalizeName(value: string | null | undefined): string {
@@ -151,14 +196,38 @@ export function extractVerifiedBusinessLicenceFields(doc: ExtractedDoc | null | 
   const anyDoc = doc as any;
   const fields = anyDoc.business_licence ?? anyDoc.businessLicence ?? {};
   const e = doc.extracted_entities ?? ({} as ExtractedDoc["extracted_entities"]);
+  const extractionUncertain: NonNullable<VerifiedBusinessLicenceFields["extractionUncertain"]> = {
+    ...(fields.extractionUncertain ?? fields.extraction_uncertain ?? {}),
+  };
+  const chineseLegalName = cleanLicenceChineseField(
+    clean(fields.chineseLegalName ?? fields.chinese_legal_name ?? e.company_name_zh),
+    "chineseLegalName",
+    extractionUncertain,
+  );
+  const registeredAddress = cleanLicenceChineseField(
+    clean(fields.registeredAddress ?? fields.registered_address ?? e.registered_address),
+    "registeredAddress",
+    extractionUncertain,
+  );
+  const legalRepresentative = cleanLicenceChineseField(
+    clean(fields.legalRepresentative ?? fields.legal_representative),
+    "legalRepresentative",
+    extractionUncertain,
+  );
+  const businessScope = cleanLicenceChineseField(
+    clean(fields.businessScope ?? fields.business_scope),
+    "businessScope",
+    extractionUncertain,
+  );
   return {
-    chineseLegalName: clean(fields.chineseLegalName ?? fields.chinese_legal_name ?? e.company_name_zh),
+    chineseLegalName,
     englishName: clean(fields.englishName ?? fields.english_name ?? e.company_name_en),
     uscc: clean(fields.uscc ?? fields.unifiedSocialCreditCode ?? fields.unified_social_credit_code ?? e.usci_number),
-    registeredAddress: clean(fields.registeredAddress ?? fields.registered_address ?? e.registered_address),
-    legalRepresentative: clean(fields.legalRepresentative ?? fields.legal_representative),
-    businessScope: clean(fields.businessScope ?? fields.business_scope),
+    registeredAddress,
+    legalRepresentative,
+    businessScope,
     licenceDate: clean(fields.licenceDate ?? fields.issueDate ?? fields.issue_date ?? e.dates?.[0]),
+    extractionUncertain: Object.keys(extractionUncertain).length ? extractionUncertain : undefined,
   };
 }
 
@@ -235,6 +304,7 @@ export function buildVerifiedReportConsistency(input: VerifiedReportConsistencyI
 
   if (input.businessLicence) {
     const parts = [
+      input.businessLicence.extractionUncertain?.chineseLegalName && "Chinese legal name could not be reliably extracted from the uploaded licence.",
       input.businessLicence.chineseLegalName && `Chinese legal name: ${input.businessLicence.chineseLegalName}`,
       input.businessLicence.englishName && `English name: ${input.businessLicence.englishName}`,
       input.businessLicence.uscc && `USCC: ${input.businessLicence.uscc}`,
@@ -318,14 +388,31 @@ export function buildVerifiedReportConsistency(input: VerifiedReportConsistencyI
   }
 
   if (input.businessLicence && input.proformaInvoice) {
-    const sellerMatches = licenceNames.some((name) => namesMatch(name, invoiceSeller));
-    const beneficiaryMatches = licenceNames.some((name) => namesMatch(name, beneficiary));
+    const sellerMatches = invoiceSeller ? licenceNames.some((name) => namesMatch(name, invoiceSeller)) : false;
+    const beneficiaryMatches = beneficiary ? licenceNames.some((name) => namesMatch(name, beneficiary)) : false;
     const personal = looksPersonalAccount(beneficiary);
     const offshore = isHongKongOrOffshore(invoiceSeller) || isHongKongOrOffshore(beneficiary) || isHongKongOrOffshore(input.proformaInvoice.bankCountry);
 
     if (personal) {
       blockers.push("Invoice requests payment to a personal bank account.");
       entityPaymentConsistency = "MISMATCH";
+    } else if (!beneficiary) {
+      const message = "Payment beneficiary not extracted from proforma invoice — cannot confirm payee matches licence holder.";
+      why.push(message);
+      asks.push("Ask the supplier to provide a proforma invoice or bank letter showing the payment beneficiary legal name.");
+      entityPaymentConsistency = "NOT_VERIFIED";
+      findings.push(finding({
+        section: "payment_safeguards",
+        item: "Payment beneficiary not extracted",
+        status: "NOT_VERIFIED",
+        confidence: "low",
+        source_name: ENGINE_SOURCE,
+        evidence_classification: "NOT_INDEPENDENTLY_VERIFIED",
+        evidence_ids: [],
+        evidence_excerpt: message,
+        buyer_impact: "The payee cannot be compared against the licence holder, so wire-transfer risk cannot be cleared.",
+        recommended_action: "Request a clearer proforma invoice or bank account confirmation naming the beneficiary legal entity before payment.",
+      }, now));
     } else if (!sellerMatches || !beneficiaryMatches) {
       const message = offshore
         ? "Invoice/payment beneficiary appears to be a Hong Kong, offshore, or third-party entity that differs from the licensed supplier."
@@ -457,6 +544,10 @@ export function buildVerifiedReportConsistency(input: VerifiedReportConsistencyI
   let finalOutcome: FinalOutcome = "PROCEED_WITH_SAFEGUARDS";
   let overallRisk: VerifiedReportConsistencyResult["overallRisk"] = "medium";
   if (missing.length > 0) {
+    finalOutcome = "PAUSE_PENDING_CLARIFICATION";
+    overallRisk = "high";
+  }
+  if (entityPaymentConsistency === "NOT_VERIFIED" && input.businessLicence && input.proformaInvoice) {
     finalOutcome = "PAUSE_PENDING_CLARIFICATION";
     overallRisk = "high";
   }

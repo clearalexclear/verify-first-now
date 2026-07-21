@@ -4,7 +4,7 @@
 // function later without changing the orchestrator.
 
 import { aiJson } from "../ai.server";
-import { fcScrape, fcSearch } from "../firecrawl.server";
+import { fcScrape, fcSearch, type FirecrawlSearchHit } from "../firecrawl.server";
 import type { Finding } from "../types";
 import type { ExtractedDoc } from "../extract-documents.server";
 import type { ResolvedEntity } from "../types";
@@ -119,6 +119,7 @@ export async function screenCertificates(args: {
   const certs = args.extracted.filter(
     (d) =>
       d.category === "certificate" ||
+      d.category === "certificate_or_test_report" ||
       /certificat|cert|iso |ce |fda|reach|rohs/i.test(d.doc_type || ""),
   );
   if (certs.length === 0) {
@@ -217,11 +218,14 @@ export async function screenCertificates(args: {
 
 export async function probeExportHistory(args: {
   name: string;
+  website?: string | null;
   destinationMarket: string;
+  search?: typeof fcSearch;
 }): Promise<Finding[]> {
   const now = new Date().toISOString();
+  const search = args.search ?? fcSearch;
   // TODO: plug-in seam — replace with ImportYeti / Panjiva / Sayari API.
-  const hits = await fcSearch(
+  const hits = await search(
     `"${args.name}" (importyeti OR panjiva OR shipment OR bill of lading)`,
     { limit: 4 },
   );
@@ -241,20 +245,68 @@ export async function probeExportHistory(args: {
         "If the order value warrants it, query a paid trade-data provider (ImportYeti, Panjiva, Sayari).",
     }];
   }
+  const relevantHits = hits.filter((hit) => isSupplierLinkedExportHit(hit, args.name, args.website));
+  if (relevantHits.length === 0) {
+    return [{
+      section: "export_history",
+      item: "Export and shipment history",
+      status: "NOT_VERIFIED",
+      confidence: "low",
+      source_name: "Public shipping-data web search",
+      source_url: null,
+      retrieval_date: now,
+      evidence_excerpt: "No reliable shipment-history evidence identified from public sources.",
+      evidence_classification: "NOT_INDEPENDENTLY_VERIFIED",
+      evidence_ids: [],
+      buyer_impact:
+        "Public directory or multilingual snippets were not clearly tied to the submitted supplier, so they were not used as shipment-history evidence.",
+      recommended_action:
+        `Verify shipment history to ${args.destinationMarket} with ImportGenius or another licensed trade-data source before relying on prior export claims.`,
+    }];
+  }
   return [{
     section: "export_history",
     item: "Export and shipment history",
     status: "CAUTION",
     confidence: "low",
-    source_name: hits[0].title ?? hits[0].url,
-    source_url: hits[0].url,
+    source_name: relevantHits[0].title ?? relevantHits[0].url,
+    source_url: relevantHits[0].url,
     retrieval_date: now,
     evidence_excerpt:
       `Possible references to this supplier on shipping-aggregator sites. Snippets:\n` +
-      hits.map((h) => `- ${h.title ?? ""} (${h.url})`).join("\n"),
+      relevantHits.map((h) => `- ${h.title ?? ""} (${h.url})`).join("\n"),
     buyer_impact:
       "Some public references exist; depth and accuracy of the data behind these aggregators cannot be confirmed for free.",
     recommended_action:
       `Verify whether this supplier has shipped to ${args.destinationMarket} in the past 24 months via a paid trade-data source.`,
   }];
+}
+
+function exportTokens(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length >= 4 && !["company", "limited", "ltd", "supplier", "factory", "manufacturer", "trading", "industry", "trade", "export", "import"].includes(token));
+}
+
+function domainFromUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    return new URL(value.startsWith("http") ? value : `https://${value}`).hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
+export function isSupplierLinkedExportHit(hit: FirecrawlSearchHit, supplierName: string, website?: string | null): boolean {
+  const text = `${hit.title ?? ""}\n${hit.description ?? ""}\n${hit.markdown ?? ""}\n${hit.url ?? ""}`.toLowerCase();
+  const exact = supplierName.replace(/\s+/g, " ").trim().toLowerCase();
+  if (exact && text.includes(exact)) return true;
+  const domain = domainFromUrl(website);
+  if (domain && text.includes(domain.toLowerCase())) return true;
+  const tokens = exportTokens(supplierName);
+  if (tokens.length === 0) return false;
+  const hits = tokens.filter((token) => text.includes(token)).length;
+  return hits >= Math.min(2, tokens.length);
 }
