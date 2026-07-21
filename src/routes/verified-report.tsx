@@ -47,6 +47,8 @@ function VerifiedReportPage() {
   const flagsFn = useServerFn(getVerifiedReportFlags);
   const flagsQuery = useQuery({ queryKey: ["verified-report-flags"], queryFn: () => flagsFn() });
   const bypassEnabled = Boolean(flagsQuery.data?.bypassEnabled);
+  const [busy, setBusy] = useState(false);
+
 
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ statusUrl: string; missingRequiredDocuments: string[]; message?: string | null; paymentBypassedForTest?: boolean } | null>(null);
