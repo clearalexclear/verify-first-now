@@ -99,15 +99,21 @@ export async function screenAdverseMedia(args: {
   return [{
     section: "digital_footprint",
     item: "Adverse media screening",
-    status: classification.status,
-    confidence: classification.confidence,
+    status: classification.status === "PASS" ? "NOT_VERIFIED" : classification.status,
+    confidence: classification.status === "PASS" ? "low" : classification.confidence,
     source_name: "Public web search (Firecrawl) - top adverse-media hits",
     source_url: allHits[0]?.url ?? null,
     retrieval_date: now,
-    evidence_excerpt: classification.evidence_excerpt || "",
-    evidence_classification: classification.status === "NOT_VERIFIED" ? "NOT_INDEPENDENTLY_VERIFIED" : "INFERRED",
-    buyer_impact: classification.buyer_impact,
-    recommended_action: classification.recommended_action,
+    evidence_excerpt: classification.status === "PASS"
+      ? "No relevant adverse-media result identified in public search; absence of hits is not proof no adverse media exists."
+      : classification.evidence_excerpt || "",
+    evidence_classification: classification.status === "PASS" || classification.status === "NOT_VERIFIED" ? "NOT_INDEPENDENTLY_VERIFIED" : "INFERRED",
+    buyer_impact: classification.status === "PASS"
+      ? "Public web search is weak web intelligence and cannot independently prove a clean adverse-media history."
+      : classification.buyer_impact,
+    recommended_action: classification.status === "PASS"
+      ? "Re-screen with authoritative/commercial adverse-media and court sources before relying on this item."
+      : classification.recommended_action,
   }];
 }
 

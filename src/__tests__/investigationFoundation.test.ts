@@ -293,7 +293,7 @@ describe("canonical checklist", () => {
         item: "Business licence validation",
         status: "CAUTION",
         source_name: "supplier-provided business licence",
-        evidence_excerpt: "Chinese legal name: 江市有限公司; Registered address: 江市江区3地1141406; Chinese legal name could not be reliably extracted from the uploaded licence. Registered address could not be reliably extracted from the uploaded licence.",
+        evidence_excerpt: "Chinese legal name: 江市有限公司; Registered address: 江市江区3地1141406; Business scope: 技术; Chinese legal name could not be reliably extracted from the uploaded licence. Registered address could not be reliably extracted from the uploaded licence. Business scope could not be reliably extracted from the uploaded licence.",
         evidence_ids: ["ev_ocr"],
         evidence_classification: "SUPPLIER_CLAIMED",
       }],
@@ -303,8 +303,10 @@ describe("canonical checklist", () => {
     const text = await extractPdfText(await renderReportPdf(report));
     expect(text).toContain("Chinese legal name could not be reliably extracted from the uploaded licence.");
     expect(text).toContain("Registered address could not be reliably extracted from the uploaded licence.");
+    expect(text).toContain("Business scope could not be reliably extracted from the uploaded licence.");
     expect(text).not.toContain("江市有限公司");
     expect(text).not.toContain("江市江区3地1141406");
+    expect(text).not.toContain("Business scope: 技术");
   });
 
   it("renders the Verified Report decision panel for Pause reports", async () => {
@@ -324,7 +326,7 @@ describe("canonical checklist", () => {
 
     const text = await extractPdfText(await renderReportPdf(report));
     expect(text).toContain("Payment decision: Pause");
-    expect(text).toContain("Entity/payment consistency: NOT VERIFIED");
+    expect(text).toContain("Entity/payment consistency: CANNOT CONFIRM");
     expect(text).toContain("Documents checked: Business licence; Proforma invoice");
     expect(text).toContain("Why: Payment beneficiary was not extracted from the proforma invoice - cannot confirm payee matches licence holder.");
     expect(text).toContain("Deal-specific blockers: None identified from the extracted payment fields.");
@@ -371,8 +373,8 @@ describe("canonical checklist", () => {
         item: "Adverse media screening",
         status: "PASS",
         source_name: "Public web search (Firecrawl)",
-        evidence_excerpt: "",
-        evidence_ids: [],
+        evidence_excerpt: "No relevant adverse-media result identified in public search; absence of hits is not proof no adverse media exists.",
+        evidence_ids: ["ev_weak_adverse"],
         evidence_classification: "INFERRED",
       }],
     })).find((item) => item.id === "adverse_media");
@@ -408,6 +410,108 @@ describe("canonical checklist", () => {
     expect(text).not.toContain("名称Unified Social Credit Code注册");
     expect(text).not.toContain("国Unified Social Credit Code公");
     expect(text).not.toMatch(/deveirter|gnirts|代码/);
+  });
+
+  it("sanitizes a verified_report snapshot and wires the page-one decision panel from uploaded evidence", async () => {
+    const report = mockReport({
+      final_outcome: "PAUSE_PENDING_CLARIFICATION",
+      overall_risk_rating: "high",
+      supplier_input: {
+        ...mockReport().supplier_input,
+        chinese_name: "江市有限公司",
+      },
+      resolved_entity: {
+        ...baseResolvedEntity,
+        legal_name_local: "江市有限公司",
+        registered_address: "江市江区3地1141406",
+        business_scope: "技术",
+      },
+      executive_summary:
+        "The uploaded business licence was reviewed, but Chinese legal name: 江市有限公司, Registered address: 江市江区3地1141406 and Business scope: 技术 appeared in OCR. Obtain a copy of the supplier's official business license.",
+      buyer_implications: "UFLPA and website consistency used 江市有限公司 and Business scope: 技术 in old snapshot text.",
+      recommended_safeguards: "Obtain a copy of the supplier's official business license and review noisy export snippets.",
+      payment_recommendation: "Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder.",
+      findings: [
+        {
+          ...baseFinding,
+          section: "certificates_documents",
+          item: "Business licence validation",
+          status: "CAUTION",
+          source_name: "supplier-provided business licence",
+          evidence_excerpt: "Chinese legal name: 江市有限公司; Registered address: 江市江区3地1141406; Business scope: 技术.",
+          evidence_ids: ["ev_license"],
+          evidence_classification: "SUPPLIER_CLAIMED",
+        },
+        {
+          ...baseFinding,
+          section: "payment_safeguards",
+          item: "Payment beneficiary not extracted",
+          status: "NOT_VERIFIED",
+          source_name: "Verified Supplier Report consistency engine",
+          evidence_excerpt: "Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder.",
+          evidence_ids: [],
+          evidence_classification: "NOT_INDEPENDENTLY_VERIFIED",
+        },
+        {
+          ...baseFinding,
+          section: "digital_footprint",
+          item: "Adverse media screening",
+          status: "PASS",
+          source_name: "Public web search (Firecrawl)",
+          evidence_excerpt: "No relevant adverse-media result identified in public search; absence of hits is not proof no adverse media exists.",
+          evidence_ids: ["ev_adverse"],
+          evidence_classification: "INFERRED",
+        },
+        {
+          ...baseFinding,
+          section: "export_history",
+          item: "Export and shipment history",
+          status: "NOT_VERIFIED",
+          source_name: "名称Unified Social Credit Code注册",
+          source_url: "https://www.globalsources.com/manufacturers/cookware.html",
+          evidence_excerpt: "No reliable shipment-history evidence identified from public sources. GlobalSources multilingual directory deveirter gnirts 代码",
+          evidence_ids: [],
+          evidence_classification: "NOT_INDEPENDENTLY_VERIFIED",
+        },
+      ],
+      customer_evidence: [
+        { name: "Customer upload: business_licence.jpg", url: null, retrieved_at: "2026-07-21T17:15:39.000Z", category: "customer_upload" },
+        { name: "Customer upload: proforma_invoice.pdf", url: null, retrieved_at: "2026-07-21T17:15:39.000Z", category: "customer_upload" },
+        { name: "Customer upload: certificate_or_test_report.jpg", url: null, retrieved_at: "2026-07-21T17:15:39.000Z", category: "customer_upload" },
+      ],
+      sources_queried: [
+        { name: "名称Unified Social Credit Code注册", url: "https://www.globalsources.com/manufacturers/cookware.html", retrieved_at: "2026-07-21T17:15:39.000Z", category: "screening" },
+      ],
+      verified_report_decision: {
+        payment_decision: "PAUSE",
+        entity_payment_consistency: "NOT_VERIFIED",
+        documents_checked: [],
+        why: [],
+        deal_specific_blockers: [],
+        ask_supplier_before_payment: ["Confirm the uploaded business licence against an official Chinese registry source."],
+      },
+    });
+    report.checklist_results = buildCanonicalChecklist(report);
+
+    const exportHistory = report.checklist_results.find((item) => item.id === "us_shipment_export_history");
+    expect(exportHistory?.status).toBe("NOT_VERIFIED");
+    expect(exportHistory?.evidence_classification).toBe("NOT_INDEPENDENTLY_VERIFIED");
+    const adverseMedia = report.checklist_results.find((item) => item.id === "adverse_media");
+    expect(adverseMedia?.status).not.toBe("PASS");
+
+    const text = await extractPdfText(await renderReportPdf(report));
+    expect(text).not.toContain("江市有限公司");
+    expect(text).not.toContain("江市江区3地1141406");
+    expect(text).not.toContain("Business scope: 技术");
+    expect(text).toContain("Chinese legal name could not be reliably extracted from the uploaded licence.");
+    expect(text).toContain("Registered address could not be reliably extracted from the uploaded licence.");
+    expect(text).toContain("Business scope could not be reliably extracted from the uploaded licence.");
+    expect(text).toContain("Documents checked: Business licence; Proforma invoice; 1 certificate/test report(s)");
+    expect(text).toContain("Payment beneficiary was not extracted from the proforma invoice - cannot confirm payee matches licence holder.");
+    expect(text).toContain("No reliable shipment-history evidence identified from public sources.");
+    expect(text).not.toMatch(/GlobalSources multilingual directory|deveirter|gnirts|代码/);
+    expect(text).toContain("Confirm the uploaded business licence against an official Chinese registry source.");
+    expect(text).not.toMatch(/Obtain a copy of the supplier's official business licen[cs]e/i);
   });
 
   it("does not render misleading status labels or orphaned buyer impact levels", async () => {
