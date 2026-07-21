@@ -97,9 +97,9 @@ const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   getParentRoute: () => AuthenticatedAdminRouteRoute,
 } as any)
 const OrderStatusTokenRoute = OrderStatusTokenRouteImport.update({
-  id: '/status/$token',
-  path: '/status/$token',
-  getParentRoute: () => OrderRoute,
+  id: '/order/status/$token',
+  path: '/order/status/$token',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiStripeWebhookRoute = ApiStripeWebhookRouteImport.update({
   id: '/api/stripe/webhook',
@@ -303,6 +303,7 @@ export interface RootRouteChildren {
   UploadTokenRoute: typeof UploadTokenRoute
   OrderIndexRoute: typeof OrderIndexRoute
   ApiStripeWebhookRoute: typeof ApiStripeWebhookRoute
+  OrderStatusTokenRoute: typeof OrderStatusTokenRoute
   ApiPublicInvestigateCaseIdRoute: typeof ApiPublicInvestigateCaseIdRoute
 }
 
@@ -401,10 +402,10 @@ declare module '@tanstack/react-router' {
     }
     '/order/status/$token': {
       id: '/order/status/$token'
-      path: '/status/$token'
+      path: '/order/status/$token'
       fullPath: '/order/status/$token'
       preLoaderRoute: typeof OrderStatusTokenRouteImport
-      parentRoute: typeof OrderRoute
+      parentRoute: typeof rootRouteImport
     }
     '/api/stripe/webhook': {
       id: '/api/stripe/webhook'
@@ -518,18 +519,9 @@ const rootRouteChildren: RootRouteChildren = {
   UploadTokenRoute: UploadTokenRoute,
   OrderIndexRoute: OrderIndexRoute,
   ApiStripeWebhookRoute: ApiStripeWebhookRoute,
+  OrderStatusTokenRoute: OrderStatusTokenRoute,
   ApiPublicInvestigateCaseIdRoute: ApiPublicInvestigateCaseIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
