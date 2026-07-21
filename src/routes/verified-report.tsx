@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
@@ -7,7 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { submitVerifiedReport } from "@/lib/verified-report.functions";
+import { getVerifiedReportFlags } from "@/lib/verified-report-flags.functions";
 import { FileText, Loader2, ShieldCheck } from "lucide-react";
+
 
 export const Route = createFileRoute("/verified-report")({
   head: () => ({
@@ -41,7 +44,12 @@ function fileToBase64(file: File): Promise<string> {
 
 function VerifiedReportPage() {
   const submit = useServerFn(submitVerifiedReport);
+  const flagsFn = useServerFn(getVerifiedReportFlags);
+  const flagsQuery = useQuery({ queryKey: ["verified-report-flags"], queryFn: () => flagsFn() });
+  const bypassEnabled = Boolean(flagsQuery.data?.bypassEnabled);
   const [busy, setBusy] = useState(false);
+
+
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ statusUrl: string; missingRequiredDocuments: string[]; message?: string | null; paymentBypassedForTest?: boolean } | null>(null);
   const [docs, setDocs] = useState<PendingDoc[]>([]);
@@ -109,6 +117,17 @@ function VerifiedReportPage() {
             Send us what your supplier sent you. We check whether the legal, invoice, bank and product story holds together before you pay — and return a clear <span className="font-semibold text-navy">Payment decision: Proceed / Pause / No-Go</span> with deal-specific blockers and exact next actions. Business licence and proforma invoice are required; certificates and test reports are optional.
           </p>
         </div>
+
+        {flagsQuery.data ? (
+          <div className={`mb-6 rounded-md border p-3 text-xs ${bypassEnabled ? "border-amber-400 bg-amber-50 text-amber-900" : "border-border bg-muted text-muted-foreground"}`}>
+            <div className="font-semibold">Runtime debug — Stripe bypass</div>
+            <div>verifiedReportBypassEnabled = <code>{String(bypassEnabled)}</code></div>
+            <div>raw env value: <code>{String(flagsQuery.data.rawValue)}</code></div>
+            <div>checked at: {flagsQuery.data.checkedAt}</div>
+            {bypassEnabled ? <div className="mt-1">Test mode ON — submitting will skip Stripe and start the investigation immediately.</div> : null}
+          </div>
+        ) : null}
+
 
         {result ? (
           <div className="rounded-lg border border-border bg-card p-6">
