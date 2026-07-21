@@ -235,7 +235,7 @@ export async function runInvestigation(
       screenLitigation({ name: nameForScreening, chineseName: chineseForScreening }),
       screenWebsiteConsistency({ statedName: nameForScreening, website: order.website_marketplace_url, resolved }),
       screenCertificates({ extracted }),
-      probeExportHistory({ name: nameForScreening, destinationMarket }),
+      probeExportHistory({ name: nameForScreening, website: order.website_marketplace_url, destinationMarket }),
       connectorRunPromise.then((r) => r.findings),
       Promise.resolve(registryFindings),
     ]);
