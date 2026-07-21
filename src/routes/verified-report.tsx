@@ -44,7 +44,10 @@ function fileToBase64(file: File): Promise<string> {
 
 function VerifiedReportPage() {
   const submit = useServerFn(submitVerifiedReport);
-  const [busy, setBusy] = useState(false);
+  const flagsFn = useServerFn(getVerifiedReportFlags);
+  const flagsQuery = useQuery({ queryKey: ["verified-report-flags"], queryFn: () => flagsFn() });
+  const bypassEnabled = Boolean(flagsQuery.data?.bypassEnabled);
+
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ statusUrl: string; missingRequiredDocuments: string[]; message?: string | null; paymentBypassedForTest?: boolean } | null>(null);
   const [docs, setDocs] = useState<PendingDoc[]>([]);
