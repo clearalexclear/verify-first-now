@@ -118,6 +118,17 @@ function VerifiedReportPage() {
           </p>
         </div>
 
+        {flagsQuery.data ? (
+          <div className={`mb-6 rounded-md border p-3 text-xs ${bypassEnabled ? "border-amber-400 bg-amber-50 text-amber-900" : "border-border bg-muted text-muted-foreground"}`}>
+            <div className="font-semibold">Runtime debug — Stripe bypass</div>
+            <div>verifiedReportBypassEnabled = <code>{String(bypassEnabled)}</code></div>
+            <div>raw env value: <code>{String(flagsQuery.data.rawValue)}</code></div>
+            <div>checked at: {flagsQuery.data.checkedAt}</div>
+            {bypassEnabled ? <div className="mt-1">Test mode ON — submitting will skip Stripe and start the investigation immediately.</div> : null}
+          </div>
+        ) : null}
+
+
         {result ? (
           <div className="rounded-lg border border-border bg-card p-6">
             <h2 className="text-xl font-semibold text-navy">Case created</h2>
