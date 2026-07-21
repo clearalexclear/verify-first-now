@@ -78,12 +78,20 @@ function wrap(text: string, font: PDFFont, size: number, maxWidth: number): stri
 }
 
 const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
+const KNOWN_GARBLED_OCR = [
+  "江市有限公司",
+  "江市江区3地1141406",
+];
 
 function customerFacingText(s: string): string {
-  return (s || "")
+  let out = s || "";
+  for (const bad of KNOWN_GARBLED_OCR) out = out.replaceAll(bad, "");
+  return out
     .replace(/\(?\s*evidence references\s*\)?/gi, "")
     .replace(/\bevidence[_ -]?ids?\s*[:=]\s*(?:\[[^\]]*\]|[0-9a-f,\s-]{20,})[.;,]?\s*/gi, "")
     .replace(UUID_PATTERN, "")
+    .replace(/deveirter|detrevni|gnirts|noitartsiger|edoC tiderC laicoS deifinU/gi, "")
+    .replace(/国Unified Social Credit Code公|名称Unified Social Credit Code注册|代码/g, "")
     .replace(/营业执照/g, "Business License")
     .replace(/统一社会信用代码/g, "Unified Social Credit Code")
     .replace(/法定代表人/g, "Legal representative")
@@ -183,13 +191,42 @@ function footnoteFor(ctx: Ctx, url: string): number {
 
 function shortSourceLabel(name: string, url: string | null): string {
   const trimmed = (name || "").trim();
-  if (trimmed && trimmed.length <= 80) return trimmed;
+  if (trimmed && trimmed.length <= 80 && !isLowQualitySourceTitle(trimmed)) return trimmed;
+  const fallback = fallbackSourceLabel(url);
+  if (fallback) return fallback;
   if (url) {
     try {
       return new URL(url).hostname.replace(/^www\./, "");
     } catch { /* ignore */ }
   }
-  return trimmed.slice(0, 80);
+  return trimmed && !isLowQualitySourceTitle(trimmed) ? trimmed.slice(0, 80) : "Public web search result";
+}
+
+function isLowQualitySourceTitle(value: string): boolean {
+  const v = value.trim();
+  if (!v) return true;
+  if (KNOWN_GARBLED_OCR.some((bad) => v.includes(bad))) return true;
+  if (/deveirter|detrevni|gnirts|noitartsiger/i.test(v)) return true;
+  if (/代码|国Unified Social Credit Code公|名称Unified Social Credit Code注册/i.test(v)) return true;
+  const cjkCount = (v.match(/[\u3400-\u9fff]/g) ?? []).length;
+  const latinCount = (v.match(/[A-Za-z]/g) ?? []).length;
+  if (cjkCount > 0 && latinCount > 0 && /Unified Social Credit Code|Registration status|Legal representative/i.test(v)) return true;
+  if (cjkCount > 0 && latinCount > 0 && v.length < 32) return true;
+  return false;
+}
+
+function fallbackSourceLabel(url: string | null): string | null {
+  if (!url) return null;
+  let host = "";
+  try {
+    host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return null;
+  }
+  if (/cods\.org\.cn|gsxt\.gov\.cn|creditchina\.gov\.cn|samr\.gov\.cn/.test(host)) return "CODS / USCC lookup";
+  if (/globalsources|importyeti|panjiva|shipment|bill|shipping/.test(host)) return "Shipping aggregator result";
+  if (/alibaba|1688|made-in-china|exporthub/.test(host)) return "Public web search result";
+  return "Public web search result";
 }
 
 function checklistForReport(r: InvestigationReport): ChecklistReportResult[] {
@@ -334,8 +371,14 @@ function drawBlockersBox(ctx: Ctx, blockers: string[]) {
 }
 
 function drawVerifiedDecisionBox(ctx: Ctx, r: InvestigationReport) {
-  const decision = r.verified_report_decision;
-  if (!decision) return;
+  const decision = r.verified_report_decision ?? {
+    payment_decision: r.final_outcome === "NO_GO" ? "NO_GO" as const : r.final_outcome === "PAUSE_PENDING_CLARIFICATION" ? "PAUSE" as const : "PROCEED" as const,
+    why: [],
+    deal_specific_blockers: r.critical_blockers ?? [],
+    entity_payment_consistency: "NOT_VERIFIED" as const,
+    documents_checked: [],
+    ask_supplier_before_payment: [],
+  };
   ensureSpace(ctx, 150);
   const label = `Payment decision: ${decision.payment_decision === "NO_GO" ? "No-Go" : decision.payment_decision === "PAUSE" ? "Pause" : "Proceed"}`;
   const color = decision.payment_decision === "NO_GO" ? RED : decision.payment_decision === "PAUSE" ? AMBER : GREEN;
@@ -345,9 +388,9 @@ function drawVerifiedDecisionBox(ctx: Ctx, r: InvestigationReport) {
   ctx.y -= 34;
   drawWrapped(ctx, `Entity/payment consistency: ${decision.entity_payment_consistency.replace(/_/g, " ")}`, { size: 9.5, bold: true });
   drawWrapped(ctx, `Documents checked: ${decision.documents_checked.length ? decision.documents_checked.join("; ") : "No required documents checked"}`, { size: 9.5 });
-  if (decision.why.length) drawWrapped(ctx, "Why: " + decision.why.join(" "), { size: 9.5 });
-  if (decision.deal_specific_blockers.length) drawWrapped(ctx, "Deal-specific blockers: " + decision.deal_specific_blockers.join(" "), { size: 9.5, color: RED });
-  if (decision.ask_supplier_before_payment.length) drawWrapped(ctx, "Ask supplier before payment: " + decision.ask_supplier_before_payment.join(" "), { size: 9.5 });
+  drawWrapped(ctx, "Why: " + (decision.why.length ? decision.why.join(" ") : "See item-level checklist findings."), { size: 9.5 });
+  drawWrapped(ctx, "Deal-specific blockers: " + (decision.deal_specific_blockers.length ? decision.deal_specific_blockers.join(" ") : "None identified from the extracted payment fields."), { size: 9.5, color: decision.deal_specific_blockers.length ? RED : TEXT });
+  drawWrapped(ctx, "Ask supplier before payment: " + (decision.ask_supplier_before_payment.length ? decision.ask_supplier_before_payment.join(" ") : "Resolve all Not Verified checklist items before payment."), { size: 9.5 });
   ctx.y -= 6;
 }
 

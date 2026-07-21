@@ -245,7 +245,7 @@ export async function probeExportHistory(args: {
         "If the order value warrants it, query a paid trade-data provider (ImportYeti, Panjiva, Sayari).",
     }];
   }
-  const relevantHits = hits.filter((hit) => isSupplierLinkedExportHit(hit, args.name, args.website));
+  const relevantHits = hits.filter((hit) => isSupplierLinkedExportHit(hit, args.name, args.website) && !isLowQualityExportHit(hit));
   if (relevantHits.length === 0) {
     return [{
       section: "export_history",
@@ -269,7 +269,7 @@ export async function probeExportHistory(args: {
     item: "Export and shipment history",
     status: "CAUTION",
     confidence: "low",
-    source_name: relevantHits[0].title ?? relevantHits[0].url,
+    source_name: "Shipping aggregator result",
     source_url: relevantHits[0].url,
     retrieval_date: now,
     evidence_excerpt:
@@ -309,4 +309,16 @@ export function isSupplierLinkedExportHit(hit: FirecrawlSearchHit, supplierName:
   if (tokens.length === 0) return false;
   const hits = tokens.filter((token) => text.includes(token)).length;
   return hits >= Math.min(2, tokens.length);
+}
+
+export function isLowQualityExportHit(hit: FirecrawlSearchHit): boolean {
+  const text = `${hit.title ?? ""}\n${hit.description ?? ""}\n${hit.markdown ?? ""}`;
+  if (/deveirter|detrevni|gnirts|noitartsiger|edoC tiderC laicoS deifinU/i.test(text)) return true;
+  if (/代码|国Unified Social Credit Code公|名称Unified Social Credit Code注册/i.test(text)) return true;
+  const cjkCount = (text.match(/[\u3400-\u9fff]/g) ?? []).length;
+  const latinCount = (text.match(/[A-Za-z]/g) ?? []).length;
+  if (cjkCount > 0 && latinCount > 0 && /Unified Social Credit Code|Registration status|Legal representative/i.test(text)) return true;
+  const directoryNoise = /GlobalSources|directory|manufacturers|catalogue|catalog|OEM products|multilingual/i.test(text)
+    && !/bill of lading|shipment record|consignee|shipper/i.test(text);
+  return directoryNoise;
 }
