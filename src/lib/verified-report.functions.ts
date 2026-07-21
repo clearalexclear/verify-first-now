@@ -87,7 +87,15 @@ export async function submitVerifiedReportImpl(data: SubmitVerifiedReportInput, 
     const missing = missingVerifiedReportDocuments(data);
     const statusToken = randomToken(40);
     const incomplete = missing.length > 0 || data.supplier_refused_licence;
-    const bypassStripe = verifiedReportBypassEnabled(deps.env) && !incomplete;
+    const bypassFlag = verifiedReportBypassEnabled(deps.env);
+    const bypassStripe = bypassFlag && !incomplete;
+    console.log("[submitVerifiedReport] bypass flag runtime check", {
+      bypassFlag,
+      rawEnv: deps.env?.VERIFYFIRST_BYPASS_STRIPE_FOR_VERIFIED_REPORTS ?? null,
+      incomplete,
+      willBypassStripe: bypassStripe,
+    });
+
 
     const { data: customer } = await supabaseAdmin
       .from("customers")
