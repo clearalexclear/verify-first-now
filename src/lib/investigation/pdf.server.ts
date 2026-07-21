@@ -19,6 +19,7 @@ import {
   type ReportSectionKey,
 } from "./types";
 import { VERIFYFIRST_CJK_FONT_BASE64 } from "./cjk-font-subset";
+import { displaySourceName, MISSING_BENEFICIARY_WORDING, sanitizeBuyerReport, sanitizeBuyerText as customerFacingText } from "./report-sanitizer";
 
 const NAVY = rgb(0x0f / 255, 0x2a / 255, 0x43 / 255);
 const GREEN = rgb(0x16 / 255, 0xa3 / 255, 0x4a / 255);
@@ -75,41 +76,6 @@ function wrap(text: string, font: PDFFont, size: number, maxWidth: number): stri
   }
   if (line) lines.push(line);
   return lines;
-}
-
-const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
-const KNOWN_GARBLED_OCR = [
-  "江市有限公司",
-  "江市江区3地1141406",
-];
-
-function customerFacingText(s: string): string {
-  let out = s || "";
-  out = out
-    .replace(/Chinese legal name:\s*江市有限公司[.;,]?\s*/gi, "Chinese legal name could not be reliably extracted from the uploaded licence. ")
-    .replace(/Registered address:\s*江市江区3地1141406[.;,]?\s*/gi, "Registered address could not be reliably extracted from the uploaded licence. ")
-    .replace(/Business scope:\s*技术[.;,]?\s*/gi, "Business scope could not be reliably extracted from the uploaded licence. ");
-  out = out.replace(
-    /No reliable shipment-history evidence identified from public sources\.[\s\S]*?(?=(?:Buyer impact:|Recommended action:|$))/gi,
-    "No reliable shipment-history evidence identified from public sources. ",
-  );
-  for (const bad of KNOWN_GARBLED_OCR) out = out.replaceAll(bad, "");
-  return out
-    .replace(/\(?\s*evidence references\s*\)?/gi, "")
-    .replace(/\bevidence[_ -]?ids?\s*[:=]\s*(?:\[[^\]]*\]|[0-9a-f,\s-]{20,})[.;,]?\s*/gi, "")
-    .replace(UUID_PATTERN, "")
-    .replace(/deveirter|detrevni|gnirts|noitartsiger|edoC tiderC laicoS deifinU/gi, "")
-    .replace(/国Unified Social Credit Code公|名称Unified Social Credit Code注册|代码/g, "")
-    .replace(/\bObtain a copy of the supplier's official business licen[cs]e\b/gi, "Confirm the uploaded business licence against an official Chinese registry source")
-    .replace(/营业执照/g, "Business License")
-    .replace(/统一社会信用代码/g, "Unified Social Credit Code")
-    .replace(/法定代表人/g, "Legal representative")
-    .replace(/注册地址/g, "Registered address")
-    .replace(/经营范围/g, "Business scope")
-    .replace(/\((?:[\u4e00-\u9fff]\s*){1,3}\)/g, "")
-    .replace(/\s+/g, " ")
-    .replace(/\s+([.;,])/g, "$1")
-    .trim();
 }
 
 function visibleText(s: string | null | undefined): string {
@@ -203,43 +169,7 @@ function footnoteFor(ctx: Ctx, url: string): number {
 }
 
 function shortSourceLabel(name: string, url: string | null): string {
-  const trimmed = (name || "").trim();
-  if (trimmed && trimmed.length <= 80 && !isLowQualitySourceTitle(trimmed)) return trimmed;
-  const fallback = fallbackSourceLabel(url);
-  if (fallback) return fallback;
-  if (url) {
-    try {
-      return new URL(url).hostname.replace(/^www\./, "");
-    } catch { /* ignore */ }
-  }
-  return trimmed && !isLowQualitySourceTitle(trimmed) ? trimmed.slice(0, 80) : "Public web search result";
-}
-
-function isLowQualitySourceTitle(value: string): boolean {
-  const v = value.trim();
-  if (!v) return true;
-  if (KNOWN_GARBLED_OCR.some((bad) => v.includes(bad))) return true;
-  if (/deveirter|detrevni|gnirts|noitartsiger/i.test(v)) return true;
-  if (/代码|国Unified Social Credit Code公|名称Unified Social Credit Code注册/i.test(v)) return true;
-  const cjkCount = (v.match(/[\u3400-\u9fff]/g) ?? []).length;
-  const latinCount = (v.match(/[A-Za-z]/g) ?? []).length;
-  if (cjkCount > 0 && latinCount > 0 && /Unified Social Credit Code|Registration status|Legal representative/i.test(v)) return true;
-  if (cjkCount > 0 && latinCount > 0 && v.length < 32) return true;
-  return false;
-}
-
-function fallbackSourceLabel(url: string | null): string | null {
-  if (!url) return null;
-  let host = "";
-  try {
-    host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
-  } catch {
-    return null;
-  }
-  if (/cods\.org\.cn|gsxt\.gov\.cn|creditchina\.gov\.cn|samr\.gov\.cn/.test(host)) return "CODS / USCC lookup";
-  if (/globalsources|importyeti|panjiva|shipment|bill|shipping/.test(host)) return "Shipping aggregator result";
-  if (/alibaba|1688|made-in-china|exporthub/.test(host)) return "Public web search result";
-  return "Public web search result";
+  return displaySourceName(name, url);
 }
 
 function checklistForReport(r: InvestigationReport): ChecklistReportResult[] {
@@ -433,7 +363,7 @@ function inferVerifiedReportDocumentsChecked(r: InvestigationReport): string[] {
 function inferVerifiedReportWhy(r: InvestigationReport): string[] {
   const text = r.findings.map((item) => item.evidence_excerpt).join(" ");
   if (/Payment beneficiary (?:was )?not extracted/i.test(text)) {
-    return ["Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder."];
+    return [MISSING_BENEFICIARY_WORDING];
   }
   return [];
 }
@@ -488,6 +418,7 @@ function drawCover(ctx: Ctx, r: InvestigationReport) {
 }
 
 export async function renderReportPdf(r: InvestigationReport): Promise<Uint8Array> {
+  const report = sanitizeBuyerReport(r);
   const doc = await PDFDocument.create();
   const regular = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -502,7 +433,7 @@ export async function renderReportPdf(r: InvestigationReport): Promise<Uint8Arra
     footnotes: { order: [], index: new Map() },
   };
 
-  drawCover(ctx, r);
+  drawCover(ctx, report);
 
   const order: ReportSectionKey[] = [
     "legal_entity",
@@ -516,7 +447,7 @@ export async function renderReportPdf(r: InvestigationReport): Promise<Uint8Arra
     "regulatory",
     "payment_safeguards",
   ];
-  const checklist = checklistForReport(r);
+  const checklist = checklistForReport(report);
   for (const sectionKey of order) {
     const items = checklist.filter((item) => item.section === sectionKey);
     if (items.length === 0) continue;
@@ -530,44 +461,44 @@ export async function renderReportPdf(r: InvestigationReport): Promise<Uint8Arra
 
   newPage(ctx);
   drawSectionHeader(ctx, "Buyer implications and recommended safeguards");
-  drawWrapped(ctx, r.buyer_implications || "Item-level checklist results are authoritative.");
-  drawWrapped(ctx, r.recommended_safeguards || "Review unresolved checklist items before payment.");
-  drawWrapped(ctx, "Payment: " + r.payment_recommendation);
-  drawWrapped(ctx, "Pre-shipment inspection: " + r.inspection_recommendation);
-  drawWrapped(ctx, "Product testing: " + r.testing_recommendation);
+  drawWrapped(ctx, report.buyer_implications || "Item-level checklist results are authoritative.");
+  drawWrapped(ctx, report.recommended_safeguards || "Review unresolved checklist items before payment.");
+  drawWrapped(ctx, "Payment: " + report.payment_recommendation);
+  drawWrapped(ctx, "Pre-shipment inspection: " + report.inspection_recommendation);
+  drawWrapped(ctx, "Product testing: " + report.testing_recommendation);
 
   newPage(ctx);
   drawSectionHeader(ctx, "Sources, methodology and limitations");
   drawWrapped(ctx, "Sources actually queried", { size: 11, bold: true, color: NAVY });
-  if ((r.sources_queried ?? []).length === 0) {
+  if ((report.sources_queried ?? []).length === 0) {
     drawWrapped(ctx, "No independent source was successfully queried during this run.", { size: 9, color: GREY });
   } else {
-    for (const s of r.sources_queried ?? []) {
+    for (const s of report.sources_queried ?? []) {
       const marker = s.url ? ` [${footnoteFor(ctx, s.url)}]` : "";
       drawWrapped(ctx, `- ${shortSourceLabel(s.name, s.url)}${marker} (retrieved ${s.retrieved_at.slice(0, 10)})`, { size: 9 });
     }
   }
   drawWrapped(ctx, "Customer-provided evidence", { size: 11, bold: true, color: NAVY });
-  if ((r.customer_evidence ?? []).length === 0) {
+  if ((report.customer_evidence ?? []).length === 0) {
     drawWrapped(ctx, "No customer documents were uploaded.", { size: 9, color: GREY });
   } else {
-    for (const s of r.customer_evidence ?? []) {
+    for (const s of report.customer_evidence ?? []) {
       drawWrapped(ctx, `- ${s.name} (retrieved ${s.retrieved_at.slice(0, 10)})`, { size: 9 });
     }
   }
   drawWrapped(ctx, "Sources unavailable or not configured", { size: 11, bold: true, color: NAVY });
-  if ((r.sources_unavailable ?? []).length === 0) {
+  if ((report.sources_unavailable ?? []).length === 0) {
     drawWrapped(ctx, "All expected sources were reachable in this run.", { size: 9, color: GREY });
   } else {
-    for (const s of r.sources_unavailable ?? []) {
+    for (const s of report.sources_unavailable ?? []) {
       drawWrapped(ctx, `- ${s.name}: ${s.reason}`, { size: 9, color: GREY });
     }
   }
   drawWrapped(ctx, "Methodology", { size: 11, bold: true, color: NAVY });
-  drawWrapped(ctx, r.methodology);
+  drawWrapped(ctx, report.methodology);
   drawWrapped(ctx, "Checks verified by analyst review are labeled as such.", { size: 9 });
   drawWrapped(ctx, "Limitations", { size: 11, bold: true, color: NAVY });
-  drawWrapped(ctx, r.limitations);
+  drawWrapped(ctx, report.limitations);
 
   if (ctx.footnotes.order.length > 0) {
     drawWrapped(ctx, "Source references", { size: 11, bold: true, color: NAVY });

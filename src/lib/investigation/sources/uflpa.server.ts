@@ -1,4 +1,5 @@
 import type { Finding } from "../types";
+import { isUnreliableChineseExtraction, UFLPA_LOCAL_NAME_UNCERTAIN } from "../report-sanitizer";
 
 const SOURCE_KEY = "dhs_uflpa";
 const SOURCE_URL = "https://www.dhs.gov/uflpa-entity-list";
@@ -87,10 +88,11 @@ export async function screenUflpa(args: {
 }): Promise<Finding[]> {
   const now = new Date().toISOString();
   const isUsBound = /united states|usa|u\.s\.a?\.|^us$/i.test(args.destinationMarket);
+  const resolvedNameLocal = isUnreliableChineseExtraction(args.resolvedNameLocal) ? null : args.resolvedNameLocal;
   const candidates = Array.from(new Set([
     args.statedName,
     args.resolvedNameEn ?? "",
-    args.resolvedNameLocal ?? "",
+    resolvedNameLocal ?? "",
     ...(args.aliases ?? []),
   ].filter((n) => n && n.trim().length)));
   if (candidates.length === 0) return [];
@@ -185,7 +187,7 @@ export async function screenUflpa(args: {
   return [baseFinding(
     "PASS",
     "medium_high",
-    `No name match to stored DHS UFLPA snapshot for verified names (English: "${args.resolvedNameEn ?? "n/a"}"; local: "${args.resolvedNameLocal ?? "n/a"}"; aliases: ${(args.aliases ?? []).join("; ") || "none"}). Snapshot ${snapshot.snapshotVersion}, ${snapshot.entities.length} entries, checksum ${snapshot.checksum}.`,
+    `No name match to stored DHS UFLPA snapshot for verified names (English: "${args.resolvedNameEn ?? "n/a"}"; ${resolvedNameLocal ? `local: "${resolvedNameLocal}"` : UFLPA_LOCAL_NAME_UNCERTAIN}; aliases: ${(args.aliases ?? []).join("; ") || "none"}). Snapshot ${snapshot.snapshotVersion}, ${snapshot.entities.length} entries, checksum ${snapshot.checksum}.`,
     "No listed-entity name match identified in the stored official snapshot after screening the verified legal names.",
     "For high-risk sectors or Xinjiang-linked supply chains, request supply-chain mapping regardless of name-screening result.",
   )];

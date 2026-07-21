@@ -315,10 +315,11 @@ export function isLowQualityExportHit(hit: FirecrawlSearchHit): boolean {
   const text = `${hit.title ?? ""}\n${hit.description ?? ""}\n${hit.markdown ?? ""}`;
   if (/deveirter|detrevni|gnirts|noitartsiger|edoC tiderC laicoS deifinU/i.test(text)) return true;
   if (/代码|国Unified Social Credit Code公|名称Unified Social Credit Code注册/i.test(text)) return true;
+  if (/[\u0600-\u06ff]/.test(text)) return true;
   const cjkCount = (text.match(/[\u3400-\u9fff]/g) ?? []).length;
   const latinCount = (text.match(/[A-Za-z]/g) ?? []).length;
   if (cjkCount > 0 && latinCount > 0 && /Unified Social Credit Code|Registration status|Legal representative/i.test(text)) return true;
-  const directoryNoise = /GlobalSources|directory|manufacturers|catalogue|catalog|OEM products|multilingual/i.test(text)
+  const directoryNoise = /GlobalSources|directory|manufacturers|catalogue|catalog|OEM products|multilingual|fabricants|fournisseur|hersteller|lieferant|مصنع|مورد/i.test(text)
     && !/bill of lading|shipment record|consignee|shipper/i.test(text);
   return directoryNoise;
 }
