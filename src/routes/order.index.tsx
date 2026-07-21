@@ -57,7 +57,7 @@ const searchSchema = z.object({
   tier: z.enum(["standard", "priority", "onsite"]).catch("standard"),
 });
 
-export const Route = createFileRoute("/order")({
+export const Route = createFileRoute("/order/")({
   validateSearch: searchSchema,
   head: () => ({
     meta: [
