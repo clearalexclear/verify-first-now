@@ -5,6 +5,7 @@ import { SiteFooter } from "@/components/SiteFooter";
 import { Button } from "@/components/ui/button";
 import { Download, Printer } from "lucide-react";
 import type { ChecklistReportResult, FindingStatus, InvestigationReport, VerifiedReportDecision } from "@/lib/investigation/types";
+import { sanitizeBuyerReport } from "@/lib/investigation/report-sanitizer";
 import {
   CLASSIFICATION_LABEL,
   CONFIDENCE_LABEL,
@@ -73,14 +74,15 @@ const SECTION_ORDER: ReportSectionKey[] = [
 
 function ReportPage() {
   const { reportJson, pdfUrl } = Route.useLoaderData();
-  const r = JSON.parse(reportJson || "null") as InvestigationReport | null;
-  if (!r) {
+  const rawReport = JSON.parse(reportJson || "null") as InvestigationReport | null;
+  if (!rawReport) {
     return (
       <div className="mx-auto max-w-xl p-12 text-center">
         <h1 className="text-2xl font-bold text-navy">Report unavailable.</h1>
       </div>
     );
   }
+  const r = sanitizeBuyerReport(rawReport);
 
   const checklist = r.checklist_results ?? [];
   const grouped = new Map<ReportSectionKey, ChecklistReportResult[]>();
@@ -256,7 +258,7 @@ const CONSISTENCY_LABEL: Record<VerifiedReportDecision["entity_payment_consisten
   MATCH: "Entity ↔ payment beneficiary: match",
   MINOR_ISSUES: "Entity ↔ payment beneficiary: minor issues",
   MISMATCH: "Entity ↔ payment beneficiary: MISMATCH",
-  NOT_VERIFIED: "Entity ↔ payment beneficiary: not verified",
+  NOT_VERIFIED: "Entity ↔ payment beneficiary: CANNOT CONFIRM",
 };
 
 function VerifiedReportDecisionPanel({ decision }: { decision: VerifiedReportDecision }) {
@@ -312,4 +314,3 @@ function VerifiedReportDecisionPanel({ decision }: { decision: VerifiedReportDec
     </section>
   );
 }
-

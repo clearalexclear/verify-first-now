@@ -6,6 +6,7 @@ import { assertTestInvestigationEnabled } from "../lib/investigation/test-runner
 import { verifyStripeSignature } from "../lib/payments/stripe-webhook.server";
 import { buildCanonicalChecklist, CANONICAL_CHECKLIST, CHECKLIST_COUNT, detectChecklistContradictions, applyOutcomeGating } from "../lib/investigation/checklist";
 import { renderReportPdf } from "../lib/investigation/pdf.server";
+import { sanitizeBuyerReport } from "../lib/investigation/report-sanitizer";
 import type { Finding, InvestigationReport, ResolvedEntity } from "../lib/investigation/types";
 import { getDocument, VerbosityLevel } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { fileURLToPath } from "node:url";
@@ -469,9 +470,20 @@ describe("canonical checklist", () => {
           status: "NOT_VERIFIED",
           source_name: "名称Unified Social Credit Code注册",
           source_url: "https://www.globalsources.com/manufacturers/cookware.html",
-          evidence_excerpt: "No reliable shipment-history evidence identified from public sources. GlobalSources multilingual directory deveirter gnirts 代码",
+          evidence_excerpt: "No reliable shipment-history evidence identified from public sources. GlobalSources multilingual directory deveirter gnirts 代码 مصنع fournisseur hersteller",
           evidence_ids: [],
           evidence_classification: "NOT_INDEPENDENTLY_VERIFIED",
+        },
+        {
+          ...baseFinding,
+          section: "sanctions_forced_labour",
+          item: "UFLPA (Uyghur Forced Labor Prevention Act) Entity List screening",
+          status: "PASS",
+          source_name: "DHS UFLPA Entity List snapshot 2026-07-21",
+          source_url: "https://www.dhs.gov/uflpa-entity-list",
+          evidence_excerpt: "No name match to stored DHS UFLPA snapshot for verified names (English: \"Yangjiang Justa Industry&trade Co., Ltd.\"; local: \"江市有限公司\"; aliases: none).",
+          evidence_ids: ["ev_uflpa"],
+          evidence_classification: "VERIFIED",
         },
       ],
       customer_evidence: [
@@ -500,18 +512,58 @@ describe("canonical checklist", () => {
     expect(adverseMedia?.status).not.toBe("PASS");
 
     const text = await extractPdfText(await renderReportPdf(report));
+    expect(text).not.toContain("No required documents checked");
+    expect(text).toContain("Business licence");
+    expect(text).toContain("Proforma invoice");
+    expect(text).toContain("certificate/test report");
     expect(text).not.toContain("江市有限公司");
     expect(text).not.toContain("江市江区3地1141406");
+    expect(text).not.toContain("local: \"江市有限公司\"");
     expect(text).not.toContain("Business scope: 技术");
     expect(text).toContain("Chinese legal name could not be reliably extracted from the uploaded licence.");
     expect(text).toContain("Registered address could not be reliably extracted from the uploaded licence.");
     expect(text).toContain("Business scope could not be reliably extracted from the uploaded licence.");
+    expect(text).toContain("Local legal name was not reliably extracted and was not used for local-name screening.");
     expect(text).toContain("Documents checked: Business licence; Proforma invoice; 1 certificate/test report(s)");
     expect(text).toContain("Payment beneficiary was not extracted from the proforma invoice - cannot confirm payee matches licence holder.");
     expect(text).toContain("No reliable shipment-history evidence identified from public sources.");
-    expect(text).not.toMatch(/GlobalSources multilingual directory|deveirter|gnirts|代码/);
+    expect(text).not.toMatch(/GlobalSources multilingual directory|deveirter|gnirts|代码|مصنع|fournisseur|hersteller/);
     expect(text).toContain("Confirm the uploaded business licence against an official Chinese registry source.");
     expect(text).not.toMatch(/Obtain a copy of the supplier's official business licen[cs]e/i);
+  });
+
+  it("sanitizes the public report object before web rendering", () => {
+    const report = mockReport({
+      supplier_input: { ...mockReport().supplier_input, chinese_name: "江市有限公司" },
+      resolved_entity: { ...baseResolvedEntity, legal_name_local: "江市有限公司", registered_address: "江市江区3地1141406", business_scope: "技术" },
+      buyer_implications: "UFLPA screening used local: \"江市有限公司\" and export history used GlobalSources multilingual directory مصنع fournisseur.",
+      customer_evidence: [
+        { name: "Customer upload: business_licence.jpg", url: null, retrieved_at: "2026-07-21T17:15:39.000Z", category: "customer_upload" },
+        { name: "Customer upload: proforma_invoice.pdf", url: null, retrieved_at: "2026-07-21T17:15:39.000Z", category: "customer_upload" },
+        { name: "Customer upload: certificate_or_test_report.jpg", url: null, retrieved_at: "2026-07-21T17:15:39.000Z", category: "customer_upload" },
+      ],
+      verified_report_decision: {
+        payment_decision: "PAUSE",
+        entity_payment_consistency: "NOT_VERIFIED",
+        documents_checked: [],
+        why: [],
+        deal_specific_blockers: [],
+        ask_supplier_before_payment: [],
+      },
+    });
+
+    const sanitized = sanitizeBuyerReport(report);
+    const text = JSON.stringify(sanitized);
+    expect(sanitized.supplier_input.chinese_name).toBeNull();
+    expect(sanitized.resolved_entity.legal_name_local).toBeNull();
+    expect(sanitized.verified_report_decision?.documents_checked).toEqual([
+      "Business licence",
+      "Proforma invoice",
+      "1 certificate/test report(s)",
+    ]);
+    expect(text).not.toContain("江市有限公司");
+    expect(text).not.toContain("江市江区3地1141406");
+    expect(text).not.toMatch(/GlobalSources multilingual directory|مصنع|fournisseur/);
   });
 
   it("does not render misleading status labels or orphaned buyer impact levels", async () => {
