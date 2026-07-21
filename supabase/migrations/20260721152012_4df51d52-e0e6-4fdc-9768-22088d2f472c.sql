@@ -1,0 +1,2 @@
+UPDATE public.case_documents SET note='proforma_invoice' WHERE id='174b97f4-8038-4ef3-8ba7-19b43c0ed615';
+UPDATE public.case_documents SET note='certificate_or_test_report' WHERE id='8b1c5ed1-0346-4fd1-8226-e55ceda64f68';
