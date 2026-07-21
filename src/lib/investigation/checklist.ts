@@ -209,6 +209,10 @@ function resultFromFinding(def: ChecklistDefinition, finding: Finding): Checklis
   } else if (classification === "SUPPLIER_CLAIMED" || classification === "NOT_INDEPENDENTLY_VERIFIED") {
     status = status === "NOT_APPLICABLE" ? "NOT_APPLICABLE" : "NOT_VERIFIED";
     confidence = classification === "SUPPLIER_CLAIMED" ? confidence : "low";
+  } else if (/Adverse media/i.test(finding.item) && sourceIsFirecrawl(finding.source_name) && status === "PASS") {
+    status = "NOT_VERIFIED";
+    classification = "NOT_INDEPENDENTLY_VERIFIED";
+    confidence = "low";
   } else if (sourceIsFirecrawl(finding.source_name)) {
     classification = classification === "VERIFIED" ? "INFERRED" : classification;
   } else if (!sourceIsOfficial(finding.source_name) && classification === "VERIFIED") {

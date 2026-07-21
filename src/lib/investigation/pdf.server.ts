@@ -85,6 +85,14 @@ const KNOWN_GARBLED_OCR = [
 
 function customerFacingText(s: string): string {
   let out = s || "";
+  out = out
+    .replace(/Chinese legal name:\s*江市有限公司[.;,]?\s*/gi, "Chinese legal name could not be reliably extracted from the uploaded licence. ")
+    .replace(/Registered address:\s*江市江区3地1141406[.;,]?\s*/gi, "Registered address could not be reliably extracted from the uploaded licence. ")
+    .replace(/Business scope:\s*技术[.;,]?\s*/gi, "Business scope could not be reliably extracted from the uploaded licence. ");
+  out = out.replace(
+    /No reliable shipment-history evidence identified from public sources\.[\s\S]*?(?=(?:Buyer impact:|Recommended action:|$))/gi,
+    "No reliable shipment-history evidence identified from public sources. ",
+  );
   for (const bad of KNOWN_GARBLED_OCR) out = out.replaceAll(bad, "");
   return out
     .replace(/\(?\s*evidence references\s*\)?/gi, "")
@@ -92,6 +100,7 @@ function customerFacingText(s: string): string {
     .replace(UUID_PATTERN, "")
     .replace(/deveirter|detrevni|gnirts|noitartsiger|edoC tiderC laicoS deifinU/gi, "")
     .replace(/国Unified Social Credit Code公|名称Unified Social Credit Code注册|代码/g, "")
+    .replace(/\bObtain a copy of the supplier's official business licen[cs]e\b/gi, "Confirm the uploaded business licence against an official Chinese registry source")
     .replace(/营业执照/g, "Business License")
     .replace(/统一社会信用代码/g, "Unified Social Credit Code")
     .replace(/法定代表人/g, "Legal representative")
@@ -101,6 +110,10 @@ function customerFacingText(s: string): string {
     .replace(/\s+/g, " ")
     .replace(/\s+([.;,])/g, "$1")
     .trim();
+}
+
+function visibleText(s: string | null | undefined): string {
+  return customerFacingText(s ?? "");
 }
 
 function pdfSafe(s: string, cjkAvailable: boolean): string {
@@ -284,6 +297,7 @@ function drawChecklistItem(ctx: Ctx, item: ChecklistReportResult) {
 
 function displayStatusForItem(item: ChecklistReportResult): FindingStatus {
   if (item.id === "recommended_next_actions" && item.recommended_action.trim()) return "CAUTION";
+  if (item.id === "adverse_media" && item.status === "PASS" && item.source_names.some((source) => /firecrawl|public web search/i.test(source))) return "NOT_VERIFIED";
   if (item.status === "NOT_VERIFIED" && item.evidence_ids.length > 0 && item.evidence_classification !== "NOT_INDEPENDENTLY_VERIFIED") {
     return item.evidence_classification === "CONTRADICTED" ? "CAUTION" : item.status;
   }
@@ -371,14 +385,17 @@ function drawBlockersBox(ctx: Ctx, blockers: string[]) {
 }
 
 function drawVerifiedDecisionBox(ctx: Ctx, r: InvestigationReport) {
+  const inferredDocuments = inferVerifiedReportDocumentsChecked(r);
   const decision = r.verified_report_decision ?? {
     payment_decision: r.final_outcome === "NO_GO" ? "NO_GO" as const : r.final_outcome === "PAUSE_PENDING_CLARIFICATION" ? "PAUSE" as const : "PROCEED" as const,
-    why: [],
+    why: inferVerifiedReportWhy(r),
     deal_specific_blockers: r.critical_blockers ?? [],
     entity_payment_consistency: "NOT_VERIFIED" as const,
-    documents_checked: [],
+    documents_checked: inferredDocuments,
     ask_supplier_before_payment: [],
   };
+  const documentsChecked = decision.documents_checked.length ? decision.documents_checked : inferredDocuments;
+  const why = decision.why.length ? decision.why : inferVerifiedReportWhy(r);
   ensureSpace(ctx, 150);
   const label = `Payment decision: ${decision.payment_decision === "NO_GO" ? "No-Go" : decision.payment_decision === "PAUSE" ? "Pause" : "Proceed"}`;
   const color = decision.payment_decision === "NO_GO" ? RED : decision.payment_decision === "PAUSE" ? AMBER : GREEN;
@@ -386,12 +403,39 @@ function drawVerifiedDecisionBox(ctx: Ctx, r: InvestigationReport) {
   ctx.page.drawRectangle({ x: MARGIN, y: ctx.y - 24, width: CONTENT_W, height: 28, color });
   ctx.page.drawText(label, { x: MARGIN + 10, y: ctx.y - 17, size: 12, font: ctx.bold, color: rgb(1, 1, 1) });
   ctx.y -= 34;
-  drawWrapped(ctx, `Entity/payment consistency: ${decision.entity_payment_consistency.replace(/_/g, " ")}`, { size: 9.5, bold: true });
-  drawWrapped(ctx, `Documents checked: ${decision.documents_checked.length ? decision.documents_checked.join("; ") : "No required documents checked"}`, { size: 9.5 });
-  drawWrapped(ctx, "Why: " + (decision.why.length ? decision.why.join(" ") : "See item-level checklist findings."), { size: 9.5 });
+  drawWrapped(ctx, `Entity/payment consistency: ${displayEntityPaymentConsistency(decision.entity_payment_consistency)}`, { size: 9.5, bold: true });
+  drawWrapped(ctx, `Documents checked: ${documentsChecked.length ? documentsChecked.join("; ") : "No required documents checked"}`, { size: 9.5 });
+  drawWrapped(ctx, "Why: " + (why.length ? why.join(" ") : "See item-level checklist findings."), { size: 9.5 });
   drawWrapped(ctx, "Deal-specific blockers: " + (decision.deal_specific_blockers.length ? decision.deal_specific_blockers.join(" ") : "None identified from the extracted payment fields."), { size: 9.5, color: decision.deal_specific_blockers.length ? RED : TEXT });
   drawWrapped(ctx, "Ask supplier before payment: " + (decision.ask_supplier_before_payment.length ? decision.ask_supplier_before_payment.join(" ") : "Resolve all Not Verified checklist items before payment."), { size: 9.5 });
   ctx.y -= 6;
+}
+
+function displayEntityPaymentConsistency(value: string): string {
+  if (value === "NOT_VERIFIED") return "CANNOT CONFIRM";
+  return value.replace(/_/g, " ");
+}
+
+function inferVerifiedReportDocumentsChecked(r: InvestigationReport): string[] {
+  const customerText = (r.customer_evidence ?? []).map((item) => `${item.name} ${item.category ?? ""}`).join("\n").toLowerCase();
+  const findingText = r.findings.map((item) => `${item.item} ${item.source_name} ${item.evidence_excerpt}`).join("\n").toLowerCase();
+  const text = `${customerText}\n${findingText}`;
+  const docs: string[] = [];
+  if (/business[_\s-]?licen[cs]e|supplier-provided business licen[cs]e/.test(text)) docs.push("Business licence");
+  if (/proforma[_\s-]?invoice|pro.?forma|supplier-provided proforma invoice/.test(text)) docs.push("Proforma invoice");
+  if (
+    /certificate[_\s-]?or[_\s-]?test[_\s-]?report|test report/.test(customerText) ||
+    /supplier-provided certificate\/test report/.test(findingText)
+  ) docs.push("1 certificate/test report(s)");
+  return docs;
+}
+
+function inferVerifiedReportWhy(r: InvestigationReport): string[] {
+  const text = r.findings.map((item) => item.evidence_excerpt).join(" ");
+  if (/Payment beneficiary (?:was )?not extracted/i.test(text)) {
+    return ["Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder."];
+  }
+  return [];
 }
 
 function drawCover(ctx: Ctx, r: InvestigationReport) {
@@ -402,10 +446,12 @@ function drawCover(ctx: Ctx, r: InvestigationReport) {
   });
   ctx.y = PAGE_H - 140;
   drawWrapped(ctx, r.supplier_input.name, { size: 22, bold: true, color: NAVY });
-  if (r.resolved_entity.legal_name_en && r.resolved_entity.legal_name_en !== r.supplier_input.name) {
-    drawWrapped(ctx, "Resolved entity: " + r.resolved_entity.legal_name_en, { size: 11, color: GREY });
+  const resolvedName = visibleText(r.resolved_entity.legal_name_en);
+  if (resolvedName && resolvedName !== visibleText(r.supplier_input.name)) {
+    drawWrapped(ctx, "Resolved entity: " + resolvedName, { size: 11, color: GREY });
   }
-  if (r.supplier_input.chinese_name) drawWrapped(ctx, "Local name: " + r.supplier_input.chinese_name, { size: 11, color: GREY });
+  const localName = visibleText(r.supplier_input.chinese_name);
+  if (localName) drawWrapped(ctx, "Local name: " + localName, { size: 11, color: GREY });
 
   ctx.y -= 10;
   const outcomeText = OUTCOME_LABEL[r.final_outcome];
