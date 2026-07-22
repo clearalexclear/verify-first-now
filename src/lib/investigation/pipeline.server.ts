@@ -338,10 +338,12 @@ export async function runInvestigation(
         if (!sourcesQueriedMap.has(k)) sourcesQueriedMap.set(k, { ...s, retrieved_at: new Date().toISOString(), category: "entity_resolution" });
       }
     }
-    // Customer-provided documents
+    // Customer-provided documents — preserve the customer-declared document type (business_licence /
+    // proforma_invoice / certificate_or_test_report) so downstream buyer-facing rendering can infer
+    // "documents checked" from the actual upload type instead of guessing from filenames/text.
     for (const doc of extracted) {
       const k = `upload:${doc.filename}`.toLowerCase();
-      if (!customerEvidenceMap.has(k)) customerEvidenceMap.set(k, { name: `Customer upload: ${doc.filename}`, url: null, retrieved_at: new Date().toISOString(), category: "customer_upload" });
+      if (!customerEvidenceMap.has(k)) customerEvidenceMap.set(k, { name: `Customer upload: ${doc.filename}`, url: null, retrieved_at: new Date().toISOString(), category: doc.category || "customer_upload" });
     }
     // Free connectors (RDAP, CPSC) and paid disabled connectors
     for (const run of connectorRuns) {

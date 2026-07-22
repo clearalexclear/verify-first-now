@@ -89,7 +89,7 @@ function cjkCount(value: string | null | undefined): number {
   return (value?.match(/[\u3400-\u9fff]/g) ?? []).length;
 }
 
-function hasMeaningfulChineseCompanyName(value: string | null | undefined): boolean {
+export function hasMeaningfulChineseCompanyName(value: string | null | undefined): boolean {
   const v = clean(value);
   if (!v) return false;
   if (!/[\u3400-\u9fff]/.test(v)) return true;
@@ -100,7 +100,7 @@ function hasMeaningfulChineseCompanyName(value: string | null | undefined): bool
   return cjkCount(v) >= 8 && cjkCount(beforeSuffix) >= 3;
 }
 
-function hasReliableChineseField(value: string | null | undefined, minCjk = 6): boolean {
+export function hasReliableChineseField(value: string | null | undefined, minCjk = 6): boolean {
   const v = clean(value);
   if (!v) return false;
   if (!/[\u3400-\u9fff]/.test(v)) return true;

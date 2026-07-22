@@ -19,7 +19,8 @@ import {
   type ReportSectionKey,
 } from "./types";
 import { VERIFYFIRST_CJK_FONT_BASE64 } from "./cjk-font-subset";
-import { displaySourceName, MISSING_BENEFICIARY_WORDING, sanitizeBuyerReport, sanitizeBuyerText as customerFacingText } from "./report-sanitizer";
+import { displaySourceName, sanitizeBuyerReport, sanitizeBuyerText as customerFacingText } from "./report-sanitizer";
+import { applyBuyerFacingViewModelToChecklist, buildBuyerFacingReportViewModel } from "./buyer-facing-report";
 
 const NAVY = rgb(0x0f / 255, 0x2a / 255, 0x43 / 255);
 const GREEN = rgb(0x16 / 255, 0xa3 / 255, 0x4a / 255);
@@ -315,57 +316,30 @@ function drawBlockersBox(ctx: Ctx, blockers: string[]) {
 }
 
 function drawVerifiedDecisionBox(ctx: Ctx, r: InvestigationReport) {
-  const inferredDocuments = inferVerifiedReportDocumentsChecked(r);
-  const decision = r.verified_report_decision ?? {
-    payment_decision: r.final_outcome === "NO_GO" ? "NO_GO" as const : r.final_outcome === "PAUSE_PENDING_CLARIFICATION" ? "PAUSE" as const : "PROCEED" as const,
-    why: inferVerifiedReportWhy(r),
-    deal_specific_blockers: r.critical_blockers ?? [],
-    entity_payment_consistency: "NOT_VERIFIED" as const,
-    documents_checked: inferredDocuments,
-    ask_supplier_before_payment: [],
-  };
-  const documentsChecked = decision.documents_checked.length ? decision.documents_checked : inferredDocuments;
-  const why = decision.why.length ? decision.why : inferVerifiedReportWhy(r);
+  const viewModel = buildBuyerFacingReportViewModel(r);
+  const decision = r.verified_report_decision;
+  const paymentDecision = decision?.payment_decision
+    ?? (r.final_outcome === "NO_GO" ? "NO_GO" : r.final_outcome === "PAUSE_PENDING_CLARIFICATION" ? "PAUSE" : "PROCEED");
+  const entityPaymentConsistency = decision?.entity_payment_consistency ?? "NOT_VERIFIED";
+
   ensureSpace(ctx, 150);
-  const label = `Payment decision: ${decision.payment_decision === "NO_GO" ? "No-Go" : decision.payment_decision === "PAUSE" ? "Pause" : "Proceed"}`;
-  const color = decision.payment_decision === "NO_GO" ? RED : decision.payment_decision === "PAUSE" ? AMBER : GREEN;
+  const label = `Payment decision: ${paymentDecision === "NO_GO" ? "No-Go" : paymentDecision === "PAUSE" ? "Pause" : "Proceed"}`;
+  const color = paymentDecision === "NO_GO" ? RED : paymentDecision === "PAUSE" ? AMBER : GREEN;
   ctx.y -= 4;
   ctx.page.drawRectangle({ x: MARGIN, y: ctx.y - 24, width: CONTENT_W, height: 28, color });
   ctx.page.drawText(label, { x: MARGIN + 10, y: ctx.y - 17, size: 12, font: ctx.bold, color: rgb(1, 1, 1) });
   ctx.y -= 34;
-  drawWrapped(ctx, `Entity/payment consistency: ${displayEntityPaymentConsistency(decision.entity_payment_consistency)}`, { size: 9.5, bold: true });
-  drawWrapped(ctx, `Documents checked: ${documentsChecked.length ? documentsChecked.join("; ") : "No required documents checked"}`, { size: 9.5 });
-  drawWrapped(ctx, "Why: " + (why.length ? why.join(" ") : "See item-level checklist findings."), { size: 9.5 });
-  drawWrapped(ctx, "Deal-specific blockers: " + (decision.deal_specific_blockers.length ? decision.deal_specific_blockers.join(" ") : "None identified from the extracted payment fields."), { size: 9.5, color: decision.deal_specific_blockers.length ? RED : TEXT });
-  drawWrapped(ctx, "Ask supplier before payment: " + (decision.ask_supplier_before_payment.length ? decision.ask_supplier_before_payment.join(" ") : "Resolve all Not Verified checklist items before payment."), { size: 9.5 });
+  drawWrapped(ctx, `Entity/payment consistency: ${displayEntityPaymentConsistency(entityPaymentConsistency)}`, { size: 9.5, bold: true });
+  drawWrapped(ctx, viewModel.documentsCheckedLine, { size: 9.5 });
+  drawWrapped(ctx, viewModel.whyLine, { size: 9.5 });
+  drawWrapped(ctx, viewModel.dealSpecificBlockersLine, { size: 9.5, color: (decision?.deal_specific_blockers?.length ?? 0) > 0 ? RED : TEXT });
+  drawWrapped(ctx, viewModel.askSupplierBeforePaymentLine, { size: 9.5 });
   ctx.y -= 6;
 }
 
 function displayEntityPaymentConsistency(value: string): string {
   if (value === "NOT_VERIFIED") return "CANNOT CONFIRM";
   return value.replace(/_/g, " ");
-}
-
-function inferVerifiedReportDocumentsChecked(r: InvestigationReport): string[] {
-  const customerText = (r.customer_evidence ?? []).map((item) => `${item.name} ${item.category ?? ""}`).join("\n").toLowerCase();
-  const findingText = r.findings.map((item) => `${item.item} ${item.source_name} ${item.evidence_excerpt}`).join("\n").toLowerCase();
-  const text = `${customerText}\n${findingText}`;
-  const docs: string[] = [];
-  if (/business[_\s-]?licen[cs]e|supplier-provided business licen[cs]e/.test(text)) docs.push("Business licence");
-  if (/proforma[_\s-]?invoice|pro.?forma|supplier-provided proforma invoice/.test(text)) docs.push("Proforma invoice");
-  if (
-    /certificate[_\s-]?or[_\s-]?test[_\s-]?report|test report/.test(customerText) ||
-    /supplier-provided certificate\/test report/.test(findingText)
-  ) docs.push("1 certificate/test report(s)");
-  return docs;
-}
-
-function inferVerifiedReportWhy(r: InvestigationReport): string[] {
-  const text = r.findings.map((item) => item.evidence_excerpt).join(" ");
-  if (/Payment beneficiary (?:was )?not extracted/i.test(text)) {
-    return [MISSING_BENEFICIARY_WORDING];
-  }
-  return [];
 }
 
 function drawCover(ctx: Ctx, r: InvestigationReport) {
@@ -419,6 +393,12 @@ function drawCover(ctx: Ctx, r: InvestigationReport) {
 
 export async function renderReportPdf(r: InvestigationReport): Promise<Uint8Array> {
   const report = sanitizeBuyerReport(r);
+  // For verified_report analyses, the buyer-facing view model is the single source of truth for
+  // legal-entity and UFLPA local-name text — never the raw resolved_entity/finding fields. This
+  // fully replaces the affected checklist items' explanation text rather than relying on string
+  // sanitization to catch whatever phrasing happened to be used.
+  const viewModel = buildBuyerFacingReportViewModel(report);
+  report.checklist_results = applyBuyerFacingViewModelToChecklist(report.checklist_results ?? [], viewModel);
   const doc = await PDFDocument.create();
   const regular = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
