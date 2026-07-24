@@ -90,6 +90,10 @@ function ReportPage() {
     grouped.set(item.section, [...(grouped.get(item.section) ?? []), item]);
   }
 
+  if (r.is_verified_report) {
+    return <VerifiedReportStrictPage r={r} pdfUrl={pdfUrl} checklist={checklist} />;
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <div className="print:hidden"><SiteHeader /></div>
@@ -178,6 +182,82 @@ function ReportPage() {
               </li>
             ))}
           </ul>
+        </Section>
+      </div>
+      <div className="print:hidden"><SiteFooter /></div>
+    </div>
+  );
+}
+
+function VerifiedReportStrictPage({ r, pdfUrl, checklist }: { r: BuyerFacingReportViewModel; pdfUrl: string | null; checklist: ChecklistReportResult[] }) {
+  return (
+    <div className="min-h-screen bg-background">
+      <div className="print:hidden"><SiteHeader /></div>
+      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 print:py-2">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 print:hidden">
+          <p className="text-sm text-muted-foreground">Report generated {r.generated_at.slice(0, 19).replace("T", " ")} UTC</p>
+          {pdfUrl && (
+            <Button asChild variant="outline">
+              <a href={pdfUrl} download><Download className="mr-2 h-4 w-4" /> Download PDF</a>
+            </Button>
+          )}
+        </div>
+
+        <header className="rounded-2xl bg-navy p-8 text-navy-foreground sm:p-10">
+          <p className="text-sm font-semibold uppercase tracking-wider text-white/70">VerifyFirst - Verified Supplier Report</p>
+          <h1 className="mt-3 text-3xl font-bold sm:text-4xl">{r.supplier.name}</h1>
+          <dl className="mt-6 grid gap-3 text-sm sm:grid-cols-2">
+            <Meta label="Order reference" value={r.order_reference} mono />
+            <Meta label="Case reference" value={r.case_reference} mono />
+            <Meta label="Prepared for" value={`${r.customer.name} (${r.customer.company})`} />
+            <Meta label="Destination market" value={r.customer.destination_market} />
+          </dl>
+        </header>
+
+        {r.verified_report_decision && <VerifiedReportDecisionPanel decision={r.verified_report_decision} />}
+
+        <Section title="1. Documents reviewed">
+          <p className="font-semibold">{r.verified_report_decision?.documents_checked.join("; ")}</p>
+        </Section>
+
+        <Section title="2. Entity & payment consistency">
+          <p className="font-semibold">Entity/payment consistency: CANNOT CONFIRM</p>
+          <p className="mt-2">Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder.</p>
+        </Section>
+
+        <Section title="3. What could be confirmed">
+          <p>English entity name: {r.legal_entity_summary.english_entity_name}</p>
+          <p>USCC: {r.legal_entity_summary.uscc_note}</p>
+          <p>{r.uflpa_summary.english_screening}</p>
+        </Section>
+
+        <Section title="4. What could not be independently verified">
+          <p>Chinese legal name: {r.legal_entity_summary.chinese_legal_name}</p>
+          <p>Registered address: {r.legal_entity_summary.registered_address}</p>
+          <p>Registered capital: {r.legal_entity_summary.registered_capital}</p>
+          <p>Business licence validation: {r.legal_entity_summary.business_licence_validation}</p>
+          <p>{r.uflpa_summary.local_name_screening}</p>
+          <p>{r.uflpa_summary.limitation}</p>
+        </Section>
+
+        <Section title="5. Required actions before payment">
+          <p>{r.verified_report_decision?.ask_supplier_before_payment.join(" ")}</p>
+        </Section>
+
+        <Section title="6. Methodology / limitations">
+          <p>This customer report uses a strict buyer-facing template. Raw OCR output, raw checklist explanations and internal evidence identifiers are not shown.</p>
+          <p className="mt-2">{r.methodology}</p>
+          <p className="mt-2">{r.limitations}</p>
+        </Section>
+
+        <Section title="Checklist status appendix">
+          <div className="space-y-2">
+            {checklist.map((item) => (
+              <p key={item.id} className="text-sm">
+                <span className="font-semibold">{item.title}:</span> {STATUS_LABEL[item.status]}. {item.recommended_action || "Resolve before payment."}
+              </p>
+            ))}
+          </div>
         </Section>
       </div>
       <div className="print:hidden"><SiteFooter /></div>

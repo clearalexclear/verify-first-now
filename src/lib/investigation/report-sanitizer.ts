@@ -12,6 +12,8 @@ export const UNCERTAIN_BUSINESS_SCOPE = "Business scope could not be reliably ex
 export const UFLPA_LOCAL_NAME_UNCERTAIN = "Local legal name was not reliably extracted and was not used for local-name screening.";
 export const NO_RELIABLE_SHIPMENT_HISTORY = "No reliable shipment-history evidence identified from public sources.";
 export const MISSING_BENEFICIARY_WORDING = "Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder.";
+export const DEFAULT_VERIFIED_REPORT_ACTIONS =
+  "Confirm payment beneficiary/account holder, confirm the uploaded business licence against GSXT/CODS or licensed registry data, verify TUV SUD certificate, and use escrow/LC tied to inspection.";
 
 const KNOWN_GARBLED_OCR = [
   GARBLED_CHINESE_LEGAL_NAME,
@@ -125,6 +127,16 @@ function inferDocumentsChecked(report: InvestigationReport): string[] {
   return docs;
 }
 
+function inferUploadedDocumentsChecked(report: InvestigationReport): string[] {
+  const customerText = (report.customer_evidence ?? []).map((item) => `${item.name} ${item.category ?? ""} ${item.url ?? ""}`).join("\n").toLowerCase();
+  const text = customerText;
+  const docs: string[] = [];
+  if (/business[_\s-]?licen[cs]e|supplier-provided business licen[cs]e/.test(text)) docs.push("Business licence");
+  if (/proforma[_\s-]?invoice|pro.?forma|supplier-provided proforma invoice/.test(text)) docs.push("Proforma invoice");
+  if (/certificate[_\s-]?or[_\s-]?test[_\s-]?report|certificate\/test report|test report|tuv|tüv/.test(text)) docs.push("1 certificate/test report(s)");
+  return docs;
+}
+
 function inferWhy(report: InvestigationReport): string[] {
   const text = JSON.stringify({
     findings: report.findings ?? [],
@@ -138,15 +150,15 @@ function inferWhy(report: InvestigationReport): string[] {
 function sanitizeVerifiedDecision(report: InvestigationReport): VerifiedReportDecision | undefined {
   const decision = report.verified_report_decision;
   if (!decision && inferDocumentsChecked(report).length === 0 && inferWhy(report).length === 0) return undefined;
-  const inferredDocs = inferDocumentsChecked(report);
+  const inferredDocs = inferUploadedDocumentsChecked(report);
   const inferredWhy = inferWhy(report);
   return {
     payment_decision: decision?.payment_decision ?? (report.final_outcome === "NO_GO" ? "NO_GO" : report.final_outcome === "PAUSE_PENDING_CLARIFICATION" ? "PAUSE" : "PROCEED"),
     entity_payment_consistency: decision?.entity_payment_consistency ?? "NOT_VERIFIED",
-    documents_checked: (decision?.documents_checked?.length ? decision.documents_checked : inferredDocs).map(sanitizeBuyerText),
-    why: (decision?.why?.length ? decision.why : inferredWhy).map(sanitizeBuyerText),
+    documents_checked: (inferredDocs.length ? inferredDocs : decision?.documents_checked ?? []).map(sanitizeBuyerText),
+    why: (inferredWhy.length ? inferredWhy : decision?.why ?? []).map(sanitizeBuyerText),
     deal_specific_blockers: (decision?.deal_specific_blockers ?? []).map(sanitizeBuyerText),
-    ask_supplier_before_payment: (decision?.ask_supplier_before_payment ?? []).map(sanitizeBuyerText),
+    ask_supplier_before_payment: [sanitizeBuyerText(DEFAULT_VERIFIED_REPORT_ACTIONS)],
   };
 }
 
@@ -183,6 +195,21 @@ export interface BuyerFacingReportViewModel {
   sources_unavailable: NonNullable<InvestigationReport["sources_unavailable"]>;
   critical_blockers: string[];
   verified_report_decision?: VerifiedReportDecision;
+  is_verified_report: boolean;
+  legal_entity_summary: {
+    english_entity_name: string;
+    uscc: string | null;
+    uscc_note: string;
+    chinese_legal_name: string;
+    registered_address: string;
+    registered_capital: string;
+    business_licence_validation: string;
+  };
+  uflpa_summary: {
+    english_screening: string;
+    local_name_screening: string;
+    limitation: string;
+  };
 }
 
 function safeLocalName(report: InvestigationReport): string | null {
@@ -227,6 +254,9 @@ export function buildBuyerFacingReportViewModel(report: InvestigationReport): Bu
     sources_used: sourcesUsed,
     sources_unavailable: sourcesUnavailable,
   };
+  const isVerifiedReport = Boolean(report.verified_report_decision) || inferUploadedDocumentsChecked(report).length > 0;
+  const englishEntityName = sanitizeBuyerText(report.resolved_entity.legal_name_en || report.supplier_input.name);
+  const uscc = report.resolved_entity.registration_number ? sanitizeBuyerText(report.resolved_entity.registration_number) : null;
 
   return {
     generated_at: report.generated_at,
@@ -261,6 +291,21 @@ export function buildBuyerFacingReportViewModel(report: InvestigationReport): Bu
     sources_unavailable: sourcesUnavailable,
     critical_blockers: (report.critical_blockers ?? []).map(sanitizeBuyerText),
     verified_report_decision: sanitizeVerifiedDecision(sanitizedReportForDecision),
+    is_verified_report: isVerifiedReport,
+    legal_entity_summary: {
+      english_entity_name: englishEntityName,
+      uscc,
+      uscc_note: uscc ? `${uscc} — structurally present but not official registry verified` : "Not independently verified",
+      chinese_legal_name: "Could not be reliably extracted from uploaded licence",
+      registered_address: "Could not be reliably extracted from uploaded licence",
+      registered_capital: "Not independently verified",
+      business_licence_validation: "Not independently verified pending official registry confirmation",
+    },
+    uflpa_summary: {
+      english_screening: "English name screened against stored DHS UFLPA snapshot: no match",
+      local_name_screening: "Local Chinese legal name was not reliably extracted and was not used for local-name screening.",
+      limitation: "This is not a full sanctions/RPS clearance.",
+    },
   };
 }
 

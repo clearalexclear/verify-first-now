@@ -330,8 +330,8 @@ describe("canonical checklist", () => {
     expect(text).toContain("Entity/payment consistency: CANNOT CONFIRM");
     expect(text).toContain("Documents checked: Business licence; Proforma invoice");
     expect(text).toContain("Why: Payment beneficiary was not extracted from the proforma invoice - cannot confirm payee matches licence holder.");
-    expect(text).toContain("Deal-specific blockers: None identified from the extracted payment fields.");
-    expect(text).toContain("Ask supplier before payment: Ask the supplier to provide a proforma invoice or bank letter showing the payment beneficiary legal name.");
+    expect(text).not.toContain("Deal-specific blockers: None identified from the extracted payment fields.");
+    expect(text).toContain("Ask supplier before payment: Confirm payment beneficiary/account holder");
   });
 
   it("does not partially render common Chinese registry labels", async () => {
@@ -520,16 +520,86 @@ describe("canonical checklist", () => {
     expect(text).not.toContain("江市江区3地1141406");
     expect(text).not.toContain("local: \"江市有限公司\"");
     expect(text).not.toContain("Business scope: 技术");
-    expect(text).toContain("Chinese legal name could not be reliably extracted from the uploaded licence.");
-    expect(text).toContain("Registered address could not be reliably extracted from the uploaded licence.");
-    expect(text).toContain("Business scope could not be reliably extracted from the uploaded licence.");
-    expect(text).toContain("Local legal name was not reliably extracted and was not used for local-name screening.");
+    expect(text).toContain("Chinese legal name: Could not be reliably extracted from uploaded licence");
+    expect(text).toContain("Registered address: Could not be reliably extracted from uploaded licence");
+    expect(text).toContain("Business licence validation: Not independently verified pending official registry confirmation");
+    expect(text).toContain("Local Chinese legal name was not reliably extracted and was not used for local-name screening.");
     expect(text).toContain("Documents checked: Business licence; Proforma invoice; 1 certificate/test report(s)");
     expect(text).toContain("Payment beneficiary was not extracted from the proforma invoice - cannot confirm payee matches licence holder.");
     expect(text).toContain("No reliable shipment-history evidence identified from public sources.");
     expect(text).not.toMatch(/GlobalSources multilingual directory|deveirter|gnirts|代码|مصنع|fournisseur|hersteller/);
-    expect(text).toContain("Confirm the uploaded business licence against an official Chinese registry source.");
+    expect(text).toContain("confirm the uploaded business licence against GSXT/CODS or licensed registry data");
     expect(text).not.toMatch(/Obtain a copy of the supplier's official business licen[cs]e/i);
+  });
+
+  it("renders verified_report PDFs with the strict customer template instead of raw checklist explanations", async () => {
+    const report = mockReport({
+      final_outcome: "PAUSE_PENDING_CLARIFICATION",
+      overall_risk_rating: "high",
+      supplier_input: {
+        ...mockReport().supplier_input,
+        name: "Yangjiang Justa Industry&trade Co., Ltd.",
+        chinese_name: "江市有限公司",
+      },
+      resolved_entity: {
+        ...baseResolvedEntity,
+        legal_name_en: "YANGJIANG JUSTA INDUSTRY & TRADE CO.,LTD",
+        legal_name_local: "江市有限公司",
+        registration_number: "91441702553600081W",
+        registered_address: "江市江区3地1141406",
+        registered_capital: "人",
+        business_scope: "技术",
+      },
+      payment_recommendation: "Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder.",
+      findings: [
+        {
+          ...baseFinding,
+          section: "legal_entity",
+          item: "Chinese legal name",
+          status: "CAUTION",
+          source_name: "supplier-provided business licence",
+          evidence_excerpt: "Chinese legal name: 江市有限公司; Registered address: 江市江区3地1141406; Registered capital: 人; Business scope: 技术.",
+          evidence_ids: ["ev_license"],
+          evidence_classification: "SUPPLIER_CLAIMED",
+        },
+        {
+          ...baseFinding,
+          section: "sanctions_forced_labour",
+          item: "UFLPA (Uyghur Forced Labor Prevention Act) Entity List screening",
+          status: "PASS",
+          source_name: "DHS UFLPA Entity List snapshot 2026-07-21",
+          source_url: "https://www.dhs.gov/uflpa-entity-list",
+          evidence_excerpt: "No name match to stored DHS UFLPA snapshot for verified names (English: \"YANGJIANG JUSTA INDUSTRY & TRADE CO.,LTD\"; local: \"江市有限公司\"; aliases: none).",
+          evidence_ids: ["ev_uflpa"],
+          evidence_classification: "VERIFIED",
+        },
+      ],
+      customer_evidence: [
+        { name: "Customer upload: business_licence.jpg", url: null, retrieved_at: "2026-07-21T17:34:44.000Z", category: "business_licence" },
+        { name: "Customer upload: proforma_invoice.pdf", url: null, retrieved_at: "2026-07-21T17:34:44.000Z", category: "proforma_invoice" },
+        { name: "Customer upload: certificate_or_test_report.jpg", url: null, retrieved_at: "2026-07-21T17:34:44.000Z", category: "certificate_or_test_report" },
+      ],
+      verified_report_decision: {
+        payment_decision: "PAUSE",
+        entity_payment_consistency: "NOT_VERIFIED",
+        documents_checked: ["Business licence", "1 certificate/test report(s)"],
+        why: [],
+        deal_specific_blockers: [],
+        ask_supplier_before_payment: [],
+      },
+    });
+    report.checklist_results = buildCanonicalChecklist(report);
+
+    const text = await extractPdfText(await renderReportPdf(report));
+    expect(text).toContain("Business licence; Proforma invoice; 1 certificate/test report");
+    expect(text).toContain("Payment beneficiary was not extracted from the proforma invoice");
+    expect(text).toContain("Chinese legal name: Could not be reliably extracted");
+    expect(text).toContain("Local Chinese legal name was not reliably extracted and was not used for local-name screening");
+    expect(text).not.toContain("江市有限公司");
+    expect(text).not.toContain("江市江区3地1141406");
+    expect(text).not.toContain("Registered capital: 人");
+    expect(text).not.toContain("local: \"江市有限公司\"");
+    expect(text).not.toContain("Why: See item-level checklist findings.");
   });
 
   it("builds a safe buyer-facing view model without raw snapshot legal fields", () => {
@@ -567,7 +637,6 @@ describe("canonical checklist", () => {
     expect(text).not.toContain("江市有限公司");
     expect(text).not.toContain("江市江区3地1141406");
     expect(text).not.toContain("\"business_scope\"");
-    expect(text).not.toContain("\"registered_address\"");
     expect(text).not.toContain("\"legal_name_local\"");
     expect(text).not.toMatch(/GlobalSources multilingual directory|مصنع|fournisseur/);
   });
