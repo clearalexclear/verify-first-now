@@ -5,7 +5,7 @@ import { SiteFooter } from "@/components/SiteFooter";
 import { Button } from "@/components/ui/button";
 import { Download, Printer } from "lucide-react";
 import type { ChecklistReportResult, FindingStatus, InvestigationReport, VerifiedReportDecision } from "@/lib/investigation/types";
-import { sanitizeBuyerReport } from "@/lib/investigation/report-sanitizer";
+import { buildBuyerFacingReportViewModel, type BuyerFacingReportViewModel } from "@/lib/investigation/report-sanitizer";
 import {
   CLASSIFICATION_LABEL,
   CONFIDENCE_LABEL,
@@ -52,7 +52,7 @@ const STATUS_STYLE: Record<FindingStatus, string> = {
   NOT_APPLICABLE: "border border-border bg-muted text-muted-foreground",
 };
 
-const OUTCOME_STYLE: Record<InvestigationReport["final_outcome"], string> = {
+const OUTCOME_STYLE: Record<BuyerFacingReportViewModel["final_outcome"], string> = {
   GO: "bg-success text-success-foreground",
   PROCEED_WITH_SAFEGUARDS: "bg-amber-500 text-white",
   PAUSE_PENDING_CLARIFICATION: "bg-amber-600 text-white",
@@ -82,7 +82,7 @@ function ReportPage() {
       </div>
     );
   }
-  const r = sanitizeBuyerReport(rawReport);
+  const r = buildBuyerFacingReportViewModel(rawReport);
 
   const checklist = r.checklist_results ?? [];
   const grouped = new Map<ReportSectionKey, ChecklistReportResult[]>();
@@ -108,11 +108,11 @@ function ReportPage() {
 
         <header className="rounded-2xl bg-navy p-8 text-navy-foreground sm:p-10">
           <p className="text-sm font-semibold uppercase tracking-wider text-white/70">VerifyFirst - independent supplier verification</p>
-          <h1 className="mt-3 text-3xl font-bold sm:text-4xl">{r.supplier_input.name}</h1>
-          {r.resolved_entity.legal_name_en && r.resolved_entity.legal_name_en !== r.supplier_input.name && (
-            <p className="mt-1 text-white/80">Resolved entity: {r.resolved_entity.legal_name_en}</p>
+          <h1 className="mt-3 text-3xl font-bold sm:text-4xl">{r.supplier.name}</h1>
+          {r.supplier.resolved_entity_name && r.supplier.resolved_entity_name !== r.supplier.name && (
+            <p className="mt-1 text-white/80">Resolved entity: {r.supplier.resolved_entity_name}</p>
           )}
-          {r.supplier_input.chinese_name && <p className="mt-1 text-white/80">Local name: {r.supplier_input.chinese_name}</p>}
+          {r.supplier.local_name && <p className="mt-1 text-white/80">Local name: {r.supplier.local_name}</p>}
           <div className={`mt-6 inline-flex flex-col rounded-lg px-6 py-4 ${OUTCOME_STYLE[r.final_outcome]}`}>
             <span className="text-xs font-semibold uppercase tracking-wider opacity-80">Commercial recommendation</span>
             <span className="mt-1 text-2xl font-bold">{OUTCOME_LABEL[r.final_outcome]}</span>
@@ -121,10 +121,10 @@ function ReportPage() {
           <dl className="mt-6 grid gap-3 text-sm sm:grid-cols-2">
             <Meta label="Order reference" value={r.order_reference} mono />
             <Meta label="Case reference" value={r.case_reference} mono />
-            <Meta label="Prepared for" value={`${r.customer_input.name} (${r.customer_input.company})`} />
-            <Meta label="Destination market" value={r.customer_input.destination_market} />
-            <Meta label="Estimated order value" value={humanizeOrderValue(r.customer_input.estimated_order_value)} />
-            <Meta label="Product category" value={r.customer_input.product_category} />
+            <Meta label="Prepared for" value={`${r.customer.name} (${r.customer.company})`} />
+            <Meta label="Destination market" value={r.customer.destination_market} />
+            <Meta label="Estimated order value" value={humanizeOrderValue(r.customer.estimated_order_value)} />
+            <Meta label="Product category" value={r.customer.product_category} />
           </dl>
         </header>
 

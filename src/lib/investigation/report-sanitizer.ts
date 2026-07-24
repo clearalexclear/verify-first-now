@@ -1,4 +1,4 @@
-import type { ChecklistReportResult, Finding, InvestigationReport, VerifiedReportDecision } from "./types";
+import type { ChecklistReportResult, FinalOutcome, Finding, InvestigationReport, VerifiedReportDecision } from "./types";
 
 const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
 
@@ -150,6 +150,120 @@ function sanitizeVerifiedDecision(report: InvestigationReport): VerifiedReportDe
   };
 }
 
+export interface BuyerFacingReportViewModel {
+  generated_at: string;
+  order_reference: string;
+  case_reference: string;
+  supplier: {
+    name: string;
+    resolved_entity_name: string | null;
+    local_name: string | null;
+  };
+  customer: {
+    name: string;
+    company: string;
+    destination_market: string;
+    estimated_order_value: string;
+    product_category: string;
+  };
+  final_outcome: FinalOutcome;
+  overall_risk_rating: InvestigationReport["overall_risk_rating"];
+  checklist_results: ChecklistReportResult[];
+  executive_summary: string;
+  buyer_implications: string;
+  recommended_safeguards: string;
+  payment_recommendation: string;
+  inspection_recommendation: string;
+  testing_recommendation: string;
+  methodology: string;
+  limitations: string;
+  sources_used: InvestigationReport["sources_used"];
+  sources_queried: NonNullable<InvestigationReport["sources_queried"]>;
+  customer_evidence: NonNullable<InvestigationReport["customer_evidence"]>;
+  sources_unavailable: NonNullable<InvestigationReport["sources_unavailable"]>;
+  critical_blockers: string[];
+  verified_report_decision?: VerifiedReportDecision;
+}
+
+function safeLocalName(report: InvestigationReport): string | null {
+  const candidates = [
+    report.supplier_input.chinese_name,
+    report.resolved_entity.legal_name_local,
+  ];
+  for (const candidate of candidates) {
+    if (!candidate || isUnreliableChineseExtraction(candidate)) continue;
+    const clean = sanitizeBuyerText(candidate);
+    if (clean) return clean;
+  }
+  return null;
+}
+
+export function buildBuyerFacingReportViewModel(report: InvestigationReport): BuyerFacingReportViewModel {
+  const findings = (report.findings ?? []).map(sanitizeFinding);
+  const checklist = (report.checklist_results ?? []).map(sanitizeChecklistItem);
+  const customerEvidence = (report.customer_evidence ?? []).map((source) => ({
+    ...source,
+    name: sanitizeBuyerText(source.name),
+  }));
+  const sourcesQueried = (report.sources_queried ?? []).map((source) => ({
+    ...source,
+    name: displaySourceName(source.name, source.url),
+  }));
+  const sourcesUsed = (report.sources_used ?? []).map((source) => ({
+    ...source,
+    name: displaySourceName(source.name, source.url),
+  }));
+  const sourcesUnavailable = (report.sources_unavailable ?? []).map((source) => ({
+    ...source,
+    name: sanitizeBuyerText(source.name),
+    reason: sanitizeBuyerText(source.reason),
+  }));
+  const sanitizedReportForDecision: InvestigationReport = {
+    ...report,
+    findings,
+    checklist_results: checklist,
+    customer_evidence: customerEvidence,
+    sources_queried: sourcesQueried,
+    sources_used: sourcesUsed,
+    sources_unavailable: sourcesUnavailable,
+  };
+
+  return {
+    generated_at: report.generated_at,
+    order_reference: sanitizeBuyerText(report.order_reference),
+    case_reference: sanitizeBuyerText(report.case_reference),
+    supplier: {
+      name: sanitizeBuyerText(report.supplier_input.name),
+      resolved_entity_name: report.resolved_entity.legal_name_en ? sanitizeBuyerText(report.resolved_entity.legal_name_en) : null,
+      local_name: safeLocalName(report),
+    },
+    customer: {
+      name: sanitizeBuyerText(report.customer_input.name),
+      company: sanitizeBuyerText(report.customer_input.company),
+      destination_market: sanitizeBuyerText(report.customer_input.destination_market),
+      estimated_order_value: sanitizeBuyerText(report.customer_input.estimated_order_value),
+      product_category: sanitizeBuyerText(report.customer_input.product_category),
+    },
+    final_outcome: report.final_outcome,
+    overall_risk_rating: report.overall_risk_rating,
+    checklist_results: checklist,
+    executive_summary: sanitizeBuyerText(report.executive_summary),
+    buyer_implications: sanitizeBuyerText(report.buyer_implications),
+    recommended_safeguards: sanitizeBuyerText(report.recommended_safeguards),
+    payment_recommendation: sanitizeBuyerText(report.payment_recommendation),
+    inspection_recommendation: sanitizeBuyerText(report.inspection_recommendation),
+    testing_recommendation: sanitizeBuyerText(report.testing_recommendation),
+    methodology: sanitizeBuyerText(report.methodology),
+    limitations: sanitizeBuyerText(report.limitations),
+    sources_used: sourcesUsed,
+    sources_queried: sourcesQueried,
+    customer_evidence: customerEvidence,
+    sources_unavailable: sourcesUnavailable,
+    critical_blockers: (report.critical_blockers ?? []).map(sanitizeBuyerText),
+    verified_report_decision: sanitizeVerifiedDecision(sanitizedReportForDecision),
+  };
+}
+
 function sanitizeFinding(finding: Finding): Finding {
   const sanitized: Finding = {
     ...finding,
@@ -210,36 +324,26 @@ function sanitizeUnknown(value: unknown): unknown {
 }
 
 export function sanitizeBuyerReport(report: InvestigationReport): InvestigationReport {
+  const view = buildBuyerFacingReportViewModel(report);
   const cloned = sanitizeUnknown(report) as InvestigationReport;
   cloned.supplier_input = {
     ...cloned.supplier_input,
-    chinese_name: isUnreliableChineseExtraction(report.supplier_input.chinese_name) ? null : cloned.supplier_input.chinese_name,
+    name: view.supplier.name,
+    chinese_name: view.supplier.local_name,
   };
   cloned.resolved_entity = {
     ...cloned.resolved_entity,
-    legal_name_local: isUnreliableChineseExtraction(report.resolved_entity.legal_name_local) ? null : cloned.resolved_entity.legal_name_local,
-    registered_address: isUnreliableChineseExtraction(report.resolved_entity.registered_address) ? null : cloned.resolved_entity.registered_address,
-    business_scope: isUnreliableChineseExtraction(report.resolved_entity.business_scope) ? null : cloned.resolved_entity.business_scope,
+    legal_name_en: view.supplier.resolved_entity_name,
+    legal_name_local: view.supplier.local_name,
+    registered_address: null,
+    business_scope: null,
   };
   cloned.findings = (report.findings ?? []).map(sanitizeFinding);
-  cloned.checklist_results = (report.checklist_results ?? []).map(sanitizeChecklistItem);
-  cloned.sources_used = (report.sources_used ?? []).map((source) => ({
-    ...source,
-    name: displaySourceName(source.name, source.url),
-  }));
-  cloned.sources_queried = (report.sources_queried ?? []).map((source) => ({
-    ...source,
-    name: displaySourceName(source.name, source.url),
-  }));
-  cloned.customer_evidence = (report.customer_evidence ?? []).map((source) => ({
-    ...source,
-    name: sanitizeBuyerText(source.name),
-  }));
-  cloned.sources_unavailable = (report.sources_unavailable ?? []).map((source) => ({
-    ...source,
-    name: sanitizeBuyerText(source.name),
-    reason: sanitizeBuyerText(source.reason),
-  }));
-  cloned.verified_report_decision = sanitizeVerifiedDecision(report);
+  cloned.checklist_results = view.checklist_results;
+  cloned.sources_used = view.sources_used;
+  cloned.sources_queried = view.sources_queried;
+  cloned.customer_evidence = view.customer_evidence;
+  cloned.sources_unavailable = view.sources_unavailable;
+  cloned.verified_report_decision = view.verified_report_decision;
   return cloned;
 }
