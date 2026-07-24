@@ -15,11 +15,17 @@ import {
   humanizeOrderValue,
   type ChecklistReportResult,
   type FindingStatus,
-  type InvestigationReport,
   type ReportSectionKey,
 } from "./types";
 import { VERIFYFIRST_CJK_FONT_BASE64 } from "./cjk-font-subset";
-import { displaySourceName, MISSING_BENEFICIARY_WORDING, sanitizeBuyerReport, sanitizeBuyerText as customerFacingText } from "./report-sanitizer";
+import {
+  buildBuyerFacingReportViewModel,
+  displaySourceName,
+  MISSING_BENEFICIARY_WORDING,
+  sanitizeBuyerText as customerFacingText,
+  type BuyerFacingReportViewModel,
+} from "./report-sanitizer";
+import type { InvestigationReport } from "./types";
 
 const NAVY = rgb(0x0f / 255, 0x2a / 255, 0x43 / 255);
 const GREEN = rgb(0x16 / 255, 0xa3 / 255, 0x4a / 255);
@@ -172,7 +178,7 @@ function shortSourceLabel(name: string, url: string | null): string {
   return displaySourceName(name, url);
 }
 
-function checklistForReport(r: InvestigationReport): ChecklistReportResult[] {
+function checklistForReport(r: BuyerFacingReportViewModel): ChecklistReportResult[] {
   return r.checklist_results ?? [];
 }
 
@@ -314,7 +320,7 @@ function drawBlockersBox(ctx: Ctx, blockers: string[]) {
   ctx.y -= 6;
 }
 
-function drawVerifiedDecisionBox(ctx: Ctx, r: InvestigationReport) {
+function drawVerifiedDecisionBox(ctx: Ctx, r: BuyerFacingReportViewModel) {
   const inferredDocuments = inferVerifiedReportDocumentsChecked(r);
   const decision = r.verified_report_decision ?? {
     payment_decision: r.final_outcome === "NO_GO" ? "NO_GO" as const : r.final_outcome === "PAUSE_PENDING_CLARIFICATION" ? "PAUSE" as const : "PROCEED" as const,
@@ -346,41 +352,45 @@ function displayEntityPaymentConsistency(value: string): string {
   return value.replace(/_/g, " ");
 }
 
-function inferVerifiedReportDocumentsChecked(r: InvestigationReport): string[] {
-  const customerText = (r.customer_evidence ?? []).map((item) => `${item.name} ${item.category ?? ""}`).join("\n").toLowerCase();
-  const findingText = r.findings.map((item) => `${item.item} ${item.source_name} ${item.evidence_excerpt}`).join("\n").toLowerCase();
-  const text = `${customerText}\n${findingText}`;
+function inferVerifiedReportDocumentsChecked(r: BuyerFacingReportViewModel): string[] {
+  const text = JSON.stringify({
+    customer_evidence: r.customer_evidence,
+    checklist_results: r.checklist_results,
+    sources_used: r.sources_used,
+  }).toLowerCase();
   const docs: string[] = [];
   if (/business[_\s-]?licen[cs]e|supplier-provided business licen[cs]e/.test(text)) docs.push("Business licence");
   if (/proforma[_\s-]?invoice|pro.?forma|supplier-provided proforma invoice/.test(text)) docs.push("Proforma invoice");
   if (
-    /certificate[_\s-]?or[_\s-]?test[_\s-]?report|test report/.test(customerText) ||
-    /supplier-provided certificate\/test report/.test(findingText)
+    /certificate[_\s-]?or[_\s-]?test[_\s-]?report|certificate\/test report|test report/.test(text)
   ) docs.push("1 certificate/test report(s)");
   return docs;
 }
 
-function inferVerifiedReportWhy(r: InvestigationReport): string[] {
-  const text = r.findings.map((item) => item.evidence_excerpt).join(" ");
+function inferVerifiedReportWhy(r: BuyerFacingReportViewModel): string[] {
+  const text = JSON.stringify({
+    checklist_results: r.checklist_results,
+    payment_recommendation: r.payment_recommendation,
+  });
   if (/Payment beneficiary (?:was )?not extracted/i.test(text)) {
     return [MISSING_BENEFICIARY_WORDING];
   }
   return [];
 }
 
-function drawCover(ctx: Ctx, r: InvestigationReport) {
+function drawCover(ctx: Ctx, r: BuyerFacingReportViewModel) {
   ctx.page.drawRectangle({ x: 0, y: PAGE_H - 110, width: PAGE_W, height: 110, color: NAVY });
   ctx.page.drawText("VerifyFirst", { x: MARGIN, y: PAGE_H - 55, size: 26, font: ctx.bold, color: rgb(1, 1, 1) });
   ctx.page.drawText("Independent supplier verification report", {
     x: MARGIN, y: PAGE_H - 80, size: 11, font: ctx.regular, color: rgb(0.85, 0.9, 0.95),
   });
   ctx.y = PAGE_H - 140;
-  drawWrapped(ctx, r.supplier_input.name, { size: 22, bold: true, color: NAVY });
-  const resolvedName = visibleText(r.resolved_entity.legal_name_en);
-  if (resolvedName && resolvedName !== visibleText(r.supplier_input.name)) {
+  drawWrapped(ctx, r.supplier.name, { size: 22, bold: true, color: NAVY });
+  const resolvedName = visibleText(r.supplier.resolved_entity_name);
+  if (resolvedName && resolvedName !== visibleText(r.supplier.name)) {
     drawWrapped(ctx, "Resolved entity: " + resolvedName, { size: 11, color: GREY });
   }
-  const localName = visibleText(r.supplier_input.chinese_name);
+  const localName = visibleText(r.supplier.local_name);
   if (localName) drawWrapped(ctx, "Local name: " + localName, { size: 11, color: GREY });
 
   ctx.y -= 10;
@@ -404,9 +414,9 @@ function drawCover(ctx: Ctx, r: InvestigationReport) {
 
   drawWrapped(ctx, "Order reference: " + r.order_reference, { size: 10, bold: true });
   drawWrapped(ctx, "Case reference: " + r.case_reference, { size: 10 });
-  drawWrapped(ctx, "Prepared for: " + r.customer_input.name + " (" + r.customer_input.company + ")", { size: 10 });
-  drawWrapped(ctx, "Destination market: " + r.customer_input.destination_market, { size: 10 });
-  drawWrapped(ctx, "Estimated order value: " + humanizeOrderValue(r.customer_input.estimated_order_value), { size: 10 });
+  drawWrapped(ctx, "Prepared for: " + r.customer.name + " (" + r.customer.company + ")", { size: 10 });
+  drawWrapped(ctx, "Destination market: " + r.customer.destination_market, { size: 10 });
+  drawWrapped(ctx, "Estimated order value: " + humanizeOrderValue(r.customer.estimated_order_value), { size: 10 });
   drawWrapped(ctx, "Report generated: " + r.generated_at.slice(0, 19).replace("T", " ") + " UTC", { size: 10, gap: 10 });
 
   drawStatusSummary(ctx, checklistForReport(r));
@@ -418,7 +428,7 @@ function drawCover(ctx: Ctx, r: InvestigationReport) {
 }
 
 export async function renderReportPdf(r: InvestigationReport): Promise<Uint8Array> {
-  const report = sanitizeBuyerReport(r);
+  const report = buildBuyerFacingReportViewModel(r);
   const doc = await PDFDocument.create();
   const regular = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
