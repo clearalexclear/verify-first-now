@@ -7,6 +7,7 @@ import { verifyStripeSignature } from "../lib/payments/stripe-webhook.server";
 import { buildCanonicalChecklist, CANONICAL_CHECKLIST, CHECKLIST_COUNT, detectChecklistContradictions, applyOutcomeGating } from "../lib/investigation/checklist";
 import { renderReportPdf } from "../lib/investigation/pdf.server";
 import { buildBuyerFacingReportViewModel } from "../lib/investigation/report-sanitizer";
+import { getReportByShareTokenImpl } from "../lib/investigation/investigation.functions";
 import type { Finding, InvestigationReport, ResolvedEntity } from "../lib/investigation/types";
 import { getDocument, VerbosityLevel } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { fileURLToPath } from "node:url";
@@ -600,6 +601,98 @@ describe("canonical checklist", () => {
     expect(text).not.toContain("Registered capital: 人");
     expect(text).not.toContain("local: \"江市有限公司\"");
     expect(text).not.toContain("Why: See item-level checklist findings.");
+  });
+
+  it("refreshes the exact PDF artifact signed for the /r share-token download button", async () => {
+    const report = mockReport({
+      final_outcome: "PAUSE_PENDING_CLARIFICATION",
+      overall_risk_rating: "high",
+      supplier_input: {
+        ...mockReport().supplier_input,
+        name: "Yangjiang Justa Industry&trade Co., Ltd.",
+        chinese_name: "江市有限公司",
+      },
+      resolved_entity: {
+        ...baseResolvedEntity,
+        legal_name_en: "YANGJIANG JUSTA INDUSTRY & TRADE CO.,LTD",
+        legal_name_local: "江市有限公司",
+        registration_number: "91441702553600081W",
+        registered_address: "江市江区3地1141406",
+        registered_capital: "人",
+        business_scope: "技术",
+      },
+      payment_recommendation: "Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder.",
+      findings: [{
+        ...baseFinding,
+        section: "sanctions_forced_labour",
+        item: "UFLPA (Uyghur Forced Labor Prevention Act) Entity List screening",
+        status: "PASS",
+        evidence_excerpt: "No name match to stored DHS UFLPA snapshot for verified names (English: \"YANGJIANG JUSTA INDUSTRY & TRADE CO.,LTD\"; local: \"江市有限公司\"; aliases: none).",
+        evidence_ids: ["ev_uflpa"],
+        evidence_classification: "VERIFIED",
+      }],
+      customer_evidence: [
+        { name: "Customer upload: business_licence.jpg", url: null, retrieved_at: "2026-07-21T17:34:44.000Z", category: "business_licence" },
+        { name: "Customer upload: proforma_invoice.pdf", url: null, retrieved_at: "2026-07-21T17:34:44.000Z", category: "proforma_invoice" },
+        { name: "Customer upload: certificate_or_test_report.jpg", url: null, retrieved_at: "2026-07-21T17:34:44.000Z", category: "certificate_or_test_report" },
+      ],
+      verified_report_decision: {
+        payment_decision: "PAUSE",
+        entity_payment_consistency: "NOT_VERIFIED",
+        documents_checked: ["Business licence", "1 certificate/test report(s)"],
+        why: [],
+        deal_specific_blockers: [],
+        ask_supplier_before_payment: [],
+      },
+    });
+    report.checklist_results = buildCanonicalChecklist(report);
+    const uploaded = new Map<string, Uint8Array>();
+    const rv = {
+      id: "rv_1018",
+      case_id: "case_1018",
+      snapshot: report,
+      pdf_storage_path: "cases/case_1018/rv_1018.pdf",
+      finalised_at: "2026-07-21T17:34:44.000Z",
+      supplier_cases: { package: "verified_report" },
+    };
+    const db = {
+      from: (table: string) => {
+        if (table !== "report_versions") throw new Error(`unexpected table ${table}`);
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({ data: rv }),
+            }),
+          }),
+          update: () => ({
+            eq: async () => ({ error: null }),
+          }),
+        };
+      },
+      storage: {
+        from: (bucket: string) => {
+          if (bucket !== "reports") throw new Error(`unexpected bucket ${bucket}`);
+          return {
+            upload: async (path: string, body: Uint8Array) => {
+              uploaded.set(path, body);
+              return { error: null };
+            },
+            createSignedUrl: async (path: string) => ({ data: { signedUrl: `https://signed.example/${path}` } }),
+          };
+        },
+      },
+    };
+
+    const result = await getReportByShareTokenImpl({ shareToken: "share_token_12345678901234567890", db });
+    expect(result.pdfUrl).toBe("https://signed.example/cases/case_1018/rv_1018.pdf");
+    const bytes = uploaded.get("cases/case_1018/rv_1018.pdf");
+    expect(bytes).toBeTruthy();
+    const text = await extractPdfText(bytes!);
+    expect(text).not.toContain("Legal-entity verification");
+    expect(text).not.toContain("Ownership and related companies");
+    expect(text).not.toContain("Chinese legal name: 江市有限公司");
+    expect(text).toContain("Business licence; Proforma invoice; 1 certificate/test report");
+    expect(text).toContain("Payment beneficiary was not extracted from the proforma invoice");
   });
 
   it("builds a safe buyer-facing view model without raw snapshot legal fields", () => {

@@ -3,6 +3,7 @@
 
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import type { InvestigationReport } from "./types";
 
 const tokenInput = z.object({ token: z.string().min(10).max(128) });
 
@@ -64,26 +65,57 @@ export const getOrderStatusByToken = createServerFn({ method: "POST" })
     };
   });
 
+function isVerifiedReportPackage(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some((item) => isVerifiedReportPackage(item));
+  if (value && typeof value === "object" && "package" in value) return (value as any).package === "verified_report";
+  return value === "verified_report";
+}
+
+export async function getReportByShareTokenImpl(args: {
+  shareToken: string;
+  db: any;
+}): Promise<{ reportJson: string; pdfUrl: string | null; finalised_at: string | null }> {
+  const { data: rv } = await args.db
+      .from("report_versions")
+      .select("id, case_id, snapshot, pdf_storage_path, finalised_at, supplier_cases(package)")
+      .eq("share_token", args.shareToken)
+      .maybeSingle();
+  if (!rv) throw new Error("This report link is invalid or has expired.");
+
+  const snapshot = (rv.snapshot ?? null) as InvestigationReport | null;
+  const forceVerifiedReport = isVerifiedReportPackage((rv as any).supplier_cases);
+  let pdfPath = (rv.pdf_storage_path as string | null) ?? null;
+
+  if (snapshot && (forceVerifiedReport || snapshot.verified_report_decision || (snapshot.customer_evidence ?? []).length > 0)) {
+    const { renderReportPdf } = await import("./pdf.server");
+    const pdfBytes = await renderReportPdf(snapshot, { forceVerifiedReport });
+    pdfPath = pdfPath || `cases/${rv.case_id ?? "shared"}/${rv.id}.pdf`;
+    const { error: upErr } = await args.db.storage
+      .from("reports")
+      .upload(pdfPath, pdfBytes, { contentType: "application/pdf", upsert: true });
+    if (upErr) throw new Error("Could not refresh customer PDF: " + upErr.message);
+    if (pdfPath !== rv.pdf_storage_path) {
+      await args.db.from("report_versions").update({ pdf_storage_path: pdfPath }).eq("id", rv.id);
+    }
+  }
+
+  let pdfUrl: string | null = null;
+  if (pdfPath) {
+    const { data: signed } = await args.db.storage
+      .from("reports")
+      .createSignedUrl(pdfPath, 60 * 60 * 24);
+    pdfUrl = signed?.signedUrl ?? null;
+  }
+  return {
+    reportJson: JSON.stringify(snapshot),
+    pdfUrl,
+    finalised_at: rv.finalised_at as string | null,
+  };
+}
+
 export const getReportByShareToken = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => z.object({ shareToken: z.string().min(20).max(128) }).parse(i))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: rv } = await supabaseAdmin
-      .from("report_versions")
-      .select("id, snapshot, pdf_storage_path, finalised_at")
-      .eq("share_token", data.shareToken)
-      .maybeSingle();
-    if (!rv) throw new Error("This report link is invalid or has expired.");
-    let pdfUrl: string | null = null;
-    if (rv.pdf_storage_path) {
-      const { data: signed } = await supabaseAdmin.storage
-        .from("reports")
-        .createSignedUrl(rv.pdf_storage_path as string, 60 * 60 * 24);
-      pdfUrl = signed?.signedUrl ?? null;
-    }
-    return {
-      reportJson: JSON.stringify(rv.snapshot ?? null),
-      pdfUrl,
-      finalised_at: rv.finalised_at as string | null,
-    };
+    return getReportByShareTokenImpl({ shareToken: data.shareToken, db: supabaseAdmin });
   });
