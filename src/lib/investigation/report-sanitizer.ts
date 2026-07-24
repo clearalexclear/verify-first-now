@@ -225,7 +225,7 @@ function safeLocalName(report: InvestigationReport): string | null {
   return null;
 }
 
-export function buildBuyerFacingReportViewModel(report: InvestigationReport): BuyerFacingReportViewModel {
+export function buildBuyerFacingReportViewModel(report: InvestigationReport, opts: { forceVerifiedReport?: boolean } = {}): BuyerFacingReportViewModel {
   const findings = (report.findings ?? []).map(sanitizeFinding);
   const checklist = (report.checklist_results ?? []).map(sanitizeChecklistItem);
   const customerEvidence = (report.customer_evidence ?? []).map((source) => ({
@@ -254,7 +254,7 @@ export function buildBuyerFacingReportViewModel(report: InvestigationReport): Bu
     sources_used: sourcesUsed,
     sources_unavailable: sourcesUnavailable,
   };
-  const isVerifiedReport = Boolean(report.verified_report_decision) || inferUploadedDocumentsChecked(report).length > 0;
+  const isVerifiedReport = Boolean(opts.forceVerifiedReport) || Boolean(report.verified_report_decision) || inferUploadedDocumentsChecked(report).length > 0;
   const englishEntityName = sanitizeBuyerText(report.resolved_entity.legal_name_en || report.supplier_input.name);
   const uscc = report.resolved_entity.registration_number ? sanitizeBuyerText(report.resolved_entity.registration_number) : null;
 

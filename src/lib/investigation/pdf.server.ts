@@ -496,8 +496,8 @@ function drawStrictVerifiedReport(ctx: Ctx, r: BuyerFacingReportViewModel) {
   drawStrictStatusTable(ctx, r);
 }
 
-export async function renderReportPdf(r: InvestigationReport): Promise<Uint8Array> {
-  const report = buildBuyerFacingReportViewModel(r);
+export async function renderReportPdf(r: InvestigationReport, opts: { forceVerifiedReport?: boolean } = {}): Promise<Uint8Array> {
+  const report = buildBuyerFacingReportViewModel(r, opts);
   const doc = await PDFDocument.create();
   const regular = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
