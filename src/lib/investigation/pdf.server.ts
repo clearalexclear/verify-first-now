@@ -22,6 +22,7 @@ import {
   buildBuyerFacingReportViewModel,
   displaySourceName,
   MISSING_BENEFICIARY_WORDING,
+  NO_RELIABLE_SHIPMENT_HISTORY,
   sanitizeBuyerText as customerFacingText,
   type BuyerFacingReportViewModel,
 } from "./report-sanitizer";
@@ -427,6 +428,74 @@ function drawCover(ctx: Ctx, r: BuyerFacingReportViewModel) {
   drawWrapped(ctx, r.executive_summary || "(not generated)", { gap: 4 });
 }
 
+function drawStrictVerifiedCover(ctx: Ctx, r: BuyerFacingReportViewModel) {
+  ctx.page.drawRectangle({ x: 0, y: PAGE_H - 110, width: PAGE_W, height: 110, color: NAVY });
+  ctx.page.drawText("VerifyFirst", { x: MARGIN, y: PAGE_H - 55, size: 26, font: ctx.bold, color: rgb(1, 1, 1) });
+  ctx.page.drawText("Verified Supplier Report", {
+    x: MARGIN, y: PAGE_H - 80, size: 11, font: ctx.regular, color: rgb(0.85, 0.9, 0.95),
+  });
+  ctx.y = PAGE_H - 140;
+  drawWrapped(ctx, r.supplier.name, { size: 20, bold: true, color: NAVY });
+  drawWrapped(ctx, "Order reference: " + r.order_reference, { size: 10, bold: true });
+  drawWrapped(ctx, "Case reference: " + r.case_reference, { size: 10 });
+  drawWrapped(ctx, "Prepared for: " + r.customer.name + " (" + r.customer.company + ")", { size: 10 });
+  drawWrapped(ctx, "Destination market: " + r.customer.destination_market, { size: 10 });
+  drawWrapped(ctx, "Report generated: " + r.generated_at.slice(0, 19).replace("T", " ") + " UTC", { size: 10, gap: 10 });
+
+  const decision = r.verified_report_decision;
+  drawSectionHeader(ctx, "Decision summary");
+  drawWrapped(ctx, `Payment decision: ${decision?.payment_decision === "NO_GO" ? "No-Go" : decision?.payment_decision === "PROCEED" ? "Proceed" : "Pause"}`, { size: 13, bold: true, color: AMBER });
+  drawWrapped(ctx, `Entity/payment consistency: ${displayEntityPaymentConsistency(decision?.entity_payment_consistency ?? "NOT_VERIFIED")}`, { size: 10, bold: true });
+  drawWrapped(ctx, `Documents checked: ${(decision?.documents_checked ?? inferVerifiedReportDocumentsChecked(r)).join("; ")}`, { size: 10 });
+  drawWrapped(ctx, `Why: ${(decision?.why.length ? decision.why : inferVerifiedReportWhy(r)).join(" ")}`, { size: 10 });
+  drawWrapped(ctx, `Ask supplier before payment: ${(decision?.ask_supplier_before_payment.length ? decision.ask_supplier_before_payment : ["Confirm payment beneficiary/account holder, confirm the uploaded business licence against GSXT/CODS or licensed registry data, verify TUV SUD certificate, and use escrow/LC tied to inspection."]).join(" ")}`, { size: 10 });
+}
+
+function drawStrictStatusTable(ctx: Ctx, r: BuyerFacingReportViewModel) {
+  drawSectionHeader(ctx, "Checklist status appendix");
+  for (const item of checklistForReport(r)) {
+    ensureSpace(ctx, 30);
+    drawWrapped(ctx, `${item.title}: ${STATUS_LABEL[displayStatusForItem(item)]}. ${item.recommended_action || "Resolve before payment."}`, { size: 8.5 });
+  }
+}
+
+function drawStrictVerifiedReport(ctx: Ctx, r: BuyerFacingReportViewModel) {
+  drawStrictVerifiedCover(ctx, r);
+
+  newPage(ctx);
+  drawSectionHeader(ctx, "1. Documents reviewed");
+  drawWrapped(ctx, (r.verified_report_decision?.documents_checked ?? inferVerifiedReportDocumentsChecked(r)).join("; "), { size: 10, bold: true });
+  drawWrapped(ctx, "Business licence and proforma invoice were treated as required buyer-provided documents. Certificate/test report evidence is reviewed as supporting evidence only.");
+
+  drawSectionHeader(ctx, "2. Entity & payment consistency");
+  drawWrapped(ctx, `Entity/payment consistency: ${displayEntityPaymentConsistency(r.verified_report_decision?.entity_payment_consistency ?? "NOT_VERIFIED")}`, { bold: true });
+  drawWrapped(ctx, MISSING_BENEFICIARY_WORDING);
+
+  drawSectionHeader(ctx, "3. What could be confirmed");
+  drawWrapped(ctx, `English entity name: ${r.legal_entity_summary.english_entity_name}`);
+  drawWrapped(ctx, `USCC: ${r.legal_entity_summary.uscc_note}`);
+  drawWrapped(ctx, r.uflpa_summary.english_screening);
+
+  drawSectionHeader(ctx, "4. What could not be independently verified");
+  drawWrapped(ctx, `Chinese legal name: ${r.legal_entity_summary.chinese_legal_name}`);
+  drawWrapped(ctx, `Registered address: ${r.legal_entity_summary.registered_address}`);
+  drawWrapped(ctx, `Registered capital: ${r.legal_entity_summary.registered_capital}`);
+  drawWrapped(ctx, `Business licence validation: ${r.legal_entity_summary.business_licence_validation}`);
+  drawWrapped(ctx, r.uflpa_summary.local_name_screening);
+  drawWrapped(ctx, r.uflpa_summary.limitation);
+  drawWrapped(ctx, NO_RELIABLE_SHIPMENT_HISTORY);
+
+  drawSectionHeader(ctx, "5. Required actions before payment");
+  drawWrapped(ctx, (r.verified_report_decision?.ask_supplier_before_payment ?? []).join(" ") || "Confirm payment beneficiary/account holder, confirm the uploaded business licence against GSXT/CODS or licensed registry data, verify TUV SUD certificate, and use escrow/LC tied to inspection.");
+
+  newPage(ctx);
+  drawSectionHeader(ctx, "6. Methodology / limitations");
+  drawWrapped(ctx, "This customer PDF uses a strict buyer-facing template. Raw OCR output, raw checklist explanations and internal evidence identifiers are not rendered in the verified-report PDF.");
+  drawWrapped(ctx, r.methodology);
+  drawWrapped(ctx, r.limitations);
+  drawStrictStatusTable(ctx, r);
+}
+
 export async function renderReportPdf(r: InvestigationReport): Promise<Uint8Array> {
   const report = buildBuyerFacingReportViewModel(r);
   const doc = await PDFDocument.create();
@@ -443,72 +512,78 @@ export async function renderReportPdf(r: InvestigationReport): Promise<Uint8Arra
     footnotes: { order: [], index: new Map() },
   };
 
-  drawCover(ctx, report);
+  if (report.is_verified_report) {
+    drawStrictVerifiedReport(ctx, report);
+  } else {
+    drawCover(ctx, report);
 
-  const order: ReportSectionKey[] = [
-    "legal_entity",
-    "ownership",
-    "factory_vs_trader",
-    "digital_footprint",
-    "certificates_documents",
-    "sanctions_forced_labour",
-    "litigation_enforcement",
-    "export_history",
-    "regulatory",
-    "payment_safeguards",
-  ];
-  const checklist = checklistForReport(report);
-  for (const sectionKey of order) {
-    const items = checklist.filter((item) => item.section === sectionKey);
-    if (items.length === 0) continue;
+    const order: ReportSectionKey[] = [
+      "legal_entity",
+      "ownership",
+      "factory_vs_trader",
+      "digital_footprint",
+      "certificates_documents",
+      "sanctions_forced_labour",
+      "litigation_enforcement",
+      "export_history",
+      "regulatory",
+      "payment_safeguards",
+    ];
+    const checklist = checklistForReport(report);
+    for (const sectionKey of order) {
+      const items = checklist.filter((item) => item.section === sectionKey);
+      if (items.length === 0) continue;
+      newPage(ctx);
+      const title = sectionKey === "payment_safeguards"
+        ? "Contradictions, missing information and next actions"
+        : SECTION_TITLES[sectionKey];
+      drawSectionHeader(ctx, title);
+      for (const item of items) drawChecklistItem(ctx, item);
+    }
+
     newPage(ctx);
-    const title = sectionKey === "payment_safeguards"
-      ? "Contradictions, missing information and next actions"
-      : SECTION_TITLES[sectionKey];
-    drawSectionHeader(ctx, title);
-    for (const item of items) drawChecklistItem(ctx, item);
+    drawSectionHeader(ctx, "Buyer implications and recommended safeguards");
+    drawWrapped(ctx, report.buyer_implications || "Item-level checklist results are authoritative.");
+    drawWrapped(ctx, report.recommended_safeguards || "Review unresolved checklist items before payment.");
+    drawWrapped(ctx, "Payment: " + report.payment_recommendation);
+    drawWrapped(ctx, "Pre-shipment inspection: " + report.inspection_recommendation);
+    drawWrapped(ctx, "Product testing: " + report.testing_recommendation);
   }
 
-  newPage(ctx);
-  drawSectionHeader(ctx, "Buyer implications and recommended safeguards");
-  drawWrapped(ctx, report.buyer_implications || "Item-level checklist results are authoritative.");
-  drawWrapped(ctx, report.recommended_safeguards || "Review unresolved checklist items before payment.");
-  drawWrapped(ctx, "Payment: " + report.payment_recommendation);
-  drawWrapped(ctx, "Pre-shipment inspection: " + report.inspection_recommendation);
-  drawWrapped(ctx, "Product testing: " + report.testing_recommendation);
-
-  newPage(ctx);
-  drawSectionHeader(ctx, "Sources, methodology and limitations");
-  drawWrapped(ctx, "Sources actually queried", { size: 11, bold: true, color: NAVY });
-  if ((report.sources_queried ?? []).length === 0) {
-    drawWrapped(ctx, "No independent source was successfully queried during this run.", { size: 9, color: GREY });
-  } else {
-    for (const s of report.sources_queried ?? []) {
-      const marker = s.url ? ` [${footnoteFor(ctx, s.url)}]` : "";
-      drawWrapped(ctx, `- ${shortSourceLabel(s.name, s.url)}${marker} (retrieved ${s.retrieved_at.slice(0, 10)})`, { size: 9 });
+  if (!report.is_verified_report) {
+    newPage(ctx);
+    drawSectionHeader(ctx, "Sources, methodology and limitations");
+    drawWrapped(ctx, "Sources actually queried", { size: 11, bold: true, color: NAVY });
+    if ((report.sources_queried ?? []).length === 0) {
+      drawWrapped(ctx, "No independent source was successfully queried during this run.", { size: 9, color: GREY });
+    } else {
+      for (const s of report.sources_queried ?? []) {
+        const marker = s.url ? ` [${footnoteFor(ctx, s.url)}]` : "";
+        drawWrapped(ctx, `- ${shortSourceLabel(s.name, s.url)}${marker} (retrieved ${s.retrieved_at.slice(0, 10)})`, { size: 9 });
+      }
     }
-  }
-  drawWrapped(ctx, "Customer-provided evidence", { size: 11, bold: true, color: NAVY });
-  if ((report.customer_evidence ?? []).length === 0) {
-    drawWrapped(ctx, "No customer documents were uploaded.", { size: 9, color: GREY });
-  } else {
-    for (const s of report.customer_evidence ?? []) {
-      drawWrapped(ctx, `- ${s.name} (retrieved ${s.retrieved_at.slice(0, 10)})`, { size: 9 });
+    drawWrapped(ctx, "Customer-provided evidence", { size: 11, bold: true, color: NAVY });
+    if ((report.customer_evidence ?? []).length === 0) {
+      drawWrapped(ctx, "No customer documents were uploaded.", { size: 9, color: GREY });
+    } else {
+      for (const s of report.customer_evidence ?? []) {
+        drawWrapped(ctx, `- ${s.name} (retrieved ${s.retrieved_at.slice(0, 10)})`, { size: 9 });
+      }
     }
-  }
-  drawWrapped(ctx, "Sources unavailable or not configured", { size: 11, bold: true, color: NAVY });
-  if ((report.sources_unavailable ?? []).length === 0) {
-    drawWrapped(ctx, "All expected sources were reachable in this run.", { size: 9, color: GREY });
-  } else {
-    for (const s of report.sources_unavailable ?? []) {
-      drawWrapped(ctx, `- ${s.name}: ${s.reason}`, { size: 9, color: GREY });
+    drawWrapped(ctx, "Sources unavailable or not configured", { size: 11, bold: true, color: NAVY });
+    if ((report.sources_unavailable ?? []).length === 0) {
+      drawWrapped(ctx, "All expected sources were reachable in this run.", { size: 9, color: GREY });
+    } else {
+      for (const s of report.sources_unavailable ?? []) {
+        drawWrapped(ctx, `- ${s.name}: ${s.reason}`, { size: 9, color: GREY });
+      }
     }
+    drawWrapped(ctx, "Methodology", { size: 11, bold: true, color: NAVY });
+    drawWrapped(ctx, report.methodology);
+    drawWrapped(ctx, "Checks verified by analyst review are labeled as such.", { size: 9 });
+    drawWrapped(ctx, "Limitations", { size: 11, bold: true, color: NAVY });
+    drawWrapped(ctx, report.limitations);
   }
-  drawWrapped(ctx, "Methodology", { size: 11, bold: true, color: NAVY });
-  drawWrapped(ctx, report.methodology);
-  drawWrapped(ctx, "Checks verified by analyst review are labeled as such.", { size: 9 });
-  drawWrapped(ctx, "Limitations", { size: 11, bold: true, color: NAVY });
-  drawWrapped(ctx, report.limitations);
 
   if (ctx.footnotes.order.length > 0) {
     drawWrapped(ctx, "Source references", { size: 11, bold: true, color: NAVY });
