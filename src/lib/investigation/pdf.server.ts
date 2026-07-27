@@ -449,14 +449,41 @@ function drawStrictVerifiedCover(ctx: Ctx, r: BuyerFacingReportViewModel) {
   drawWrapped(ctx, `Documents checked: ${(decision?.documents_checked ?? inferVerifiedReportDocumentsChecked(r)).join("; ")}`, { size: 10 });
   drawWrapped(ctx, `Why: ${(decision?.why.length ? decision.why : inferVerifiedReportWhy(r)).join(" ")}`, { size: 10 });
   drawWrapped(ctx, `Ask supplier before payment: ${(decision?.ask_supplier_before_payment.length ? decision.ask_supplier_before_payment : ["Confirm payment beneficiary/account holder, confirm the uploaded business licence against GSXT/CODS or licensed registry data, verify TUV SUD certificate, and use escrow/LC tied to inspection."]).join(" ")}`, { size: 10 });
+  const risks = [
+    ...(r.critical_blockers ?? []),
+    r.public_web_intelligence?.buyer_impact,
+    ...((r.public_web_intelligence?.potential_contradictions ?? []).filter((item) => !/^No supplier-linked contradiction/i.test(item))),
+  ].filter(Boolean).slice(0, 3);
+  const actions = [
+    ...(decision?.ask_supplier_before_payment ?? []),
+    ...(r.public_web_intelligence?.recommended_next_actions ?? []),
+  ].filter(Boolean).slice(0, 3);
+  const webFindings = (r.public_web_intelligence?.what_found_online ?? []).slice(0, 3);
+  if (risks.length) {
+    drawWrapped(ctx, "Top buyer risks", { size: 10, bold: true, color: NAVY });
+    for (const item of risks) drawWrapped(ctx, `- ${item}`, { size: 8.5 });
+  }
+  if (actions.length) {
+    drawWrapped(ctx, "Top required actions before payment", { size: 10, bold: true, color: NAVY });
+    for (const item of actions) drawWrapped(ctx, `- ${item}`, { size: 8.5 });
+  }
+  if (webFindings.length) {
+    drawWrapped(ctx, "Key public-web findings", { size: 10, bold: true, color: NAVY });
+    for (const item of webFindings) drawWrapped(ctx, `- ${item}`, { size: 8.5 });
+  }
 }
 
 function drawStrictStatusTable(ctx: Ctx, r: BuyerFacingReportViewModel) {
-  drawSectionHeader(ctx, "Checklist status appendix");
-  for (const item of checklistForReport(r)) {
-    ensureSpace(ctx, 30);
-    drawWrapped(ctx, `${item.title}: ${STATUS_LABEL[displayStatusForItem(item)]}. ${item.recommended_action || "Resolve before payment."}`, { size: 8.5 });
-  }
+  drawSectionHeader(ctx, "Checklist limitations summary");
+  drawStatusSummary(ctx, checklistForReport(r));
+  const grouped = [
+    "Corporate registry not officially verified.",
+    "Sanctions/RPS not fully verified.",
+    "Certificate authenticity not issuer-verified.",
+    "Shipment history not verified by licensed trade-data source.",
+    "Litigation/adverse media limited to public web search.",
+  ];
+  for (const item of grouped) drawWrapped(ctx, `- ${item}`, { size: 9 });
 }
 
 function drawStrictVerifiedReport(ctx: Ctx, r: BuyerFacingReportViewModel) {
@@ -475,6 +502,36 @@ function drawStrictVerifiedReport(ctx: Ctx, r: BuyerFacingReportViewModel) {
   drawWrapped(ctx, `English entity name: ${r.legal_entity_summary.english_entity_name}`);
   drawWrapped(ctx, `USCC: ${r.legal_entity_summary.uscc_note}`);
   drawWrapped(ctx, r.uflpa_summary.english_screening);
+
+  drawSectionHeader(ctx, "Public web intelligence");
+  drawWrapped(ctx, "Open-web scouting is web intelligence, not official registry, sanctions, certificate or shipment verification.", { bold: true });
+  drawWrapped(ctx, "What we found online", { size: 10, bold: true, color: NAVY });
+  for (const item of r.public_web_intelligence?.what_found_online ?? ["No supplier-linked public web sources were retained by the relevance gates."]) {
+    drawWrapped(ctx, `- ${item}`);
+  }
+  drawWrapped(ctx, "What this corroborates", { size: 10, bold: true, color: NAVY });
+  for (const item of r.public_web_intelligence?.what_this_corroborates ?? ["No public-web fact was strong enough to corroborate supplier identity or operating claims."]) {
+    drawWrapped(ctx, `- ${item}`);
+  }
+  drawWrapped(ctx, "What is still not verified", { size: 10, bold: true, color: NAVY });
+  const limitations = r.public_web_intelligence?.still_not_verified ?? [
+    "Corporate registry not officially verified.",
+    "Sanctions/RPS not fully verified.",
+    "Certificate authenticity not issuer-verified.",
+    "Shipment history not verified by licensed trade-data source.",
+    "Litigation/adverse media limited to public web search.",
+  ];
+  for (const item of limitations) drawWrapped(ctx, `- ${item}`);
+  drawWrapped(ctx, "Potential contradictions", { size: 10, bold: true, color: NAVY });
+  for (const item of r.public_web_intelligence?.potential_contradictions ?? ["No supplier-linked contradiction was retained from the public-web scouting pass."]) {
+    drawWrapped(ctx, `- ${item}`);
+  }
+  drawWrapped(ctx, "Buyer impact", { size: 10, bold: true, color: NAVY });
+  drawWrapped(ctx, r.public_web_intelligence?.buyer_impact ?? "Public web scouting did not add reliable supplier-linked intelligence in this run.");
+  drawWrapped(ctx, "Recommended next action", { size: 10, bold: true, color: NAVY });
+  for (const item of r.public_web_intelligence?.recommended_next_actions ?? ["Resolve official registry, certificate, sanctions and payment-document gaps before payment."]) {
+    drawWrapped(ctx, `- ${item}`);
+  }
 
   drawSectionHeader(ctx, "4. What could not be independently verified");
   drawWrapped(ctx, `Chinese legal name: ${r.legal_entity_summary.chinese_legal_name}`);

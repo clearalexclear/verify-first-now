@@ -1,4 +1,4 @@
-import type { ChecklistReportResult, FinalOutcome, Finding, InvestigationReport, VerifiedReportDecision } from "./types";
+import type { ChecklistReportResult, FinalOutcome, Finding, InvestigationReport, SupplierInternetScoutingReport, VerifiedReportDecision } from "./types";
 
 const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
 
@@ -196,6 +196,7 @@ export interface BuyerFacingReportViewModel {
   critical_blockers: string[];
   verified_report_decision?: VerifiedReportDecision;
   is_verified_report: boolean;
+  public_web_intelligence?: SupplierInternetScoutingReport;
   legal_entity_summary: {
     english_entity_name: string;
     uscc: string | null;
@@ -209,6 +210,41 @@ export interface BuyerFacingReportViewModel {
     english_screening: string;
     local_name_screening: string;
     limitation: string;
+  };
+}
+
+function sanitizePublicWebIntelligence(report: SupplierInternetScoutingReport | undefined): SupplierInternetScoutingReport | undefined {
+  if (!report) return undefined;
+  return {
+    ...report,
+    queries_run: report.queries_run.map(sanitizeBuyerText),
+    evidence: report.evidence.map((evidence) => ({
+      ...evidence,
+      title: sanitizeBuyerText(evidence.title),
+      query_used: sanitizeBuyerText(evidence.query_used),
+      matched_identifiers: evidence.matched_identifiers.map(sanitizeBuyerText),
+      extracted_facts: {
+        online_names: evidence.extracted_facts.online_names.map(sanitizeBuyerText),
+        marketplace_badges: evidence.extracted_facts.marketplace_badges.map(sanitizeBuyerText),
+        manufacturer_or_trader_claims: evidence.extracted_facts.manufacturer_or_trader_claims.map(sanitizeBuyerText),
+        product_categories: evidence.extracted_facts.product_categories.map(sanitizeBuyerText),
+        contact_details: evidence.extracted_facts.contact_details.map(sanitizeBuyerText),
+        certificate_references: evidence.extracted_facts.certificate_references.map(sanitizeBuyerText),
+        export_or_customer_traces: evidence.extracted_facts.export_or_customer_traces.map(sanitizeBuyerText),
+        trade_fair_traces: evidence.extracted_facts.trade_fair_traces.map(sanitizeBuyerText),
+        adverse_or_complaint_indicators: evidence.extracted_facts.adverse_or_complaint_indicators.map(sanitizeBuyerText),
+        litigation_or_enforcement_indicators: evidence.extracted_facts.litigation_or_enforcement_indicators.map(sanitizeBuyerText),
+        contradictions: evidence.extracted_facts.contradictions.map(sanitizeBuyerText),
+      },
+      buyer_safe_summary: sanitizeBuyerText(evidence.buyer_safe_summary),
+      limitation: sanitizeBuyerText(evidence.limitation),
+    })).filter((evidence) => evidence.buyer_safe_summary && !isNoisyExportText(JSON.stringify(evidence))),
+    what_found_online: report.what_found_online.map(sanitizeBuyerText).filter(Boolean),
+    what_this_corroborates: report.what_this_corroborates.map(sanitizeBuyerText).filter(Boolean),
+    still_not_verified: report.still_not_verified.map(sanitizeBuyerText).filter(Boolean),
+    potential_contradictions: report.potential_contradictions.map(sanitizeBuyerText).filter(Boolean),
+    buyer_impact: sanitizeBuyerText(report.buyer_impact),
+    recommended_next_actions: report.recommended_next_actions.map(sanitizeBuyerText).filter(Boolean),
   };
 }
 
@@ -245,6 +281,7 @@ export function buildBuyerFacingReportViewModel(report: InvestigationReport, opt
     name: sanitizeBuyerText(source.name),
     reason: sanitizeBuyerText(source.reason),
   }));
+  const publicWebIntelligence = sanitizePublicWebIntelligence(report.public_web_intelligence);
   const sanitizedReportForDecision: InvestigationReport = {
     ...report,
     findings,
@@ -292,6 +329,7 @@ export function buildBuyerFacingReportViewModel(report: InvestigationReport, opt
     critical_blockers: (report.critical_blockers ?? []).map(sanitizeBuyerText),
     verified_report_decision: sanitizeVerifiedDecision(sanitizedReportForDecision),
     is_verified_report: isVerifiedReport,
+    public_web_intelligence: publicWebIntelligence,
     legal_entity_summary: {
       english_entity_name: englishEntityName,
       uscc,
@@ -390,5 +428,6 @@ export function sanitizeBuyerReport(report: InvestigationReport): InvestigationR
   cloned.customer_evidence = view.customer_evidence;
   cloned.sources_unavailable = view.sources_unavailable;
   cloned.verified_report_decision = view.verified_report_decision;
+  cloned.public_web_intelligence = view.public_web_intelligence;
   return cloned;
 }

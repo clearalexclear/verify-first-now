@@ -4,6 +4,7 @@ import { screenSanctions } from "./sources/opensanctions.server";
 import { screenUflpa } from "./sources/uflpa.server";
 import { screenAdverseMedia, screenLitigation } from "./sources/adverse-media.server";
 import { probeExportHistory, screenCertificates, screenWebsiteConsistency } from "./sources/web-research.server";
+import { scoutSupplierInternet } from "./sources/supplier-internet-scouting.server";
 import { retrieveChinaRegistryEvidence } from "./sources/china-registry.server";
 import { createOfficialRegistryTask, OFFICIAL_BROWSER_ASSISTED_PROVIDER } from "./sources/official-browser-assisted.server";
 import { OPEN_WEB_CHINA_REGISTRY_LABEL, OPEN_WEB_CHINA_REGISTRY_PROVIDER } from "./sources/open-web-china-registry.server";
@@ -211,6 +212,7 @@ export async function runInvestigation(
       });
     }
 
+    const isVerifiedReport = String(caseRow.package) === "verified_report";
     const nameForScreening = resolved.legal_name_en || order.supplier_company_name;
     const chineseForScreening = resolved.legal_name_local || caseRow.supplier_chinese_name || null;
 
@@ -220,6 +222,17 @@ export async function runInvestigation(
       website: order.website_marketplace_url,
       productQuery: caseRow.product_category ?? "",
     });
+    const scoutingPromise = isVerifiedReport
+      ? scoutSupplierInternet({
+          supplierName: order.supplier_company_name,
+          resolved,
+          website: order.website_marketplace_url,
+          marketplaceUrl: order.website_marketplace_url,
+          productCategory: caseRow.product_category ?? "",
+          destinationMarket,
+          extracted,
+        })
+      : Promise.resolve(null);
 
     const settled = await Promise.allSettled([
       screenSanctions({ name: nameForScreening, country: order.supplier_country }),
@@ -237,6 +250,7 @@ export async function runInvestigation(
       screenCertificates({ extracted }),
       probeExportHistory({ name: nameForScreening, website: order.website_marketplace_url, destinationMarket }),
       connectorRunPromise.then((r) => r.findings),
+      scoutingPromise.then((r) => r?.findings ?? []),
       Promise.resolve(registryFindings),
     ]);
 
@@ -276,7 +290,22 @@ export async function runInvestigation(
       });
     }
 
-    const isVerifiedReport = String(caseRow.package) === "verified_report";
+    const scoutingResult = await scoutingPromise.catch(() => null);
+    if (scoutingResult?.report.evidence.length) {
+      await db.from("evidence_facts").insert(scoutingResult.report.evidence.map((evidence) => ({
+        case_id: caseId,
+        fact_key: "public_web_intelligence.source",
+        fact_value: evidence,
+        classification: evidence.trust_level === "official" ? "VERIFIED" : evidence.trust_level === "trusted_public" ? "CORROBORATED" : "NOT_INDEPENDENTLY_VERIFIED",
+        confidence: evidence.relevance_score >= 70 ? "medium_high" : evidence.relevance_score >= 50 ? "medium" : "low",
+        source_name: "Public web intelligence",
+        source_url: evidence.url,
+        retrieval_date: evidence.retrieved_at,
+        evidence_excerpt: evidence.buyer_safe_summary,
+        license_notes: evidence.limitation,
+      })));
+    }
+
     const verifiedDocs = isVerifiedReport ? selectVerifiedReportEvidenceDocs(extracted) : null;
     const verifiedConsistency = isVerifiedReport
       ? buildVerifiedReportConsistency({
@@ -371,7 +400,7 @@ export async function runInvestigation(
       // Only include sources that clearly came from an actual retrieval — either official/free
       // connector or one of our resolvable screens with a URL / snapshot reference.
       if (
-        /DHS UFLPA Entity List snapshot|OpenSanctions|CPSC recalls|RDAP|Public web search|Firecrawl|Customer upload|Supplier website|Public shipping-data web search/i.test(source) ||
+        /DHS UFLPA Entity List snapshot|OpenSanctions|CPSC recalls|RDAP|Public web search|Public web intelligence|Firecrawl|Customer upload|Supplier website|Public shipping-data web search/i.test(source) ||
         f.source_url
       ) {
         const k = (f.source_url || source).toLowerCase();
@@ -429,6 +458,7 @@ export async function runInvestigation(
       sources_unavailable: sourcesUnavailable,
       critical_blockers: [],
       verified_report_decision: verifiedConsistency?.decision,
+      public_web_intelligence: scoutingResult?.report,
     };
     report.checklist_results = buildCanonicalChecklist(report);
 
