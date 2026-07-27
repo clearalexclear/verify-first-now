@@ -104,6 +104,64 @@ export interface SourceEntry {
   category?: string;
 }
 
+export type SupplierScoutingSourceType =
+  | "supplier_site"
+  | "marketplace"
+  | "directory"
+  | "official_source"
+  | "certificate_issuer"
+  | "trade_data"
+  | "adverse_media"
+  | "social"
+  | "irrelevant";
+
+export type SupplierScoutingTrustLevel = "official" | "trusted_public" | "marketplace" | "directory" | "weak";
+
+export interface SupplierScoutingEvidence {
+  title: string;
+  url: string;
+  source_type: SupplierScoutingSourceType;
+  retrieved_at: string;
+  query_used: string;
+  matched_identifiers: string[];
+  relevance_score: number;
+  trust_level: SupplierScoutingTrustLevel;
+  extracted_facts: {
+    online_names: string[];
+    marketplace_badges: string[];
+    manufacturer_or_trader_claims: string[];
+    product_categories: string[];
+    contact_details: string[];
+    certificate_references: string[];
+    export_or_customer_traces: string[];
+    trade_fair_traces: string[];
+    adverse_or_complaint_indicators: string[];
+    litigation_or_enforcement_indicators: string[];
+    contradictions: string[];
+  };
+  buyer_safe_summary: string;
+  limitation: string;
+}
+
+export interface SupplierInternetScoutingReport {
+  generated_at: string;
+  queries_run: string[];
+  evidence: SupplierScoutingEvidence[];
+  what_found_online: string[];
+  what_this_corroborates: string[];
+  still_not_verified: string[];
+  potential_contradictions: string[];
+  buyer_impact: string;
+  recommended_next_actions: string[];
+  diagnostics: {
+    searches_run: number;
+    sources_found: number;
+    retained_sources: number;
+    rejected_sources: number;
+    matched_identifiers: string[];
+  };
+}
+
 export interface UnavailableSource {
   name: string;
   reason: string;
@@ -150,6 +208,7 @@ export interface InvestigationReport {
   sources_unavailable?: UnavailableSource[];
   critical_blockers?: string[];
   verified_report_decision?: VerifiedReportDecision;
+  public_web_intelligence?: SupplierInternetScoutingReport;
 }
 
 export interface VerifiedReportDecision {

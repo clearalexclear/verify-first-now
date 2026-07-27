@@ -9,6 +9,7 @@ import { renderReportPdf } from "../lib/investigation/pdf.server";
 import { buildBuyerFacingReportViewModel } from "../lib/investigation/report-sanitizer";
 import { getReportByShareTokenImpl } from "../lib/investigation/investigation.functions";
 import type { Finding, InvestigationReport, ResolvedEntity } from "../lib/investigation/types";
+import { evaluateScoutingHit, scoutSupplierInternet } from "../lib/investigation/sources/supplier-internet-scouting.server";
 import { getDocument, VerbosityLevel } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { fileURLToPath } from "node:url";
 
@@ -794,6 +795,180 @@ describe("Jiangmen Changwen mock case classification", () => {
       ["Stored official UFLPA snapshot screening", "VERIFIED", "PASS"],
       ["ImportGenius shipment history", "NOT_INDEPENDENTLY_VERIFIED", "NOT_VERIFIED"],
     ]);
+  });
+});
+
+describe("Verified Supplier Report public web intelligence scouting", () => {
+  it("retains supplier-linked sources and rejects unrelated public web noise", async () => {
+    const search = vi.fn(async (query: string) => {
+      if (/certificate/i.test(query)) {
+        return [{
+          url: "https://cert.example/verify/CERT-9988",
+          title: "CERT-9988 certificate issuer record for Jiangmen Changwen Trading Co., Ltd.",
+          description: "Certificate issuer page references Jiangmen Changwen Trading Co., Ltd. and CERT-9988.",
+          markdown: "",
+        }];
+      }
+      if (/Alibaba/i.test(query)) {
+        return [{
+          url: "https://alibaba.example/jiangmen-changwen",
+          title: "Jiangmen Changwen Trading Co., Ltd. - Gold Supplier manufacturer cookware",
+          description: "Marketplace profile for Jiangmen Changwen Trading Co., Ltd. with cookware products.",
+          markdown: "",
+        }];
+      }
+      return [
+        {
+          url: "https://cookwarecw.com/about",
+          title: "Jiangmen Changwen Trading Co., Ltd. manufacturer of stainless steel kitchenware",
+          description: "Supplier website for Jiangmen Changwen Trading Co., Ltd. lists cookware categories and export contacts.",
+          markdown: "",
+        },
+        {
+          url: "https://unrelated.example/random.pdf",
+          title: "Generic kitchenware manufacturer directory",
+          description: "A random directory only mentions cookware and factory without the supplier name.",
+          markdown: "مصنع fournisseur GlobalSources multilingual directory",
+        },
+      ];
+    });
+    const result = await scoutSupplierInternet({
+      supplierName: "Jiangmen Changwen Trading Co., Ltd.",
+      resolved: { ...baseResolvedEntity, legal_name_en: "Jiangmen Changwen Trading Co., Ltd.", registration_number: "91440700MA00000000" },
+      website: "https://cookwarecw.com",
+      productCategory: "stainless steel kitchenware",
+      destinationMarket: "United States",
+      extracted: [{
+        filename: "tuv.pdf",
+        category: "certificate_or_test_report",
+        doc_type: "certificate",
+        extracted_entities: {
+          company_name_en: "Jiangmen Changwen Trading Co., Ltd.",
+          company_name_zh: null,
+          usci_number: null,
+          registered_address: null,
+          contact: null,
+          dates: [],
+          amounts: [],
+          certificate_authority: "TUV",
+          certificate_number: "CERT-9988",
+          validity_dates: null,
+        },
+        summary: "Certificate uploaded.",
+      }],
+    }, { search, now: "2026-07-27T00:00:00.000Z" });
+
+    expect(result.report.evidence.map((item) => item.url)).toEqual(expect.arrayContaining([
+      "https://cookwarecw.com/about",
+      "https://alibaba.example/jiangmen-changwen",
+      "https://cert.example/verify/CERT-9988",
+    ]));
+    expect(result.report.evidence.some((item) => item.url.includes("unrelated"))).toBe(false);
+    expect(result.report.evidence[0].matched_identifiers.length).toBeGreaterThan(0);
+    expect(result.report.what_found_online.join(" ")).toMatch(/Supplier-linked/);
+    expect(result.findings[0].evidence_excerpt).not.toMatch(/مصنع|fournisseur|GlobalSources multilingual/);
+  });
+
+  it("requires a strong supplier identifier before accepting a scouting hit", () => {
+    const unrelated = evaluateScoutingHit({
+      supplierName: "Jiangmen Changwen Trading Co., Ltd.",
+      resolved: baseResolvedEntity,
+      website: "https://cookwarecw.com",
+      productCategory: "stainless steel kitchenware",
+      extracted: [],
+    }, "\"Jiangmen Changwen Trading Co., Ltd.\"", {
+      url: "https://directory.example/kitchenware",
+      title: "Kitchenware manufacturer factory supplier",
+      description: "Cookware and kitchenware products from many factories.",
+      markdown: "",
+    }, "2026-07-27T00:00:00.000Z");
+    expect(unrelated).toBeNull();
+  });
+
+  it("renders public web intelligence in verified_report PDFs without raw scraped garbage or unreliable OCR Chinese fields", async () => {
+    const report = mockReport({
+      supplier_input: {
+        name: "Yangjiang Justa Industry&trade Co., Ltd.",
+        chinese_name: "江市有限公司",
+        country: "China",
+        url: "https://justa.example",
+        contact: null,
+      },
+      resolved_entity: {
+        ...baseResolvedEntity,
+        legal_name_en: "YANGJIANG JUSTA INDUSTRY & TRADE CO.,LTD",
+        legal_name_local: "江市有限公司",
+        registration_number: "91441702553600081W",
+      },
+      final_outcome: "PAUSE_PENDING_CLARIFICATION",
+      customer_evidence: [
+        { name: "Customer upload: business_licence.png", url: null, retrieved_at: "2026-07-21T00:00:00.000Z", category: "business_licence" },
+        { name: "Customer upload: proforma_invoice.pdf", url: null, retrieved_at: "2026-07-21T00:00:00.000Z", category: "proforma_invoice" },
+        { name: "Customer upload: certificate_or_test_report.png", url: null, retrieved_at: "2026-07-21T00:00:00.000Z", category: "certificate_or_test_report" },
+      ],
+      verified_report_decision: {
+        payment_decision: "PAUSE",
+        entity_payment_consistency: "NOT_VERIFIED",
+        documents_checked: ["Business licence", "Proforma invoice", "1 certificate/test report(s)"],
+        why: ["Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder."],
+        deal_specific_blockers: [],
+        ask_supplier_before_payment: ["Confirm payment beneficiary/account holder before payment."],
+      },
+      public_web_intelligence: {
+        generated_at: "2026-07-27T00:00:00.000Z",
+        queries_run: ["\"Yangjiang Justa Industry&trade Co., Ltd.\""],
+        evidence: [{
+          title: "Yangjiang Justa Industry&trade Co., Ltd. supplier profile",
+          url: "https://marketplace.example/yangjiang-justa",
+          source_type: "marketplace",
+          retrieved_at: "2026-07-27T00:00:00.000Z",
+          query_used: "\"Yangjiang Justa Industry&trade Co., Ltd.\"",
+          matched_identifiers: ["supplier name"],
+          relevance_score: 80,
+          trust_level: "marketplace",
+          extracted_facts: {
+            online_names: ["Yangjiang Justa Industry&trade Co., Ltd."],
+            marketplace_badges: ["Verified Supplier"],
+            manufacturer_or_trader_claims: ["Manufacturer claim appears in public page text."],
+            product_categories: ["cookware"],
+            contact_details: [],
+            certificate_references: [],
+            export_or_customer_traces: [],
+            trade_fair_traces: [],
+            adverse_or_complaint_indicators: [],
+            litigation_or_enforcement_indicators: [],
+            contradictions: [],
+          },
+          buyer_safe_summary: "Supplier-linked marketplace result retained: Yangjiang Justa Industry&trade Co., Ltd. supplier profile. Manufacturer claim appears in public page text.",
+          limitation: "Marketplace profile content may be supplier-provided and is not official registry verification.",
+        }],
+        what_found_online: ["Supplier-linked marketplace result retained: Yangjiang Justa Industry&trade Co., Ltd. supplier profile."],
+        what_this_corroborates: ["Supplier public profile includes manufacturer/trader positioning claims."],
+        still_not_verified: ["Corporate registry not officially verified.", "Certificate authenticity not issuer-verified.", "Shipment history not verified by licensed trade-data source."],
+        potential_contradictions: ["No supplier-linked contradiction was retained from the public-web scouting pass."],
+        buyer_impact: "Public web intelligence can help the buyer spot online presence, but it is not official legal, sanctions, certificate or shipment verification.",
+        recommended_next_actions: ["Confirm the uploaded business licence against GSXT/CODS or licensed registry data."],
+        diagnostics: {
+          searches_run: 1,
+          sources_found: 1,
+          retained_sources: 1,
+          rejected_sources: 0,
+          matched_identifiers: ["supplier name"],
+        },
+      },
+    });
+    report.checklist_results = buildCanonicalChecklist(report);
+
+    const text = await extractPdfText(await renderReportPdf(report));
+    expect(text).toContain("Public web intelligence");
+    expect(text).toContain("What we found online");
+    expect(text).toContain("Supplier-linked marketplace result retained");
+    expect(text).toContain("Corporate registry not officially verified");
+    expect(text).toContain("Business licence; Proforma invoice; 1 certificate/test report");
+    expect(text).not.toMatch(/江市有限公司|江市江区3地1141406|GlobalSources multilingual|مصنع|fournisseur/);
+    expect(text).not.toContain("Legal company existence:");
+    expect(text).not.toContain("Ownership and related companies:");
+    expect(text).not.toMatch(/clean sanctions|certificate authentic(?!ity)|active company confirmed|factory confirmed/i);
   });
 });
 

@@ -231,6 +231,38 @@ function VerifiedReportStrictPage({ r, pdfUrl, checklist }: { r: BuyerFacingRepo
           <p>{r.uflpa_summary.english_screening}</p>
         </Section>
 
+        <Section title="Public web intelligence">
+          <p className="font-semibold">Open-web scouting is web intelligence, not official registry, sanctions, certificate or shipment verification.</p>
+          <h3 className="mt-4 text-sm font-semibold text-navy">What we found online</h3>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+            {(r.public_web_intelligence?.what_found_online ?? ["No supplier-linked public web sources were retained by the relevance gates."]).map((item, index) => <li key={index}>{item}</li>)}
+          </ul>
+          <h3 className="mt-4 text-sm font-semibold text-navy">What this corroborates</h3>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+            {(r.public_web_intelligence?.what_this_corroborates ?? ["No public-web fact was strong enough to corroborate supplier identity or operating claims."]).map((item, index) => <li key={index}>{item}</li>)}
+          </ul>
+          <h3 className="mt-4 text-sm font-semibold text-navy">What is still not verified</h3>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+            {(r.public_web_intelligence?.still_not_verified ?? [
+              "Corporate registry not officially verified.",
+              "Sanctions/RPS not fully verified.",
+              "Certificate authenticity not issuer-verified.",
+              "Shipment history not verified by licensed trade-data source.",
+              "Litigation/adverse media limited to public web search.",
+            ]).map((item, index) => <li key={index}>{item}</li>)}
+          </ul>
+          <h3 className="mt-4 text-sm font-semibold text-navy">Potential contradictions</h3>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+            {(r.public_web_intelligence?.potential_contradictions ?? ["No supplier-linked contradiction was retained from the public-web scouting pass."]).map((item, index) => <li key={index}>{item}</li>)}
+          </ul>
+          <h3 className="mt-4 text-sm font-semibold text-navy">Buyer impact</h3>
+          <p className="mt-2 text-sm">{r.public_web_intelligence?.buyer_impact ?? "Public web scouting did not add reliable supplier-linked intelligence in this run."}</p>
+          <h3 className="mt-4 text-sm font-semibold text-navy">Recommended next action</h3>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+            {(r.public_web_intelligence?.recommended_next_actions ?? ["Resolve official registry, certificate, sanctions and payment-document gaps before payment."]).map((item, index) => <li key={index}>{item}</li>)}
+          </ul>
+        </Section>
+
         <Section title="4. What could not be independently verified">
           <p>Chinese legal name: {r.legal_entity_summary.chinese_legal_name}</p>
           <p>Registered address: {r.legal_entity_summary.registered_address}</p>
@@ -250,14 +282,25 @@ function VerifiedReportStrictPage({ r, pdfUrl, checklist }: { r: BuyerFacingRepo
           <p className="mt-2">{r.limitations}</p>
         </Section>
 
-        <Section title="Checklist status appendix">
-          <div className="space-y-2">
-            {checklist.map((item) => (
-              <p key={item.id} className="text-sm">
-                <span className="font-semibold">{item.title}:</span> {STATUS_LABEL[item.status]}. {item.recommended_action || "Resolve before payment."}
-              </p>
+        <Section title="Checklist limitations summary">
+          <p className="text-sm text-muted-foreground">
+            Checklist statuses are retained internally for auditability. Repeated missing connector items are grouped here for buyer readability.
+          </p>
+          <div className="mt-3 grid gap-2 text-sm sm:grid-cols-5">
+            {(["PASS", "CAUTION", "FAIL", "NOT_VERIFIED", "NOT_APPLICABLE"] as const).map((status) => (
+              <div key={status} className="rounded-md border border-border p-3">
+                <p className="font-semibold">{STATUS_LABEL[status]}</p>
+                <p>{checklist.filter((item) => item.status === status).length}</p>
+              </div>
             ))}
           </div>
+          <ul className="mt-4 list-disc space-y-1 pl-5 text-sm">
+            <li>Corporate registry not officially verified.</li>
+            <li>Sanctions/RPS not fully verified.</li>
+            <li>Certificate authenticity not issuer-verified.</li>
+            <li>Shipment history not verified by licensed trade-data source.</li>
+            <li>Litigation/adverse media limited to public web search.</li>
+          </ul>
         </Section>
       </div>
       <div className="print:hidden"><SiteFooter /></div>
