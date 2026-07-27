@@ -10,6 +10,7 @@ import { buildBuyerFacingReportViewModel } from "../lib/investigation/report-san
 import { getReportByShareTokenImpl } from "../lib/investigation/investigation.functions";
 import type { Finding, InvestigationReport, ResolvedEntity } from "../lib/investigation/types";
 import { evaluateScoutingHit, scoutSupplierInternet } from "../lib/investigation/sources/supplier-internet-scouting.server";
+import { buildVerifiedReportCommercialTables } from "../lib/investigation/verified-report.server";
 import { getDocument, VerbosityLevel } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { fileURLToPath } from "node:url";
 
@@ -799,6 +800,43 @@ describe("Jiangmen Changwen mock case classification", () => {
 });
 
 describe("Verified Supplier Report public web intelligence scouting", () => {
+  it("normalizes commercial table matching and avoids mismatch when evidence is missing or unreliable", () => {
+    const tables = buildVerifiedReportCommercialTables({
+      supplierName: "Yangjiang Justa Industry&trade Co., Ltd.",
+      resolvedEnglishName: "YANGJIANG JUSTA INDUSTRY & TRADE CO.,LTD",
+      businessLicence: {
+        chineseLegalName: null,
+        englishName: null,
+        uscc: "91441702553600081W",
+        registeredAddress: null,
+        legalRepresentative: null,
+        businessScope: null,
+        licenceDate: null,
+        extractionUncertain: { chineseLegalName: true, registeredAddress: true },
+      },
+      proformaInvoice: {
+        issuerSellerEntity: "Yangjiang Justa Industry and Trade Co Ltd",
+        beneficiaryName: null,
+        bankAccountName: null,
+        bankCountry: null,
+        invoiceAddress: null,
+        currency: null,
+        orderAmount: "USD 12,000",
+        productDescription: "cookware set",
+        buyerName: "Buyer Ltd",
+      },
+      certificates: [{ holderName: null, certificateName: null, certificateNumber: "CERT-9988", issuerName: "TUV SUD", productScope: "cookware", validityDates: null }],
+    });
+
+    expect(tables.comparison.find((row) => row.label === "Submitted supplier name")?.match_status).toBe("MATCH");
+    expect(tables.comparison.find((row) => row.label === "Resolved English entity name")?.match_status).toBe("MATCH");
+    expect(tables.comparison.find((row) => row.label === "Business licence company name")?.match_status).toBe("CANNOT CONFIRM");
+    expect(tables.comparison.find((row) => row.label === "Proforma invoice seller/exporter")?.match_status).toBe("MATCH");
+    expect(tables.comparison.find((row) => row.label === "Payment beneficiary/account holder")?.match_status).toBe("MISSING");
+    expect(tables.comparison.find((row) => row.label === "Certificate holder/applicant")?.match_status).toBe("CANNOT CONFIRM");
+    expect(JSON.stringify(tables.documents)).toContain("CERT-9988");
+  });
+
   it("retains supplier-linked sources and rejects unrelated public web noise", async () => {
     const search = vi.fn(async (query: string) => {
       if (/certificate/i.test(query)) {
@@ -963,9 +1001,10 @@ describe("Verified Supplier Report public web intelligence scouting", () => {
           label: "Business licence",
           source: "Uploaded business licence",
           fields: [
-            { label: "Company name", value: "Could not be reliably extracted", status: "uncertain" },
+            { label: "Chinese legal name", value: "江市 有限公司", status: "extracted" },
+            { label: "English company name", value: "Not extracted", status: "missing" },
             { label: "USCC / registration number", value: "91441702553600081W", status: "extracted" },
-            { label: "Registered address", value: "Could not be reliably extracted", status: "uncertain" },
+            { label: "Registered address", value: "江市江 区 3 地1 14 1406", status: "extracted" },
             { label: "Extraction status", value: "Some Chinese-language fields could not be reliably extracted", status: "uncertain" },
           ],
         },
@@ -996,23 +1035,33 @@ describe("Verified Supplier Report public web intelligence scouting", () => {
       ],
       verified_report_comparison: [
         { label: "Submitted supplier name", value_found: "Yangjiang Justa Industry&trade Co., Ltd.", source: "Customer order form", match_status: "MATCH", buyer_impact: "Supplier name aligns with invoice seller." },
-        { label: "Resolved English entity name", value_found: "YANGJIANG JUSTA INDUSTRY & TRADE CO.,LTD", source: "Investigation result", match_status: "CANNOT CONFIRM", buyer_impact: "Resolved identity remains preliminary without official registry/API evidence." },
-        { label: "Business licence company name", value_found: "Could not be reliably extracted", source: "Business licence", match_status: "CANNOT CONFIRM", buyer_impact: "Licence name must be checked against official registry data." },
+        { label: "Resolved English entity name", value_found: "YANGJIANG JUSTA INDUSTRY & TRADE CO.,LTD", source: "Investigation result", match_status: "MATCH", buyer_impact: "Resolved identity remains preliminary without official registry/API evidence." },
+        { label: "Business licence company name", value_found: "江市 有限公司", source: "Business licence", match_status: "MISMATCH", buyer_impact: "Licence name must be checked against official registry data." },
         { label: "Proforma invoice seller/exporter", value_found: "Yangjiang Justa Industry&trade Co., Ltd.", source: "Proforma invoice", match_status: "MATCH", buyer_impact: "Invoice seller appears consistent with submitted supplier name." },
-        { label: "Payment beneficiary/account holder", value_found: "Not extracted", source: "Proforma invoice payment details", match_status: "CANNOT CONFIRM", buyer_impact: "Cannot confirm payee matches licence holder before payment." },
-        { label: "Certificate holder/applicant", value_found: "Yangjiang Justa Industry&trade Co., Ltd.", source: "Certificate/test report", match_status: "MATCH", buyer_impact: "Certificate holder appears aligned but issuer verification is still required." },
+        { label: "Payment beneficiary/account holder", value_found: "Not extracted", source: "Proforma invoice payment details", match_status: "MISSING", buyer_impact: "Cannot confirm payee matches licence holder before payment." },
+        { label: "Certificate holder/applicant", value_found: "Not reliably extracted", source: "Certificate/test report", match_status: "CANNOT CONFIRM", buyer_impact: "Certificate holder is missing; issuer verification is still required." },
       ],
     });
     report.checklist_results = buildCanonicalChecklist(report);
+    const view = buildBuyerFacingReportViewModel(report);
+    expect(JSON.stringify(view)).not.toMatch(/江市\s*有限公司|江市江\s*区\s*3\s*地1\s*14\s*1406/);
+    expect(view.verified_report_comparison.find((row) => row.label === "Business licence company name")?.value_found).toBe("Could not be reliably extracted");
+    expect(view.verified_report_comparison.find((row) => row.label === "Business licence company name")?.match_status).toBe("CANNOT CONFIRM");
+    expect(view.verified_report_comparison.find((row) => row.label === "Payment beneficiary/account holder")?.match_status).toBe("MISSING");
 
     const text = await extractPdfText(await renderReportPdf(report));
     expect(text).toContain("Public web intelligence");
     expect(text).toContain("Document extraction summary");
     expect(text).toContain("Entity & payment comparison table");
-    expect(text).toContain("Business licence Company name Could not be reliably extracted uncertain");
+    expect(text).toContain("Business licence Chinese legal name Could not be reliably extracted uncertain");
+    expect(text).toContain("Business licence Registered address Could not be reliably extracted uncertain");
     expect(text).toContain("Proforma invoice Seller / exporter name Yangjiang Justa Industry&trade Co., Ltd.");
     expect(text).toContain("Payment beneficiary/account holder Not extracted");
     expect(text).toContain("Certificate/test report Issuer / lab name TUV SUD");
+    expect(text).toContain("Certificate/test report Certificate / report number CERT-9988");
+    expect(text).toContain("Resolved English entity name YANGJIANG JUSTA INDUSTRY & TRADE CO.,LTD Investigation result MATCH");
+    expect(text).toContain("Proforma invoice seller/exporter Yangjiang Justa Industry&trade Co., Ltd. Proforma invoice MATCH");
+    expect(text).not.toMatch(/Business licence company name[^.]+MISMATCH/);
     expect(text).toContain("Cannot confirm payment beneficiary matches licence holder.");
     expect(text).toContain("Company registration/status has not been officially verified.");
     expect(text).toContain("Certificate/test report has not been issuer-verified.");

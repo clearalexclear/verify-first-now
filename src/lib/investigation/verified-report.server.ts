@@ -34,6 +34,10 @@ export interface VerifiedInvoiceFields {
 export interface VerifiedCertificateFields {
   holderName: string | null;
   certificateName: string | null;
+  issuerName?: string | null;
+  certificateNumber?: string | null;
+  productScope?: string | null;
+  validityDates?: string | null;
   requiredForOrder?: boolean;
 }
 
@@ -78,6 +82,12 @@ function uncertainField(label: string, value: string | null | undefined, uncerta
   return field(label, value);
 }
 
+function reliableLicenceName(licence: VerifiedBusinessLicenceFields | null): string | null {
+  if (!licence) return null;
+  if (licence.chineseLegalName && !licence.extractionUncertain?.chineseLegalName) return licence.chineseLegalName;
+  return licence.englishName;
+}
+
 function comparisonRow(args: VerifiedReportComparisonRow): VerifiedReportComparisonRow {
   return args;
 }
@@ -103,7 +113,8 @@ export function buildVerifiedReportCommercialTables(args: {
       label: "Business licence",
       source: "Uploaded business licence",
       fields: [
-        uncertainField("Company name", licence.chineseLegalName ?? licence.englishName, licence.extractionUncertain?.chineseLegalName),
+        uncertainField("Chinese legal name", licence.chineseLegalName, licence.extractionUncertain?.chineseLegalName),
+        field("English company name", licence.englishName),
         field("USCC / registration number", licence.uscc),
         uncertainField("Registered address", licence.registeredAddress, licence.extractionUncertain?.registeredAddress),
         {
@@ -134,64 +145,69 @@ export function buildVerifiedReportCommercialTables(args: {
   }
 
   for (const [index, cert] of certificates.entries()) {
+    const issuer = cert.issuerName ?? (cert.certificateName && /tuv|tüv|sgs|intertek|ul|bureau|lab/i.test(cert.certificateName) ? cert.certificateName : null);
+    const number = cert.certificateNumber ?? (cert.certificateName && !/tuv|tüv|sgs|intertek|ul|bureau|lab/i.test(cert.certificateName) ? cert.certificateName : null);
     documents.push({
       document_type: "certificate_or_test_report",
       label: certificates.length > 1 ? `Certificate/test report ${index + 1}` : "Certificate/test report",
       source: "Uploaded certificate/test report",
       fields: [
-        field("Issuer / lab name", cert.certificateName && /tuv|tüv|sgs|intertek|ul|bureau|lab|cert/i.test(cert.certificateName) ? cert.certificateName : null),
-        field("Certificate / report number", cert.certificateName && !/tuv|tüv|sgs|intertek|ul|bureau|lab|cert/i.test(cert.certificateName) ? cert.certificateName : null),
-        field("Product scope", null),
-        field("Date / validity", null),
+        field("Issuer / lab name", issuer, issuer ? "extracted" : "uncertain"),
+        field("Certificate / report number", number, number ? "extracted" : "uncertain"),
+        field("Product scope", cert.productScope, cert.productScope ? "extracted" : "uncertain"),
+        field("Date / validity", cert.validityDates, cert.validityDates ? "extracted" : "uncertain"),
       ],
     });
   }
 
-  const licenceName = licence?.chineseLegalName || licence?.englishName || null;
+  const licenceName = reliableLicenceName(licence);
   const invoiceSeller = invoice?.issuerSellerEntity ?? null;
   const beneficiary = invoice?.beneficiaryName ?? invoice?.bankAccountName ?? null;
   const certificateHolder = certificates.find((cert) => clean(cert.holderName))?.holderName ?? null;
-  const licenceNames = [licence?.chineseLegalName, licence?.englishName].filter((item): item is string => Boolean(clean(item)));
-  const matchToLicence = (value: string | null | undefined): VerifiedReportComparisonRow["match_status"] => {
+  const referenceNames = [args.resolvedEnglishName, args.supplierName, licenceName].filter((item): item is string => Boolean(clean(item)));
+  const matchToReference = (value: string | null | undefined): VerifiedReportComparisonRow["match_status"] => {
     if (!clean(value)) return "MISSING";
-    if (licenceNames.length === 0) return "CANNOT CONFIRM";
-    return licenceNames.some((name) => namesMatch(name, value)) ? "MATCH" : "MISMATCH";
+    if (referenceNames.length === 0) return "CANNOT CONFIRM";
+    return referenceNames.some((name) => namesMatch(name, value)) ? "MATCH" : "MISMATCH";
   };
+  const supplierVsResolved = args.resolvedEnglishName
+    ? (namesMatch(args.supplierName, args.resolvedEnglishName) ? "MATCH" : "CANNOT CONFIRM")
+    : "CANNOT CONFIRM";
 
   const comparison: VerifiedReportComparisonRow[] = [
     comparisonRow({
       label: "Submitted supplier name",
       value_found: displayValue(args.supplierName),
       source: "Customer order form",
-      match_status: licenceName ? (namesMatch(args.supplierName, licenceName) ? "MATCH" : "CANNOT CONFIRM") : "CANNOT CONFIRM",
+      match_status: supplierVsResolved,
       buyer_impact: "This is the name the buyer expects to contract with; it must reconcile to licence and payment documents before payment.",
     }),
     comparisonRow({
       label: "Resolved English entity name",
       value_found: displayValue(args.resolvedEnglishName, "Not independently resolved"),
       source: "Investigation result",
-      match_status: args.resolvedEnglishName ? matchToLicence(args.resolvedEnglishName) : "CANNOT CONFIRM",
+      match_status: args.resolvedEnglishName ? "MATCH" : "CANNOT CONFIRM",
       buyer_impact: "Resolved identity remains preliminary unless confirmed by official registry/API evidence.",
     }),
     comparisonRow({
       label: "Business licence company name",
       value_found: displayValue(licenceName, "Could not be reliably extracted"),
       source: "Business licence",
-      match_status: licenceName ? "MATCH" : "CANNOT CONFIRM",
+      match_status: licenceName ? matchToReference(licenceName) : "CANNOT CONFIRM",
       buyer_impact: "This is the anchor document for entity checks, but supplier-provided licence data still requires official registry confirmation.",
     }),
     comparisonRow({
       label: "Proforma invoice seller/exporter",
       value_found: displayValue(invoiceSeller),
       source: "Proforma invoice",
-      match_status: matchToLicence(invoiceSeller),
+      match_status: matchToReference(invoiceSeller),
       buyer_impact: "Invoice seller should match or be clearly linked to the licensed supplier entity.",
     }),
     comparisonRow({
       label: "Payment beneficiary/account holder",
       value_found: displayValue(beneficiary),
       source: "Proforma invoice payment details",
-      match_status: beneficiary ? matchToLicence(beneficiary) : "CANNOT CONFIRM",
+      match_status: beneficiary ? matchToReference(beneficiary) : "MISSING",
       buyer_impact: beneficiary
         ? "Wire payment should only go to a verified matching beneficiary or a documented authorized payee."
         : "Cannot confirm whether the payee matches the licence holder; request beneficiary/account-holder confirmation before paying.",
@@ -200,7 +216,7 @@ export function buildVerifiedReportCommercialTables(args: {
       label: "Certificate holder/applicant",
       value_found: displayValue(certificateHolder),
       source: "Certificate/test report",
-      match_status: matchToLicence(certificateHolder),
+      match_status: certificateHolder ? matchToReference(certificateHolder) : "CANNOT CONFIRM",
       buyer_impact: "Certificate holder should match the supplier, manufacturer, or product scope before relying on the certificate.",
     }),
   ];
@@ -278,9 +294,12 @@ function cleanLicenceChineseField(
 function normalizeName(value: string | null | undefined): string {
   return (value ?? "")
     .toLowerCase()
+    .replace(/&amp;|&trade;|&nbsp;/g, " ")
+    .replace(/&/g, " and ")
     .replace(/co\.?,? ?ltd\.?|limited|company|corporation|corp\.?|inc\.?|llc|ltd\.?/g, "")
+    .replace(/\band\b/g, "")
     .replace(/有限公司|有限责任公司|股份有限公司|公司/g, "")
-    .replace(/[\s.,'’“”"()（）\-_/]+/g, "")
+    .replace(/[\s.,'’“”"()（）\-_/;:]+/g, "")
     .trim();
 }
 

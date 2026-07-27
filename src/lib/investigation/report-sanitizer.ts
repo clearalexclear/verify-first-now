@@ -5,6 +5,8 @@ const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{
 const GARBLED_CHINESE_LEGAL_NAME = "江市有限公司";
 const GARBLED_REGISTERED_ADDRESS = "江市江区3地1141406";
 const GARBLED_BUSINESS_SCOPE_LABEL = "Business scope: 技术";
+const GARBLED_CHINESE_LEGAL_NAME_SPACED = "江市 有限公司";
+const GARBLED_REGISTERED_ADDRESS_SPACED = "江市江 区 3 地1 14 1406";
 
 export const UNCERTAIN_CHINESE_LEGAL_NAME = "Chinese legal name could not be reliably extracted from the uploaded licence.";
 export const UNCERTAIN_REGISTERED_ADDRESS = "Registered address could not be reliably extracted from the uploaded licence.";
@@ -18,6 +20,8 @@ export const DEFAULT_VERIFIED_REPORT_ACTIONS =
 const KNOWN_GARBLED_OCR = [
   GARBLED_CHINESE_LEGAL_NAME,
   GARBLED_REGISTERED_ADDRESS,
+  GARBLED_CHINESE_LEGAL_NAME_SPACED,
+  GARBLED_REGISTERED_ADDRESS_SPACED,
 ];
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -27,7 +31,11 @@ function isObject(value: unknown): value is Record<string, unknown> {
 export function isUnreliableChineseExtraction(value: string | null | undefined): boolean {
   if (!value) return false;
   const trimmed = value.trim();
-  return KNOWN_GARBLED_OCR.some((bad) => value.includes(bad)) || trimmed === "技术" || /\bBusiness scope:\s*技术\b/i.test(value);
+  const compact = trimmed.replace(/\s+/g, "");
+  return KNOWN_GARBLED_OCR.some((bad) => value.includes(bad) || compact.includes(bad.replace(/\s+/g, "")))
+    || compact === "技术"
+    || /\bBusiness scope:\s*技术\b/i.test(value)
+    || (/[\u3400-\u9fff]/.test(value) && compact.length <= 6 && /有限公司|公司/.test(compact));
 }
 
 function isNoisyExportText(value: string): boolean {
@@ -41,7 +49,9 @@ export function sanitizeBuyerText(value: string): string {
   let out = value || "";
   out = out
     .replace(/Chinese legal name:\s*江市有限公司[.;,]?\s*/gi, `${UNCERTAIN_CHINESE_LEGAL_NAME} `)
+    .replace(/Chinese legal name:\s*江市\s+有限公司[.;,]?\s*/gi, `${UNCERTAIN_CHINESE_LEGAL_NAME} `)
     .replace(/Registered address:\s*江市江区3地1141406[.;,]?\s*/gi, `${UNCERTAIN_REGISTERED_ADDRESS} `)
+    .replace(/Registered address:\s*江市江\s+区\s+3\s+地1\s+14\s+1406[.;,]?\s*/gi, `${UNCERTAIN_REGISTERED_ADDRESS} `)
     .replace(/Business scope:\s*技术[.;,]?\s*/gi, `${UNCERTAIN_BUSINESS_SCOPE} `)
     .replace(/local:\s*["“”']江市有限公司["“”']/gi, UFLPA_LOCAL_NAME_UNCERTAIN);
 
@@ -59,6 +69,9 @@ export function sanitizeBuyerText(value: string): string {
   }
 
   for (const bad of KNOWN_GARBLED_OCR) out = out.replaceAll(bad, "");
+  out = out
+    .replace(/江市\s+有限公司/g, "")
+    .replace(/江市江\s+区\s+3\s+地1\s+14\s+1406/g, "");
   return out
     .replace(new RegExp(GARBLED_BUSINESS_SCOPE_LABEL, "g"), UNCERTAIN_BUSINESS_SCOPE)
     .replace(/\(?\s*evidence references\s*\)?/gi, "")
@@ -273,11 +286,24 @@ function sanitizeDocumentSummary(rows: VerifiedReportDocumentSummary[] | undefin
     ...doc,
     label: sanitizeBuyerText(doc.label),
     source: sanitizeBuyerText(doc.source),
-    fields: doc.fields.map((field) => ({
-      ...field,
-      label: sanitizeBuyerText(field.label),
-      value: sanitizeBuyerText(field.value),
-    })),
+    fields: doc.fields.map((field) => {
+      const label = sanitizeBuyerText(field.label);
+      const unreliable = isUnreliableChineseExtraction(field.value);
+      const isAddress = /registered address|address/i.test(label);
+      const isName = /chinese legal name|company name|licen[cs]e company/i.test(label);
+      return {
+        ...field,
+        label,
+        value: unreliable
+          ? isAddress
+            ? "Could not be reliably extracted"
+            : isName
+              ? "Could not be reliably extracted"
+              : sanitizeBuyerText(field.value)
+          : sanitizeBuyerText(field.value),
+        status: unreliable ? "uncertain" : field.status,
+      };
+    }),
   }));
 }
 
@@ -285,8 +311,9 @@ function sanitizeComparison(rows: VerifiedReportComparisonRow[] | undefined): Ve
   return (rows ?? []).map((row) => ({
     ...row,
     label: sanitizeBuyerText(row.label),
-    value_found: sanitizeBuyerText(row.value_found),
+    value_found: isUnreliableChineseExtraction(row.value_found) ? "Could not be reliably extracted" : sanitizeBuyerText(row.value_found),
     source: sanitizeBuyerText(row.source),
+    match_status: isUnreliableChineseExtraction(row.value_found) && row.match_status === "MISMATCH" ? "CANNOT CONFIRM" : row.match_status,
     buyer_impact: sanitizeBuyerText(row.buyer_impact),
   }));
 }

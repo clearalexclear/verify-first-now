@@ -320,7 +320,11 @@ export async function runInvestigation(
           certificates: (verifiedDocs?.certificates ?? [])
             .map((doc): VerifiedCertificateFields => ({
               holderName: doc.extracted_entities.company_name_en ?? doc.extracted_entities.company_name_zh ?? null,
-              certificateName: doc.extracted_entities.certificate_number ?? doc.filename,
+              certificateName: doc.extracted_entities.certificate_authority ?? doc.extracted_entities.certificate_number ?? doc.filename,
+              issuerName: doc.extracted_entities.certificate_authority,
+              certificateNumber: doc.extracted_entities.certificate_number,
+              validityDates: doc.extracted_entities.validity_dates,
+              productScope: doc.summary,
               requiredForOrder: false,
             })),
         })
@@ -335,6 +339,10 @@ export async function runInvestigation(
             .map((doc): VerifiedCertificateFields => ({
               holderName: doc.extracted_entities.company_name_en ?? doc.extracted_entities.company_name_zh ?? null,
               certificateName: doc.extracted_entities.certificate_authority ?? doc.extracted_entities.certificate_number ?? doc.filename,
+              issuerName: doc.extracted_entities.certificate_authority,
+              certificateNumber: doc.extracted_entities.certificate_number,
+              validityDates: doc.extracted_entities.validity_dates,
+              productScope: doc.summary,
               requiredForOrder: false,
             })),
         })
