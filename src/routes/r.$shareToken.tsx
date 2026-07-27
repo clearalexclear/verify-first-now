@@ -218,11 +218,59 @@ function VerifiedReportStrictPage({ r, pdfUrl, checklist }: { r: BuyerFacingRepo
 
         <Section title="1. Documents reviewed">
           <p className="font-semibold">{r.verified_report_decision?.documents_checked.join("; ")}</p>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-navy">
+                  <th className="py-2 pr-3">Document</th>
+                  <th className="py-2 pr-3">Field</th>
+                  <th className="py-2 pr-3">Value</th>
+                  <th className="py-2 pr-3">Extraction status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.verified_report_document_summary.flatMap((doc) =>
+                  doc.fields.map((field) => (
+                    <tr key={`${doc.label}-${field.label}`} className="border-b border-border/70">
+                      <td className="py-2 pr-3 font-medium">{doc.label}</td>
+                      <td className="py-2 pr-3">{field.label}</td>
+                      <td className="py-2 pr-3">{field.value}</td>
+                      <td className="py-2 pr-3">{field.status ?? "extracted"}</td>
+                    </tr>
+                  )),
+                )}
+              </tbody>
+            </table>
+          </div>
         </Section>
 
         <Section title="2. Entity & payment consistency">
           <p className="font-semibold">Entity/payment consistency: CANNOT CONFIRM</p>
           <p className="mt-2">Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder.</p>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-navy">
+                  <th className="py-2 pr-3">Row</th>
+                  <th className="py-2 pr-3">Value found</th>
+                  <th className="py-2 pr-3">Source</th>
+                  <th className="py-2 pr-3">Match status</th>
+                  <th className="py-2 pr-3">Buyer impact</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.verified_report_comparison.map((row) => (
+                  <tr key={row.label} className="border-b border-border/70">
+                    <td className="py-2 pr-3 font-medium">{row.label}</td>
+                    <td className="py-2 pr-3">{row.value_found}</td>
+                    <td className="py-2 pr-3">{row.source}</td>
+                    <td className="py-2 pr-3">{row.match_status}</td>
+                    <td className="py-2 pr-3">{row.buyer_impact}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Section>
 
         <Section title="3. What could be confirmed">
@@ -235,7 +283,17 @@ function VerifiedReportStrictPage({ r, pdfUrl, checklist }: { r: BuyerFacingRepo
           <p className="font-semibold">Open-web scouting is web intelligence, not official registry, sanctions, certificate or shipment verification.</p>
           <h3 className="mt-4 text-sm font-semibold text-navy">What we found online</h3>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
-            {(r.public_web_intelligence?.what_found_online ?? ["No supplier-linked public web sources were retained by the relevance gates."]).map((item, index) => <li key={index}>{item}</li>)}
+            {(r.public_web_source_summaries.length ? r.public_web_source_summaries : [{
+              source_name: "No supplier-linked public source",
+              source_type: "Public web",
+              source_reference: "n/a",
+              what_it_supports: "No supplier-linked public web sources met the relevance threshold.",
+              limitation: "Public-web absence is not proof that no supplier presence exists.",
+            }]).map((item, index) => (
+              <li key={index}>
+                <span className="font-medium">{item.source_name}</span> ({item.source_type}, {item.source_reference}). {item.what_it_supports} {item.limitation}
+              </li>
+            ))}
           </ul>
           <h3 className="mt-4 text-sm font-semibold text-navy">What this corroborates</h3>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">

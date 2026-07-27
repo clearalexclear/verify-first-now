@@ -162,6 +162,21 @@ export interface SupplierInternetScoutingReport {
   };
 }
 
+export interface VerifiedReportDocumentSummary {
+  document_type: "business_licence" | "proforma_invoice" | "certificate_or_test_report";
+  label: string;
+  source: string;
+  fields: { label: string; value: string; status?: "extracted" | "missing" | "uncertain" }[];
+}
+
+export interface VerifiedReportComparisonRow {
+  label: string;
+  value_found: string;
+  source: string;
+  match_status: "MATCH" | "CANNOT CONFIRM" | "MISSING" | "MISMATCH";
+  buyer_impact: string;
+}
+
 export interface UnavailableSource {
   name: string;
   reason: string;
@@ -209,6 +224,8 @@ export interface InvestigationReport {
   critical_blockers?: string[];
   verified_report_decision?: VerifiedReportDecision;
   public_web_intelligence?: SupplierInternetScoutingReport;
+  verified_report_document_summary?: VerifiedReportDocumentSummary[];
+  verified_report_comparison?: VerifiedReportComparisonRow[];
 }
 
 export interface VerifiedReportDecision {

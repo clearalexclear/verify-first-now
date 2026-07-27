@@ -449,27 +449,14 @@ function drawStrictVerifiedCover(ctx: Ctx, r: BuyerFacingReportViewModel) {
   drawWrapped(ctx, `Documents checked: ${(decision?.documents_checked ?? inferVerifiedReportDocumentsChecked(r)).join("; ")}`, { size: 10 });
   drawWrapped(ctx, `Why: ${(decision?.why.length ? decision.why : inferVerifiedReportWhy(r)).join(" ")}`, { size: 10 });
   drawWrapped(ctx, `Ask supplier before payment: ${(decision?.ask_supplier_before_payment.length ? decision.ask_supplier_before_payment : ["Confirm payment beneficiary/account holder, confirm the uploaded business licence against GSXT/CODS or licensed registry data, verify TUV SUD certificate, and use escrow/LC tied to inspection."]).join(" ")}`, { size: 10 });
-  const risks = [
-    ...(r.critical_blockers ?? []),
-    r.public_web_intelligence?.buyer_impact,
-    ...((r.public_web_intelligence?.potential_contradictions ?? []).filter((item) => !/^No supplier-linked contradiction/i.test(item))),
-  ].filter(Boolean).slice(0, 3);
-  const actions = [
-    ...(decision?.ask_supplier_before_payment ?? []),
-    ...(r.public_web_intelligence?.recommended_next_actions ?? []),
-  ].filter(Boolean).slice(0, 3);
-  const webFindings = (r.public_web_intelligence?.what_found_online ?? []).slice(0, 3);
-  if (risks.length) {
-    drawWrapped(ctx, "Top buyer risks", { size: 10, bold: true, color: NAVY });
-    for (const item of risks) drawWrapped(ctx, `- ${item}`, { size: 8.5 });
-  }
-  if (actions.length) {
-    drawWrapped(ctx, "Top required actions before payment", { size: 10, bold: true, color: NAVY });
-    for (const item of actions) drawWrapped(ctx, `- ${item}`, { size: 8.5 });
-  }
+  drawWrapped(ctx, "Top buyer risks", { size: 10, bold: true, color: NAVY });
+  for (const item of r.top_buyer_risks.slice(0, 3)) drawWrapped(ctx, `- ${item}`, { size: 8.5 });
+  drawWrapped(ctx, "Top required actions before payment", { size: 10, bold: true, color: NAVY });
+  for (const item of r.top_required_actions.slice(0, 3)) drawWrapped(ctx, `- ${item}`, { size: 8.5 });
+  const webFindings = r.public_web_source_summaries.slice(0, 3);
   if (webFindings.length) {
     drawWrapped(ctx, "Key public-web findings", { size: 10, bold: true, color: NAVY });
-    for (const item of webFindings) drawWrapped(ctx, `- ${item}`, { size: 8.5 });
+    for (const item of webFindings) drawWrapped(ctx, `- ${item.source_name}: ${item.what_it_supports}`, { size: 8.5 });
   }
 }
 
@@ -486,6 +473,55 @@ function drawStrictStatusTable(ctx: Ctx, r: BuyerFacingReportViewModel) {
   for (const item of grouped) drawWrapped(ctx, `- ${item}`, { size: 9 });
 }
 
+function drawMiniTableRows(ctx: Ctx, rows: string[][], widths: number[], opts: { size?: number } = {}) {
+  const size = opts.size ?? 8.2;
+  for (const row of rows) {
+    const cellLines = row.map((cell, i) => wrap(pdfSafe(customerFacingText(cell), Boolean(ctx.cjkRegular)), fontForText(ctx, cell), size, widths[i] - 8));
+    const rowHeight = Math.max(...cellLines.map((lines) => lines.length)) * size * 1.25 + 8;
+    ensureSpace(ctx, rowHeight + 4);
+    let x = MARGIN;
+    const startY = ctx.y;
+    for (let i = 0; i < row.length; i++) {
+      ctx.page.drawRectangle({ x, y: startY - rowHeight + 2, width: widths[i] - 2, height: rowHeight, borderColor: LIGHT, borderWidth: 0.5 });
+      const lines = cellLines[i];
+      for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+        const line = lines[lineIndex];
+        const font = fontForText(ctx, line, row[0] === "Document" || row[0] === "Check");
+        ctx.page.drawText(line, { x: x + 4, y: startY - 11 - lineIndex * size * 1.25, size, font, color: row[0] === "Document" || row[0] === "Check" ? NAVY : TEXT });
+      }
+      x += widths[i];
+    }
+    ctx.y -= rowHeight;
+  }
+  ctx.y -= 8;
+}
+
+function drawDocumentExtractionTable(ctx: Ctx, r: BuyerFacingReportViewModel) {
+  drawSectionHeader(ctx, "Document extraction summary");
+  if (r.verified_report_document_summary.length === 0) {
+    drawWrapped(ctx, "No structured document extraction fields were available in this report snapshot.");
+    return;
+  }
+  drawMiniTableRows(ctx, [["Document", "Field", "Value", "Extraction status"]], [105, 130, 210, 50]);
+  for (const doc of r.verified_report_document_summary) {
+    for (const field of doc.fields) {
+      drawMiniTableRows(ctx, [[doc.label, field.label, field.value, field.status ?? "extracted"]], [105, 130, 210, 50]);
+    }
+  }
+}
+
+function drawEntityPaymentComparisonTable(ctx: Ctx, r: BuyerFacingReportViewModel) {
+  drawSectionHeader(ctx, "Entity & payment comparison table");
+  if (r.verified_report_comparison.length === 0) {
+    drawWrapped(ctx, "No structured comparison rows were available in this report snapshot.");
+    return;
+  }
+  drawMiniTableRows(ctx, [["Check", "Value found", "Source", "Match status", "Buyer impact"]], [95, 125, 85, 70, 120]);
+  for (const row of r.verified_report_comparison) {
+    drawMiniTableRows(ctx, [[row.label, row.value_found, row.source, row.match_status, row.buyer_impact]], [95, 125, 85, 70, 120]);
+  }
+}
+
 function drawStrictVerifiedReport(ctx: Ctx, r: BuyerFacingReportViewModel) {
   drawStrictVerifiedCover(ctx, r);
 
@@ -493,10 +529,12 @@ function drawStrictVerifiedReport(ctx: Ctx, r: BuyerFacingReportViewModel) {
   drawSectionHeader(ctx, "1. Documents reviewed");
   drawWrapped(ctx, (r.verified_report_decision?.documents_checked ?? inferVerifiedReportDocumentsChecked(r)).join("; "), { size: 10, bold: true });
   drawWrapped(ctx, "Business licence and proforma invoice were treated as required buyer-provided documents. Certificate/test report evidence is reviewed as supporting evidence only.");
+  drawDocumentExtractionTable(ctx, r);
 
   drawSectionHeader(ctx, "2. Entity & payment consistency");
   drawWrapped(ctx, `Entity/payment consistency: ${displayEntityPaymentConsistency(r.verified_report_decision?.entity_payment_consistency ?? "NOT_VERIFIED")}`, { bold: true });
   drawWrapped(ctx, MISSING_BENEFICIARY_WORDING);
+  drawEntityPaymentComparisonTable(ctx, r);
 
   drawSectionHeader(ctx, "3. What could be confirmed");
   drawWrapped(ctx, `English entity name: ${r.legal_entity_summary.english_entity_name}`);
@@ -506,8 +544,12 @@ function drawStrictVerifiedReport(ctx: Ctx, r: BuyerFacingReportViewModel) {
   drawSectionHeader(ctx, "Public web intelligence");
   drawWrapped(ctx, "Open-web scouting is web intelligence, not official registry, sanctions, certificate or shipment verification.", { bold: true });
   drawWrapped(ctx, "What we found online", { size: 10, bold: true, color: NAVY });
-  for (const item of r.public_web_intelligence?.what_found_online ?? ["No supplier-linked public web sources were retained by the relevance gates."]) {
-    drawWrapped(ctx, `- ${item}`);
+  const sourceSummaries = r.public_web_source_summaries;
+  if (sourceSummaries.length === 0) {
+    drawWrapped(ctx, "- No supplier-linked public web sources met the relevance threshold.");
+  }
+  for (const item of sourceSummaries) {
+    drawWrapped(ctx, `- ${item.source_name} (${item.source_type}, ${item.source_reference}). ${item.what_it_supports} ${item.limitation}`);
   }
   drawWrapped(ctx, "What this corroborates", { size: 10, bold: true, color: NAVY });
   for (const item of r.public_web_intelligence?.what_this_corroborates ?? ["No public-web fact was strong enough to corroborate supplier identity or operating claims."]) {
