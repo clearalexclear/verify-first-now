@@ -11,7 +11,7 @@ import { OPEN_WEB_CHINA_REGISTRY_LABEL, OPEN_WEB_CHINA_REGISTRY_PROVIDER } from 
 import { runConnectorEvidenceChecksDetailed, type ConnectorRunSummary } from "./connectors/findings.server";
 import { applyOutcomeGating, buildCanonicalChecklist } from "./checklist";
 import { computeOutcome, synthesiseNarrative } from "./synthesis.server";
-import { buildVerifiedReportConsistency, extractVerifiedBusinessLicenceFields, extractVerifiedInvoiceFields, selectVerifiedReportEvidenceDocs, type VerifiedCertificateFields } from "./verified-report.server";
+import { buildVerifiedReportCommercialTables, buildVerifiedReportConsistency, extractVerifiedBusinessLicenceFields, extractVerifiedInvoiceFields, selectVerifiedReportEvidenceDocs, type VerifiedCertificateFields } from "./verified-report.server";
 import { renderReportPdf } from "./pdf.server";
 import { emailReport, emailInvestigationFailed } from "./email.server";
 import { persistFindingEvidence } from "./evidence.server";
@@ -325,6 +325,20 @@ export async function runInvestigation(
             })),
         })
       : null;
+    const verifiedReportTables = isVerifiedReport
+      ? buildVerifiedReportCommercialTables({
+          supplierName: order.supplier_company_name,
+          resolvedEnglishName: resolved.legal_name_en,
+          businessLicence: extractVerifiedBusinessLicenceFields(verifiedDocs?.businessLicence),
+          proformaInvoice: extractVerifiedInvoiceFields(verifiedDocs?.proformaInvoice),
+          certificates: (verifiedDocs?.certificates ?? [])
+            .map((doc): VerifiedCertificateFields => ({
+              holderName: doc.extracted_entities.company_name_en ?? doc.extracted_entities.company_name_zh ?? null,
+              certificateName: doc.extracted_entities.certificate_authority ?? doc.extracted_entities.certificate_number ?? doc.filename,
+              requiredForOrder: false,
+            })),
+        })
+      : null;
     if (verifiedConsistency) findings.push(...verifiedConsistency.findings);
 
     const evidenceBackedFindings = await persistFindingEvidence(caseId, findings, opts.jobId ?? null);
@@ -459,6 +473,8 @@ export async function runInvestigation(
       critical_blockers: [],
       verified_report_decision: verifiedConsistency?.decision,
       public_web_intelligence: scoutingResult?.report,
+      verified_report_document_summary: verifiedReportTables?.documents,
+      verified_report_comparison: verifiedReportTables?.comparison,
     };
     report.checklist_results = buildCanonicalChecklist(report);
 

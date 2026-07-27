@@ -1,4 +1,4 @@
-import type { ChecklistReportResult, FinalOutcome, Finding, InvestigationReport, SupplierInternetScoutingReport, VerifiedReportDecision } from "./types";
+import type { ChecklistReportResult, FinalOutcome, Finding, InvestigationReport, SupplierInternetScoutingReport, VerifiedReportComparisonRow, VerifiedReportDecision, VerifiedReportDocumentSummary } from "./types";
 
 const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
 
@@ -197,6 +197,17 @@ export interface BuyerFacingReportViewModel {
   verified_report_decision?: VerifiedReportDecision;
   is_verified_report: boolean;
   public_web_intelligence?: SupplierInternetScoutingReport;
+  public_web_source_summaries: {
+    source_name: string;
+    source_type: string;
+    source_reference: string;
+    what_it_supports: string;
+    limitation: string;
+  }[];
+  top_buyer_risks: string[];
+  top_required_actions: string[];
+  verified_report_document_summary: VerifiedReportDocumentSummary[];
+  verified_report_comparison: VerifiedReportComparisonRow[];
   legal_entity_summary: {
     english_entity_name: string;
     uscc: string | null;
@@ -211,6 +222,73 @@ export interface BuyerFacingReportViewModel {
     local_name_screening: string;
     limitation: string;
   };
+}
+
+function sourceReference(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+function titleForPublicWebSource(title: string, url: string): string {
+  const cleanTitle = sanitizeBuyerText(title);
+  return cleanTitle && !isLowQualitySourceTitle(cleanTitle) ? cleanTitle : sourceReference(url);
+}
+
+function supportForPublicWebSource(evidence: SupplierInternetScoutingReport["evidence"][number]): string {
+  const facts = evidence.extracted_facts;
+  if (facts.manufacturer_or_trader_claims.length || facts.product_categories.length) {
+    const category = facts.product_categories[0] ? ` in ${facts.product_categories[0]}` : "";
+    return `Supports that the supplier presents itself online as a manufacturer/trader${category}.`;
+  }
+  if (facts.certificate_references.length) {
+    return `Shows a public reference to certificate/report number ${facts.certificate_references[0]}.`;
+  }
+  if (facts.trade_fair_traces.length) return "Shows a public trace of trade fair or exhibition activity.";
+  if (facts.export_or_customer_traces.length) return "Shows a public export/import context mention, but not licensed shipment verification.";
+  return "Supports that a supplier-linked public web presence was found.";
+}
+
+function publicWebSourceTypeLabel(value: string): string {
+  return value.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function buildPublicWebSourceSummaries(report: SupplierInternetScoutingReport | undefined): BuyerFacingReportViewModel["public_web_source_summaries"] {
+  return (report?.evidence ?? [])
+    .filter((evidence) => evidence.source_type !== "social" && evidence.source_type !== "irrelevant")
+    .slice(0, 6)
+    .map((evidence) => ({
+      source_name: titleForPublicWebSource(evidence.title, evidence.url),
+      source_type: publicWebSourceTypeLabel(evidence.source_type),
+      source_reference: sourceReference(evidence.url),
+      what_it_supports: sanitizeBuyerText(supportForPublicWebSource(evidence)),
+      limitation: sanitizeBuyerText(evidence.limitation),
+    }));
+}
+
+function sanitizeDocumentSummary(rows: VerifiedReportDocumentSummary[] | undefined): VerifiedReportDocumentSummary[] {
+  return (rows ?? []).map((doc) => ({
+    ...doc,
+    label: sanitizeBuyerText(doc.label),
+    source: sanitizeBuyerText(doc.source),
+    fields: doc.fields.map((field) => ({
+      ...field,
+      label: sanitizeBuyerText(field.label),
+      value: sanitizeBuyerText(field.value),
+    })),
+  }));
+}
+
+function sanitizeComparison(rows: VerifiedReportComparisonRow[] | undefined): VerifiedReportComparisonRow[] {
+  return (rows ?? []).map((row) => ({
+    ...row,
+    label: sanitizeBuyerText(row.label),
+    value_found: sanitizeBuyerText(row.value_found),
+    source: sanitizeBuyerText(row.source),
+    buyer_impact: sanitizeBuyerText(row.buyer_impact),
+  }));
 }
 
 function sanitizePublicWebIntelligence(report: SupplierInternetScoutingReport | undefined): SupplierInternetScoutingReport | undefined {
@@ -282,6 +360,7 @@ export function buildBuyerFacingReportViewModel(report: InvestigationReport, opt
     reason: sanitizeBuyerText(source.reason),
   }));
   const publicWebIntelligence = sanitizePublicWebIntelligence(report.public_web_intelligence);
+  const publicWebSourceSummaries = buildPublicWebSourceSummaries(publicWebIntelligence);
   const sanitizedReportForDecision: InvestigationReport = {
     ...report,
     findings,
@@ -330,6 +409,19 @@ export function buildBuyerFacingReportViewModel(report: InvestigationReport, opt
     verified_report_decision: sanitizeVerifiedDecision(sanitizedReportForDecision),
     is_verified_report: isVerifiedReport,
     public_web_intelligence: publicWebIntelligence,
+    public_web_source_summaries: publicWebSourceSummaries,
+    top_buyer_risks: [
+      "Cannot confirm payment beneficiary matches licence holder.",
+      "Company registration/status has not been officially verified.",
+      "Certificate/test report has not been issuer-verified.",
+    ],
+    top_required_actions: [
+      "Confirm bank beneficiary/account holder before paying.",
+      "Verify the business licence against GSXT/CODS or licensed registry data.",
+      "Ask supplier for certificate issuer verification link and use escrow/LC tied to inspection.",
+    ],
+    verified_report_document_summary: sanitizeDocumentSummary(report.verified_report_document_summary),
+    verified_report_comparison: sanitizeComparison(report.verified_report_comparison),
     legal_entity_summary: {
       english_entity_name: englishEntityName,
       uscc,
@@ -429,5 +521,7 @@ export function sanitizeBuyerReport(report: InvestigationReport): InvestigationR
   cloned.sources_unavailable = view.sources_unavailable;
   cloned.verified_report_decision = view.verified_report_decision;
   cloned.public_web_intelligence = view.public_web_intelligence;
+  cloned.verified_report_document_summary = view.verified_report_document_summary;
+  cloned.verified_report_comparison = view.verified_report_comparison;
   return cloned;
 }

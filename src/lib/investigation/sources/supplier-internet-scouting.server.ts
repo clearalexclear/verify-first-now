@@ -251,11 +251,25 @@ function extractFacts(input: SupplierScoutingInput, hit: FirecrawlSearchHit, tex
 }
 
 function summaryForEvidence(type: SupplierScoutingSourceType, title: string, facts: SupplierScoutingEvidence["extracted_facts"]): string {
+  const sourceLabel = type === "marketplace"
+    ? "Marketplace company profile found"
+    : type === "supplier_site"
+      ? "Supplier website page found"
+      : type === "certificate_issuer"
+        ? "Certificate issuer/lab page found"
+        : type === "trade_data"
+          ? "Public trade-data page found"
+          : type === "official_source"
+            ? "Official/public-source page found"
+            : "Supplier-linked public web page found";
+  const supports = facts.manufacturer_or_trader_claims.length || facts.product_categories.length
+    ? `It supports that the supplier presents itself online as a manufacturer/trader${facts.product_categories[0] ? ` in ${facts.product_categories[0]}` : ""}.`
+    : "It supports that a supplier-linked online presence exists.";
   const parts = [
-    `Supplier-linked ${type.replace(/_/g, " ")} result retained: ${title}.`,
-    facts.manufacturer_or_trader_claims[0],
+    `${sourceLabel}: ${title}.`,
+    supports,
     facts.marketplace_badges[0] && `Marketplace indicator: ${facts.marketplace_badges[0]}.`,
-    facts.certificate_references[0] && `Certificate reference matched: ${facts.certificate_references[0]}.`,
+    facts.certificate_references[0] && `Certificate reference visible: ${facts.certificate_references[0]}.`,
     facts.export_or_customer_traces[0],
     facts.trade_fair_traces[0],
     facts.adverse_or_complaint_indicators[0],

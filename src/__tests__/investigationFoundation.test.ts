@@ -865,7 +865,8 @@ describe("Verified Supplier Report public web intelligence scouting", () => {
     ]));
     expect(result.report.evidence.some((item) => item.url.includes("unrelated"))).toBe(false);
     expect(result.report.evidence[0].matched_identifiers.length).toBeGreaterThan(0);
-    expect(result.report.what_found_online.join(" ")).toMatch(/Supplier-linked/);
+    expect(result.report.what_found_online.join(" ")).toMatch(/Supplier website page found|Marketplace company profile found|Certificate issuer/);
+    expect(result.report.what_found_online.join(" ")).not.toMatch(/result retained/i);
     expect(result.findings[0].evidence_excerpt).not.toMatch(/مصنع|fournisseur|GlobalSources multilingual/);
   });
 
@@ -918,8 +919,8 @@ describe("Verified Supplier Report public web intelligence scouting", () => {
         generated_at: "2026-07-27T00:00:00.000Z",
         queries_run: ["\"Yangjiang Justa Industry&trade Co., Ltd.\""],
         evidence: [{
-          title: "Yangjiang Justa Industry&trade Co., Ltd. supplier profile",
-          url: "https://marketplace.example/yangjiang-justa",
+          title: "Alibaba company profile for Yangjiang Justa Industry & Trade Co., Ltd.",
+          url: "https://alibaba.example/yangjiang-justa",
           source_type: "marketplace",
           retrieved_at: "2026-07-27T00:00:00.000Z",
           query_used: "\"Yangjiang Justa Industry&trade Co., Ltd.\"",
@@ -939,10 +940,10 @@ describe("Verified Supplier Report public web intelligence scouting", () => {
             litigation_or_enforcement_indicators: [],
             contradictions: [],
           },
-          buyer_safe_summary: "Supplier-linked marketplace result retained: Yangjiang Justa Industry&trade Co., Ltd. supplier profile. Manufacturer claim appears in public page text.",
+          buyer_safe_summary: "Alibaba company profile found for Yangjiang Justa Industry & Trade Co., Ltd. It supports that the supplier presents itself online as a kitchenware manufacturer/trader, but this is marketplace self-presentation, not official registry verification.",
           limitation: "Marketplace profile content may be supplier-provided and is not official registry verification.",
         }],
-        what_found_online: ["Supplier-linked marketplace result retained: Yangjiang Justa Industry&trade Co., Ltd. supplier profile."],
+        what_found_online: ["Alibaba company profile found for Yangjiang Justa Industry & Trade Co., Ltd."],
         what_this_corroborates: ["Supplier public profile includes manufacturer/trader positioning claims."],
         still_not_verified: ["Corporate registry not officially verified.", "Certificate authenticity not issuer-verified.", "Shipment history not verified by licensed trade-data source."],
         potential_contradictions: ["No supplier-linked contradiction was retained from the public-web scouting pass."],
@@ -956,13 +957,72 @@ describe("Verified Supplier Report public web intelligence scouting", () => {
           matched_identifiers: ["supplier name"],
         },
       },
+      verified_report_document_summary: [
+        {
+          document_type: "business_licence",
+          label: "Business licence",
+          source: "Uploaded business licence",
+          fields: [
+            { label: "Company name", value: "Could not be reliably extracted", status: "uncertain" },
+            { label: "USCC / registration number", value: "91441702553600081W", status: "extracted" },
+            { label: "Registered address", value: "Could not be reliably extracted", status: "uncertain" },
+            { label: "Extraction status", value: "Some Chinese-language fields could not be reliably extracted", status: "uncertain" },
+          ],
+        },
+        {
+          document_type: "proforma_invoice",
+          label: "Proforma invoice",
+          source: "Uploaded proforma invoice",
+          fields: [
+            { label: "Seller / exporter name", value: "Yangjiang Justa Industry&trade Co., Ltd.", status: "extracted" },
+            { label: "Buyer name", value: "Buyer Ltd", status: "extracted" },
+            { label: "Product", value: "cookware set", status: "extracted" },
+            { label: "Order amount", value: "USD 12,000", status: "extracted" },
+            { label: "Payment beneficiary / account holder", value: "Not extracted", status: "missing" },
+            { label: "Bank name", value: "Not extracted", status: "missing" },
+          ],
+        },
+        {
+          document_type: "certificate_or_test_report",
+          label: "Certificate/test report",
+          source: "Uploaded certificate/test report",
+          fields: [
+            { label: "Issuer / lab name", value: "TUV SUD", status: "extracted" },
+            { label: "Certificate / report number", value: "CERT-9988", status: "extracted" },
+            { label: "Product scope", value: "cookware", status: "extracted" },
+            { label: "Date / validity", value: "2026", status: "extracted" },
+          ],
+        },
+      ],
+      verified_report_comparison: [
+        { label: "Submitted supplier name", value_found: "Yangjiang Justa Industry&trade Co., Ltd.", source: "Customer order form", match_status: "MATCH", buyer_impact: "Supplier name aligns with invoice seller." },
+        { label: "Resolved English entity name", value_found: "YANGJIANG JUSTA INDUSTRY & TRADE CO.,LTD", source: "Investigation result", match_status: "CANNOT CONFIRM", buyer_impact: "Resolved identity remains preliminary without official registry/API evidence." },
+        { label: "Business licence company name", value_found: "Could not be reliably extracted", source: "Business licence", match_status: "CANNOT CONFIRM", buyer_impact: "Licence name must be checked against official registry data." },
+        { label: "Proforma invoice seller/exporter", value_found: "Yangjiang Justa Industry&trade Co., Ltd.", source: "Proforma invoice", match_status: "MATCH", buyer_impact: "Invoice seller appears consistent with submitted supplier name." },
+        { label: "Payment beneficiary/account holder", value_found: "Not extracted", source: "Proforma invoice payment details", match_status: "CANNOT CONFIRM", buyer_impact: "Cannot confirm payee matches licence holder before payment." },
+        { label: "Certificate holder/applicant", value_found: "Yangjiang Justa Industry&trade Co., Ltd.", source: "Certificate/test report", match_status: "MATCH", buyer_impact: "Certificate holder appears aligned but issuer verification is still required." },
+      ],
     });
     report.checklist_results = buildCanonicalChecklist(report);
 
     const text = await extractPdfText(await renderReportPdf(report));
     expect(text).toContain("Public web intelligence");
+    expect(text).toContain("Document extraction summary");
+    expect(text).toContain("Entity & payment comparison table");
+    expect(text).toContain("Business licence Company name Could not be reliably extracted uncertain");
+    expect(text).toContain("Proforma invoice Seller / exporter name Yangjiang Justa Industry&trade Co., Ltd.");
+    expect(text).toContain("Payment beneficiary/account holder Not extracted");
+    expect(text).toContain("Certificate/test report Issuer / lab name TUV SUD");
+    expect(text).toContain("Cannot confirm payment beneficiary matches licence holder.");
+    expect(text).toContain("Company registration/status has not been officially verified.");
+    expect(text).toContain("Certificate/test report has not been issuer-verified.");
+    expect(text).toContain("Confirm bank beneficiary/account holder before paying.");
+    expect(text).toContain("Verify the business licence against GSXT/CODS or licensed registry data.");
+    expect(text).toContain("Ask supplier for certificate issuer verification link and use escrow/LC tied to inspection.");
     expect(text).toContain("What we found online");
-    expect(text).toContain("Supplier-linked marketplace result retained");
+    expect(text).toContain("Alibaba company profile for Yangjiang Justa Industry & Trade Co., Ltd.");
+    expect(text).toContain("Supports that the supplier presents itself online as a manufacturer/trader in cookware.");
+    expect(text).not.toContain("result retained");
     expect(text).toContain("Corporate registry not officially verified");
     expect(text).toContain("Business licence; Proforma invoice; 1 certificate/test report");
     expect(text).not.toMatch(/江市有限公司|江市江区3地1141406|GlobalSources multilingual|مصنع|fournisseur/);
