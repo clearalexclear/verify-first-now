@@ -208,6 +208,17 @@ const PROVIDERS: Array<{
     webIntelligenceOnly: true,
   },
   {
+    id: "manus_deep_research",
+    name: "Manus deep research",
+    category: "deep_research",
+    requiredEnv: ["MANUS_ENABLED", "MANUS_API_KEY"],
+    connectorRunId: "manus_deep_research",
+    evidenceSourcePatterns: ["Manus deep research%"],
+    checklistItemsAffected: ["website_consistency", "factory_vs_trader", "export_history_probe", "adverse_media", "missing_information_required"],
+    notes: "Optional paid/credentialed deep-research backend for Verified Supplier Reports. Raw output is stored internally only; buyer reports render accepted evidence-bound claims after source validation.",
+    paidDisabled: true,
+  },
+  {
     id: "qcc_corporate_registry",
     name: "QCC International API",
     category: "corporate_registry",
@@ -258,7 +269,7 @@ export const getIntegrationDiagnostics = createServerFn({ method: "POST" })
     const envConfigured = (keys: string[]) =>
       Object.fromEntries(keys.map((k) => [
         k,
-        k === "CHINA_REGISTRY_ENABLED"
+        k === "CHINA_REGISTRY_ENABLED" || k === "MANUS_ENABLED"
           ? String(process.env[k] ?? "").toLowerCase() === "true"
           : Boolean(process.env[k]),
       ]));

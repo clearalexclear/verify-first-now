@@ -321,6 +321,70 @@ function VerifiedReportStrictPage({ r, pdfUrl, checklist }: { r: BuyerFacingRepo
           </ul>
         </Section>
 
+        <Section title="Deep research dossier">
+          {!r.manus_research || r.manus_research.status === "not_configured" ? (
+            <p>Deep research backend unavailable/not configured.</p>
+          ) : r.manus_research.status !== "completed" ? (
+            <p>Deep research backend unavailable/not configured. Manus status: {r.manus_research.status}.</p>
+          ) : r.manus_evidence_summary.length === 0 ? (
+            <p>Manus returned no evidence-bound claims that passed VerifyFirst source validation.</p>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Accepted Manus claims are shown only after VerifyFirst validation for source URL, exact source text, source type and supplier relevance.
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left text-navy">
+                      <th className="py-2 pr-3">Claim</th>
+                      <th className="py-2 pr-3">Source</th>
+                      <th className="py-2 pr-3">Source type</th>
+                      <th className="py-2 pr-3">Limitation</th>
+                      <th className="py-2 pr-3">Buyer implication</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {r.manus_evidence_summary.map((claim) => (
+                      <tr key={`${claim.claim}-${claim.source}`} className="border-b border-border/70 align-top">
+                        <td className="py-2 pr-3">{claim.claim}</td>
+                        <td className="py-2 pr-3">{claim.source}</td>
+                        <td className="py-2 pr-3">{claim.source_type}</td>
+                        <td className="py-2 pr-3">{claim.limitation}</td>
+                        <td className="py-2 pr-3">{claim.buyer_implication}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {r.manus_platform_trade_intelligence.length > 0 && (
+                <>
+                  <h3 className="text-sm font-semibold text-navy">Platform/trade-data intelligence</h3>
+                  <ul className="list-disc space-y-1 pl-5 text-sm">
+                    {r.manus_platform_trade_intelligence.map((item, index) => <li key={index}>{item}</li>)}
+                  </ul>
+                </>
+              )}
+              {r.manus_material_contradictions.length > 0 && (
+                <>
+                  <h3 className="text-sm font-semibold text-navy">Material contradictions</h3>
+                  <ul className="list-disc space-y-1 pl-5 text-sm">
+                    {r.manus_material_contradictions.map((item, index) => <li key={index}>{item}</li>)}
+                  </ul>
+                </>
+              )}
+              {r.manus_questions_before_payment.length > 0 && (
+                <>
+                  <h3 className="text-sm font-semibold text-navy">Questions before payment</h3>
+                  <ul className="list-disc space-y-1 pl-5 text-sm">
+                    {r.manus_questions_before_payment.map((item, index) => <li key={index}>{item}</li>)}
+                  </ul>
+                </>
+              )}
+            </div>
+          )}
+        </Section>
+
         <Section title="4. What could not be independently verified">
           <p>Chinese legal name: {r.legal_entity_summary.chinese_legal_name}</p>
           <p>Registered address: {r.legal_entity_summary.registered_address}</p>

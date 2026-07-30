@@ -162,6 +162,67 @@ export interface SupplierInternetScoutingReport {
   };
 }
 
+export type ManusResearchStatus =
+  | "not_configured"
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "timed_out";
+
+export type ManusSourceType =
+  | "official_government_registry"
+  | "third_party_database"
+  | "commercial_registry_aggregator"
+  | "marketplace_platform_recorded_data"
+  | "supplier_marketing_claim"
+  | "trade_data"
+  | "weak_public_web_intelligence"
+  | "buyer_interpretation";
+
+export type ManusClaimValidationStatus =
+  | "accepted"
+  | "rejected_missing_source"
+  | "rejected_missing_exact_text"
+  | "rejected_supplier_claim_only"
+  | "rejected_low_relevance";
+
+export interface ManusEvidenceClaim {
+  claim: string;
+  exact_text_read_from_source: string;
+  source_url: string;
+  source_title: string;
+  source_domain: string;
+  source_type: ManusSourceType;
+  retrieved_at: string;
+  limitation: string;
+  buyer_implication: string;
+  validation_status: ManusClaimValidationStatus;
+}
+
+export interface ManusResearchReport {
+  provider: "manus";
+  status: ManusResearchStatus;
+  manus_task_id: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  error_message: string | null;
+  raw_output_storage_path?: string | null;
+  accepted_claims: ManusEvidenceClaim[];
+  rejected_claims: ManusEvidenceClaim[];
+  supplier_marketing_claims: ManusEvidenceClaim[];
+  buyer_interpretations: string[];
+  questions_before_payment: string[];
+  rejected_reason_counts: Partial<Record<ManusClaimValidationStatus, number>>;
+  sources_used: { title: string; url: string; domain: string; source_type: ManusSourceType }[];
+  diagnostics: {
+    claims_received: number;
+    claims_accepted: number;
+    claims_rejected: number;
+    sources_used: number;
+  };
+}
+
 export interface VerifiedReportDocumentSummary {
   document_type: "business_licence" | "proforma_invoice" | "certificate_or_test_report";
   label: string;
@@ -224,6 +285,7 @@ export interface InvestigationReport {
   critical_blockers?: string[];
   verified_report_decision?: VerifiedReportDecision;
   public_web_intelligence?: SupplierInternetScoutingReport;
+  manus_research?: ManusResearchReport;
   verified_report_document_summary?: VerifiedReportDocumentSummary[];
   verified_report_comparison?: VerifiedReportComparisonRow[];
 }

@@ -575,6 +575,32 @@ function drawStrictVerifiedReport(ctx: Ctx, r: BuyerFacingReportViewModel) {
     drawWrapped(ctx, `- ${item}`);
   }
 
+  drawSectionHeader(ctx, "Deep research dossier");
+  if (!r.manus_research || r.manus_research.status === "not_configured") {
+    drawWrapped(ctx, "Deep research backend unavailable/not configured.");
+  } else if (r.manus_research.status !== "completed") {
+    drawWrapped(ctx, `Deep research backend unavailable/not configured. Manus status: ${r.manus_research.status}.`);
+  } else if (r.manus_evidence_summary.length === 0) {
+    drawWrapped(ctx, "Manus returned no evidence-bound claims that passed VerifyFirst source validation.");
+  } else {
+    drawWrapped(ctx, "Accepted Manus claims are shown only after VerifyFirst validation for source URL, exact source text, source type and supplier relevance.", { bold: true });
+    for (const claim of r.manus_evidence_summary.slice(0, 6)) {
+      drawWrapped(ctx, `- ${claim.claim} Source: ${claim.source}. Source type: ${claim.source_type}. Limitation: ${claim.limitation} Buyer implication: ${claim.buyer_implication}`);
+    }
+    if (r.manus_platform_trade_intelligence.length) {
+      drawWrapped(ctx, "Platform/trade-data intelligence", { size: 10, bold: true, color: NAVY });
+      for (const item of r.manus_platform_trade_intelligence) drawWrapped(ctx, `- ${item}`);
+    }
+    if (r.manus_material_contradictions.length) {
+      drawWrapped(ctx, "Material contradictions", { size: 10, bold: true, color: RED });
+      for (const item of r.manus_material_contradictions) drawWrapped(ctx, `- ${item}`);
+    }
+    if (r.manus_questions_before_payment.length) {
+      drawWrapped(ctx, "Questions before payment", { size: 10, bold: true, color: NAVY });
+      for (const item of r.manus_questions_before_payment) drawWrapped(ctx, `- ${item}`);
+    }
+  }
+
   drawSectionHeader(ctx, "4. What could not be independently verified");
   drawWrapped(ctx, `Chinese legal name: ${r.legal_entity_summary.chinese_legal_name}`);
   drawWrapped(ctx, `Registered address: ${r.legal_entity_summary.registered_address}`);

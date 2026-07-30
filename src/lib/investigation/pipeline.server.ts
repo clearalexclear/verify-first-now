@@ -5,6 +5,7 @@ import { screenUflpa } from "./sources/uflpa.server";
 import { screenAdverseMedia, screenLitigation } from "./sources/adverse-media.server";
 import { probeExportHistory, screenCertificates, screenWebsiteConsistency } from "./sources/web-research.server";
 import { scoutSupplierInternet } from "./sources/supplier-internet-scouting.server";
+import { runManusSupplierResearch } from "./sources/manus-research.server";
 import { retrieveChinaRegistryEvidence } from "./sources/china-registry.server";
 import { createOfficialRegistryTask, OFFICIAL_BROWSER_ASSISTED_PROVIDER } from "./sources/official-browser-assisted.server";
 import { OPEN_WEB_CHINA_REGISTRY_LABEL, OPEN_WEB_CHINA_REGISTRY_PROVIDER } from "./sources/open-web-china-registry.server";
@@ -233,6 +234,21 @@ export async function runInvestigation(
           extracted,
         })
       : Promise.resolve(null);
+    const manusPromise = isVerifiedReport
+      ? runManusSupplierResearch({
+          caseId,
+          supplierName: order.supplier_company_name,
+          supplierCountry: order.supplier_country,
+          website: order.website_marketplace_url,
+          marketplaceUrl: order.website_marketplace_url,
+          productCategory: caseRow.product_category ?? "",
+          destinationMarket,
+          estimatedOrderValue: caseRow.estimated_order_value ?? "",
+          paymentConcerns: caseRow.customer_concerns ?? null,
+          resolved,
+          extracted,
+        })
+      : Promise.resolve(null);
 
     const settled = await Promise.allSettled([
       screenSanctions({ name: nameForScreening, country: order.supplier_country }),
@@ -251,6 +267,7 @@ export async function runInvestigation(
       probeExportHistory({ name: nameForScreening, website: order.website_marketplace_url, destinationMarket }),
       connectorRunPromise.then((r) => r.findings),
       scoutingPromise.then((r) => r?.findings ?? []),
+      manusPromise.then((r) => r?.findings ?? []),
       Promise.resolve(registryFindings),
     ]);
 
@@ -304,6 +321,74 @@ export async function runInvestigation(
         evidence_excerpt: evidence.buyer_safe_summary,
         license_notes: evidence.limitation,
       })));
+    }
+    const manusResult = await manusPromise.catch(() => null);
+    let manusRawPath: string | null = null;
+    let manusConnectorRunId: string | null = null;
+    if (manusResult) {
+      if (manusResult.rawOutput) {
+        manusRawPath = `cases/${caseId}/internal/manus-${opts.jobId ?? "manual"}-${Date.now()}.json`;
+        await db.storage
+          .from("reports")
+          .upload(manusRawPath, JSON.stringify(manusResult.rawOutput, null, 2), { contentType: "application/json", upsert: true })
+          .catch(() => null);
+        manusResult.report.raw_output_storage_path = manusRawPath;
+      }
+      const { data: manusRun } = await db.from("connector_runs").insert({
+        connector_id: "manus_deep_research",
+        case_id: caseId,
+        job_id: opts.jobId ?? null,
+        status: manusResult.report.status === "completed" ? "success" : manusResult.report.status === "not_configured" ? "not_configured" : "error",
+        mode: "paid_enabled",
+        retrieved_at: manusResult.report.completed_at ?? new Date().toISOString(),
+        confidence: manusResult.report.accepted_claims.length ? "medium" : "low",
+        source_url: null,
+        raw_response_storage_allowed: Boolean(manusRawPath),
+        error_message: manusResult.report.error_message,
+        metadata: {
+          manus_task_id: manusResult.report.manus_task_id,
+          manus_status: manusResult.report.status,
+          evidence_count: manusResult.report.accepted_claims.length,
+          accepted_claims: manusResult.report.accepted_claims.length,
+          rejected_claims: manusResult.report.rejected_claims.length,
+          rejected_reason_counts: manusResult.report.rejected_reason_counts,
+          sources_used: manusResult.report.sources_used,
+          raw_output_storage_path: manusRawPath,
+        },
+      }).select("id").maybeSingle();
+      manusConnectorRunId = manusRun?.id ?? null;
+      connectorRuns.push({
+        connectorId: "manus_deep_research",
+        connectorName: "Manus deep research",
+        category: "deep_research",
+        status: manusResult.report.status === "completed" ? "success" : manusResult.report.status === "not_configured" ? "not_configured" : "error",
+        mode: process.env.MANUS_ENABLED === "true" && process.env.MANUS_API_KEY ? "paid_enabled" : "paid_disabled",
+        sourceUrl: null,
+        retrievedAt: manusResult.report.completed_at ?? new Date().toISOString(),
+        reason: manusResult.report.error_message ?? `${manusResult.report.accepted_claims.length} accepted evidence-bound Manus claims.`,
+      });
+      if (manusResult.report.accepted_claims.length) {
+        await db.from("evidence_facts").insert(manusResult.report.accepted_claims.map((claim) => ({
+          case_id: caseId,
+          connector_run_id: manusConnectorRunId,
+          fact_key: "manus.evidence_claim",
+          fact_value: {
+            claim: claim.claim,
+            source_type: claim.source_type,
+            source_title: claim.source_title,
+            source_domain: claim.source_domain,
+            limitation: claim.limitation,
+            buyer_implication: claim.buyer_implication,
+          },
+          classification: claim.source_type === "official_government_registry" ? "VERIFIED" : claim.source_type === "third_party_database" || claim.source_type === "commercial_registry_aggregator" || claim.source_type === "trade_data" ? "CORROBORATED" : "NOT_INDEPENDENTLY_VERIFIED",
+          confidence: "medium",
+          source_name: "Manus deep research",
+          source_url: claim.source_url,
+          retrieval_date: claim.retrieved_at,
+          evidence_excerpt: claim.exact_text_read_from_source,
+          license_notes: "Parsed from Manus output. Raw Manus response stored internally only; customer reports render only accepted evidence-bound claims.",
+        })));
+      }
     }
 
     const verifiedDocs = isVerifiedReport ? selectVerifiedReportEvidenceDocs(extracted) : null;
@@ -481,6 +566,7 @@ export async function runInvestigation(
       critical_blockers: [],
       verified_report_decision: verifiedConsistency?.decision,
       public_web_intelligence: scoutingResult?.report,
+      manus_research: manusResult?.report,
       verified_report_document_summary: verifiedReportTables?.documents,
       verified_report_comparison: verifiedReportTables?.comparison,
     };
