@@ -1,4 +1,4 @@
-import type { ChecklistReportResult, FinalOutcome, Finding, InvestigationReport, SupplierInternetScoutingReport, VerifiedReportComparisonRow, VerifiedReportDecision, VerifiedReportDocumentSummary } from "./types";
+import type { ChecklistReportResult, FinalOutcome, Finding, InvestigationReport, ManusEvidenceClaim, ManusResearchReport, SupplierInternetScoutingReport, VerifiedReportComparisonRow, VerifiedReportDecision, VerifiedReportDocumentSummary } from "./types";
 
 const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
 
@@ -210,6 +210,17 @@ export interface BuyerFacingReportViewModel {
   verified_report_decision?: VerifiedReportDecision;
   is_verified_report: boolean;
   public_web_intelligence?: SupplierInternetScoutingReport;
+  manus_research?: ManusResearchReport;
+  manus_evidence_summary: {
+    claim: string;
+    source: string;
+    source_type: string;
+    limitation: string;
+    buyer_implication: string;
+  }[];
+  manus_platform_trade_intelligence: string[];
+  manus_material_contradictions: string[];
+  manus_questions_before_payment: string[];
   public_web_source_summaries: {
     source_name: string;
     source_type: string;
@@ -353,6 +364,66 @@ function sanitizePublicWebIntelligence(report: SupplierInternetScoutingReport | 
   };
 }
 
+function sourceTypeLabel(value: string): string {
+  return value.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function sanitizeManusClaim(claim: ManusEvidenceClaim): ManusEvidenceClaim {
+  return {
+    ...claim,
+    claim: sanitizeBuyerText(claim.claim),
+    exact_text_read_from_source: sanitizeBuyerText(claim.exact_text_read_from_source),
+    source_title: displaySourceName(claim.source_title || claim.source_domain, claim.source_url),
+    source_domain: sanitizeBuyerText(claim.source_domain),
+    limitation: sanitizeBuyerText(claim.limitation),
+    buyer_implication: sanitizeBuyerText(claim.buyer_implication),
+  };
+}
+
+function sanitizeManusResearch(report: ManusResearchReport | undefined): ManusResearchReport | undefined {
+  if (!report) return undefined;
+  return {
+    ...report,
+    raw_output_storage_path: report.raw_output_storage_path ?? null,
+    accepted_claims: report.accepted_claims.map(sanitizeManusClaim),
+    rejected_claims: [],
+    supplier_marketing_claims: report.supplier_marketing_claims.map(sanitizeManusClaim),
+    buyer_interpretations: report.buyer_interpretations.map(sanitizeBuyerText).filter(Boolean),
+    questions_before_payment: report.questions_before_payment.map(sanitizeBuyerText).filter(Boolean),
+    sources_used: report.sources_used.map((source) => ({
+      ...source,
+      title: displaySourceName(source.title, source.url),
+      domain: sanitizeBuyerText(source.domain),
+    })),
+  };
+}
+
+function buildManusEvidenceSummary(report: ManusResearchReport | undefined): BuyerFacingReportViewModel["manus_evidence_summary"] {
+  return (report?.accepted_claims ?? []).slice(0, 8).map((claim) => ({
+    claim: sanitizeBuyerText(claim.claim),
+    source: sanitizeBuyerText(`${claim.source_title || claim.source_domain} (${claim.source_domain || "source"})`),
+    source_type: sourceTypeLabel(claim.source_type),
+    limitation: sanitizeBuyerText(claim.limitation),
+    buyer_implication: sanitizeBuyerText(claim.buyer_implication),
+  }));
+}
+
+function buildManusPlatformTradeIntelligence(report: ManusResearchReport | undefined): string[] {
+  return (report?.accepted_claims ?? [])
+    .filter((claim) => claim.source_type === "marketplace_platform_recorded_data" || claim.source_type === "trade_data")
+    .slice(0, 4)
+    .map((claim) => sanitizeBuyerText(`${claim.claim} Source: ${claim.source_title || claim.source_domain}. Limitation: ${claim.limitation}`))
+    .filter(Boolean);
+}
+
+function buildManusMaterialContradictions(report: ManusResearchReport | undefined): string[] {
+  return (report?.accepted_claims ?? [])
+    .filter((claim) => /contradict|mismatch|conflict|different|penalt|lawsuit|enforcement|risk/i.test(`${claim.claim} ${claim.buyer_implication}`))
+    .slice(0, 4)
+    .map((claim) => sanitizeBuyerText(`${claim.claim} Buyer implication: ${claim.buyer_implication}`))
+    .filter(Boolean);
+}
+
 function safeLocalName(report: InvestigationReport): string | null {
   const candidates = [
     report.supplier_input.chinese_name,
@@ -387,6 +458,7 @@ export function buildBuyerFacingReportViewModel(report: InvestigationReport, opt
     reason: sanitizeBuyerText(source.reason),
   }));
   const publicWebIntelligence = sanitizePublicWebIntelligence(report.public_web_intelligence);
+  const manusResearch = sanitizeManusResearch(report.manus_research);
   const publicWebSourceSummaries = buildPublicWebSourceSummaries(publicWebIntelligence);
   const sanitizedReportForDecision: InvestigationReport = {
     ...report,
@@ -436,6 +508,11 @@ export function buildBuyerFacingReportViewModel(report: InvestigationReport, opt
     verified_report_decision: sanitizeVerifiedDecision(sanitizedReportForDecision),
     is_verified_report: isVerifiedReport,
     public_web_intelligence: publicWebIntelligence,
+    manus_research: manusResearch,
+    manus_evidence_summary: buildManusEvidenceSummary(manusResearch),
+    manus_platform_trade_intelligence: buildManusPlatformTradeIntelligence(manusResearch),
+    manus_material_contradictions: buildManusMaterialContradictions(manusResearch),
+    manus_questions_before_payment: (manusResearch?.questions_before_payment ?? []).map(sanitizeBuyerText).filter(Boolean),
     public_web_source_summaries: publicWebSourceSummaries,
     top_buyer_risks: [
       "Cannot confirm payment beneficiary matches licence holder.",
@@ -548,6 +625,7 @@ export function sanitizeBuyerReport(report: InvestigationReport): InvestigationR
   cloned.sources_unavailable = view.sources_unavailable;
   cloned.verified_report_decision = view.verified_report_decision;
   cloned.public_web_intelligence = view.public_web_intelligence;
+  cloned.manus_research = view.manus_research;
   cloned.verified_report_document_summary = view.verified_report_document_summary;
   cloned.verified_report_comparison = view.verified_report_comparison;
   return cloned;
