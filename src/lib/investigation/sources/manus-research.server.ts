@@ -196,11 +196,12 @@ async function createManusTask(input: ManusResearchInput, deps: ManusResearchDep
   const apiKey = env.MANUS_API_KEY;
   if (!apiKey) throw new Error("MANUS_API_KEY is not configured");
   const baseUrl = (env.MANUS_API_BASE_URL ?? MANUS_DEFAULT_BASE_URL).replace(/\/+$/, "");
-  const response = await (deps.fetch ?? fetch)(`${baseUrl}/v2/tasks`, {
+  const response = await (deps.fetch ?? fetch)(`${baseUrl}/v1/tasks`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       "x-manus-api-key": apiKey,
+      "API_KEY": apiKey,
     },
     body: JSON.stringify({
       prompt: buildManusSupplierResearchPrompt(input),
@@ -222,15 +223,58 @@ async function readManusTask(taskId: string, deps: ManusResearchDeps): Promise<a
   const env = deps.env ?? process.env;
   const apiKey = env.MANUS_API_KEY;
   const baseUrl = (env.MANUS_API_BASE_URL ?? MANUS_DEFAULT_BASE_URL).replace(/\/+$/, "");
-  const response = await (deps.fetch ?? fetch)(`${baseUrl}/v2/tasks/${encodeURIComponent(taskId)}`, {
-    headers: { "x-manus-api-key": apiKey ?? "" },
+  const response = await (deps.fetch ?? fetch)(`${baseUrl}/v1/tasks/${encodeURIComponent(taskId)}`, {
+    headers: { "x-manus-api-key": apiKey ?? "", "API_KEY": apiKey ?? "" },
   });
   if (!response.ok) throw new Error(`Manus task status failed: HTTP ${response.status}`);
   return response.json();
 }
 
+function textFromMessageList(list: any[]): string {
+  return list
+    .filter((message) => message?.role !== "user")
+    .flatMap((message) => (Array.isArray(message?.content) ? message.content : []))
+    .map((part: any) => String(part?.text ?? part?.output_text ?? ""))
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 function outputFromTask(payload: any): unknown {
-  return payload?.output ?? payload?.result ?? payload?.data?.output ?? payload?.data?.result ?? payload;
+  const output = payload?.output ?? payload?.result ?? payload?.data?.output ?? payload?.data?.result ?? payload;
+  if (Array.isArray(output)) {
+    const text = textFromMessageList(output);
+    if (text) return text;
+  }
+  return output;
+}
+
+function jsonAttachmentUrl(payload: any): string | null {
+  const output = payload?.output;
+  if (!Array.isArray(output)) return null;
+  const files = output
+    .filter((message: any) => message?.role !== "user")
+    .flatMap((message: any) => (Array.isArray(message?.content) ? message.content : []))
+    .filter((part: any) => part?.type === "output_file" && typeof part?.fileUrl === "string");
+  const jsonFile = files.find(
+    (part: any) => String(part.mimeType ?? "").includes("json") || String(part.fileName ?? "").toLowerCase().endsWith(".json"),
+  );
+  return jsonFile?.fileUrl ?? null;
+}
+
+async function resolveTaskOutput(payload: any, deps: ManusResearchDeps): Promise<unknown> {
+  const url = jsonAttachmentUrl(payload);
+  if (url) {
+    try {
+      const response = await (deps.fetch ?? fetch)(url);
+      if (response.ok) {
+        const text = await response.text();
+        if (text.trim()) return text;
+      }
+    } catch {
+      // fall through to inline output
+    }
+  }
+  return outputFromTask(payload);
 }
 
 function claimFromObject(value: any): Partial<ManusEvidenceClaim> {
@@ -413,7 +457,7 @@ export async function runManusSupplierResearch(input: ManusResearchInput, deps: 
     let payload: any = { id: task.id, status: task.status };
     let status = task.status;
     while (status !== "completed" && status !== "failed" && Date.now() < deadline) {
-      await (deps.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms))))(250);
+      await (deps.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms))))(5000);
       payload = await readManusTask(task.id, deps);
       status = parseTaskStatus(payload);
     }
@@ -429,7 +473,7 @@ export async function runManusSupplierResearch(input: ManusResearchInput, deps: 
         rawOutput: payload,
       };
     }
-    const rawOutput = outputFromTask(payload);
+    const rawOutput = await resolveTaskOutput(payload, deps);
     const report = parseManusResearchOutput(rawOutput, input, nowIso(deps));
     report.manus_task_id = task.id;
     report.started_at = startedAt;

@@ -129,7 +129,7 @@ describe("Manus deep research integration", () => {
       now: "2026-07-30T00:00:00.000Z",
     });
 
-    expect(calls[0].url).toBe("https://manus.test/v2/tasks");
+    expect(calls[0].url).toBe("https://manus.test/v1/tasks");
     expect((calls[0].init?.headers as Record<string, string>)["x-manus-api-key"]).toBe("secret-key");
     const body = JSON.parse(String(calls[0].init?.body));
     expect(body.prompt).toContain("exact_text_read_from_source");
