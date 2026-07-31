@@ -9,6 +9,10 @@ import type {
   ManusSourceType,
   ResolvedEntity,
 } from "../types";
+import {
+  hasCorruptedBuyerFacingCjk,
+  sanitizeBuyerFacingCjkText,
+} from "../report-sanitizer";
 
 const MANUS_DEFAULT_BASE_URL = "https://api.manus.ai";
 const MANUS_SOURCE_NAME = "Manus deep research";
@@ -294,6 +298,26 @@ function claimFromObject(value: any): Partial<ManusEvidenceClaim> {
   };
 }
 
+function sanitizeClaimText(value: string, sourceType: ManusSourceType): string {
+  return sanitizeBuyerFacingCjkText(value, { sourceType });
+}
+
+function applySourceSpecificClaimWording(value: string, partial: Partial<ManusEvidenceClaim>, sourceType: ManusSourceType): string {
+  if (sourceType !== "commercial_registry_aggregator") return value;
+  const sourceText = `${partial.source_title ?? ""} ${partial.source_domain ?? ""} ${partial.source_url ?? ""}`;
+  if (!/tianyancha/i.test(sourceText)) return value;
+  return value.replace(/^Commercial registry aggregator reports/i, "Tianyancha / registry-snippet data reports");
+}
+
+function claimHasCorruptedCjk(partial: Partial<ManusEvidenceClaim>): boolean {
+  return [
+    partial.claim,
+    partial.exact_text_read_from_source,
+    partial.limitation,
+    partial.buyer_implication,
+  ].some((value) => hasCorruptedBuyerFacingCjk(value));
+}
+
 function parseJsonOutput(raw: unknown): ParsedOutput | null {
   let value = raw;
   if (typeof raw === "string") {
@@ -347,22 +371,24 @@ export function parseManusResearchOutput(raw: unknown, input: ManusResearchInput
   const rejectedReasonCounts: Partial<Record<ManusClaimValidationStatus, number>> = {};
 
   for (const partial of parsed.claims) {
+    const sourceType = normalizeSourceType(partial.source_type) ?? "weak_public_web_intelligence";
     let validation: ManusClaimValidationStatus = "accepted";
     if (!partial.source_url || !/^https?:\/\//i.test(partial.source_url)) validation = "rejected_missing_source";
     else if (!partial.exact_text_read_from_source) validation = "rejected_missing_exact_text";
-    else if (partial.source_type === "supplier_marketing_claim") validation = "rejected_supplier_claim_only";
-    else if (partial.source_type === "buyer_interpretation" || !isSupplierRelevant(partial, input)) validation = "rejected_low_relevance";
+    else if (claimHasCorruptedCjk(partial)) validation = "rejected_corrupted_cjk";
+    else if (sourceType === "supplier_marketing_claim") validation = "rejected_supplier_claim_only";
+    else if (sourceType === "buyer_interpretation" || !isSupplierRelevant(partial, input)) validation = "rejected_low_relevance";
 
     const claim: ManusEvidenceClaim = {
-      claim: String(partial.claim ?? ""),
-      exact_text_read_from_source: String(partial.exact_text_read_from_source ?? ""),
+      claim: applySourceSpecificClaimWording(sanitizeClaimText(String(partial.claim ?? ""), sourceType), partial, sourceType),
+      exact_text_read_from_source: sanitizeClaimText(String(partial.exact_text_read_from_source ?? ""), sourceType),
       source_url: String(partial.source_url ?? ""),
-      source_title: String(partial.source_title ?? ""),
+      source_title: sanitizeClaimText(String(partial.source_title ?? ""), sourceType),
       source_domain: String(partial.source_domain || domainFromUrl(partial.source_url)),
-      source_type: normalizeSourceType(partial.source_type) ?? "weak_public_web_intelligence",
+      source_type: sourceType,
       retrieved_at: partial.retrieved_at || now,
-      limitation: partial.limitation || "Manus claim retained only as evidence-bound deep research; VerifyFirst did not independently verify the source beyond the captured citation.",
-      buyer_implication: partial.buyer_implication || "Use this as supporting research and confirm critical items through official or licensed sources before payment.",
+      limitation: sanitizeClaimText(partial.limitation || "Manus claim retained only as evidence-bound deep research; VerifyFirst did not independently verify the source beyond the captured citation.", sourceType),
+      buyer_implication: sanitizeClaimText(partial.buyer_implication || "Use this as supporting research and confirm critical items through official or licensed sources before payment.", sourceType),
       validation_status: validation,
     };
 

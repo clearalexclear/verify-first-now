@@ -16,6 +16,7 @@ export const NO_RELIABLE_SHIPMENT_HISTORY = "No reliable shipment-history eviden
 export const MISSING_BENEFICIARY_WORDING = "Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder.";
 export const DEFAULT_VERIFIED_REPORT_ACTIONS =
   "Confirm payment beneficiary/account holder, confirm the uploaded business licence against GSXT/CODS or licensed registry data, verify TUV SUD certificate, and use escrow/LC tied to inspection.";
+export const CJK_SOURCE_PRESENT_NOT_DISPLAYED = "Chinese legal name was present in source material but is not displayed because rendering reliability could not be confirmed.";
 
 const KNOWN_GARBLED_OCR = [
   GARBLED_CHINESE_LEGAL_NAME,
@@ -24,18 +25,105 @@ const KNOWN_GARBLED_OCR = [
   GARBLED_REGISTERED_ADDRESS_SPACED,
 ];
 
+const PDF_SUPPORTED_CHINESE_COMPANY_NAMES = new Set([
+  "阳江市佳仕达工贸有限公司",
+  "江门市昌文厨具有限公司",
+  "华为技术有限公司",
+]);
+
+const OFFICIAL_OVERCLAIM_PATTERN = /\b(?:company is\s+)?(?:officially registered|official registration confirmed|active company confirmed|officially verified|official active status confirmed)\b/i;
+const CHINA_USCC_PATTERN = /\b[0-9A-Z]{18}\b/;
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasCjk(value: string): boolean {
+  return /[\u3400-\u9fff]/.test(value);
+}
+
+function cjkCount(value: string): number {
+  return (value.match(/[\u3400-\u9fff]/g) ?? []).length;
+}
+
+function compactCjk(value: string): string {
+  return value.replace(/\s+/g, "");
+}
+
+export function hasCorruptedBuyerFacingCjk(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const compact = compactCjk(value);
+  if (KNOWN_GARBLED_OCR.some((bad) => value.includes(bad) || compact.includes(bad.replace(/\s+/g, "")))) return true;
+  if (/江市\s*有限公司/.test(value)) return true;
+  if (/江市江\s*区\s*3\s*地1\s*14\s*1406/.test(value)) return true;
+  if (/[\u3400-\u9fff]/.test(value) && compact.includes("技术") && cjkCount(compact) <= 4) return true;
+  return false;
+}
+
+export function hasReliableChineseCompanyName(value: string | null | undefined): boolean {
+  if (!value || hasCorruptedBuyerFacingCjk(value)) return false;
+  const compact = compactCjk(value);
+  if (!/(?:有限公司|有限责任公司|股份有限公司)$/.test(compact)) return false;
+  return cjkCount(compact) >= 8;
+}
+
+function replaceReliableChineseCompanyNames(value: string): string {
+  return value.replace(/[\u3400-\u9fff（）()]{4,}(?:有限公司|有限责任公司|股份有限公司)/g, (match) => (
+    hasReliableChineseCompanyName(match)
+      ? PDF_SUPPORTED_CHINESE_COMPANY_NAMES.has(compactCjk(match))
+        ? compactCjk(match)
+        : CJK_SOURCE_PRESENT_NOT_DISPLAYED
+      : ""
+  ));
 }
 
 export function isUnreliableChineseExtraction(value: string | null | undefined): boolean {
   if (!value) return false;
   const trimmed = value.trim();
   const compact = trimmed.replace(/\s+/g, "");
-  return KNOWN_GARBLED_OCR.some((bad) => value.includes(bad) || compact.includes(bad.replace(/\s+/g, "")))
+  return hasCorruptedBuyerFacingCjk(value)
     || compact === "技术"
     || /\bBusiness scope:\s*技术\b/i.test(value)
     || (/[\u3400-\u9fff]/.test(value) && compact.length <= 6 && /有限公司|公司/.test(compact));
+}
+
+function cautiousSourceLabel(sourceType?: string): string {
+  if (sourceType === "commercial_registry_aggregator") return "Commercial registry aggregator";
+  if (sourceType === "marketplace_platform_recorded_data") return "Marketplace platform record";
+  if (sourceType === "trade_data") return "Trade-data source";
+  if (sourceType === "third_party_database") return "Third-party database";
+  if (sourceType === "weak_public_web_intelligence") return "Public web result";
+  return "Non-official source";
+}
+
+export function sanitizeOfficialOverclaimText(value: string, sourceType?: string): string {
+  if (!value || sourceType === "official_government_registry") return value;
+  if (/\bnot\s+(?:been\s+)?officially verified\b/i.test(value)) return value;
+  if (/\bnot\s+(?:an\s+)?official\b/i.test(value)) return value;
+  if (!OFFICIAL_OVERCLAIM_PATTERN.test(value)) return value;
+  const uscc = value.match(CHINA_USCC_PATTERN)?.[0];
+  const label = /tianyancha/i.test(value) ? "Tianyancha / registry-snippet data" : cautiousSourceLabel(sourceType);
+  const suffix = uscc
+    ? `${label} reports USCC ${uscc} for a company associated with this supplier. This has not been verified against China's official GSXT registry.`
+    : `${label} reports supplier-associated registry information. This has not been verified against China's official GSXT registry.`;
+  return suffix;
+}
+
+export function sanitizeBuyerFacingCjkText(value: string, options: { sourceType?: string; preserveReliableChinese?: boolean } = {}): string {
+  if (!value) return "";
+  let out = sanitizeOfficialOverclaimText(value, options.sourceType);
+  out = out
+    .replace(/Chinese legal name:\s*江市\s*有限公司[.;,]?\s*/gi, `${UNCERTAIN_CHINESE_LEGAL_NAME} `)
+    .replace(/Registered address:\s*江市江\s*区\s*3\s*地1\s*14\s*1406[.;,]?\s*/gi, `${UNCERTAIN_REGISTERED_ADDRESS} `)
+    .replace(/Business scope:\s*技术[.;,]?\s*/gi, `${UNCERTAIN_BUSINESS_SCOPE} `)
+    .replace(/local:\s*["“”']江市\s*有限公司["“”']/gi, UFLPA_LOCAL_NAME_UNCERTAIN);
+  for (const bad of KNOWN_GARBLED_OCR) out = out.replaceAll(bad, "");
+  out = out
+    .replace(/江市\s+有限公司/g, "")
+    .replace(/江市江\s+区\s+3\s+地1\s+14\s+1406/g, "")
+    .replace(/\bBusiness scope:\s*技术\b/gi, UNCERTAIN_BUSINESS_SCOPE);
+  if (hasCjk(out) && !options.preserveReliableChinese) out = replaceReliableChineseCompanyNames(out);
+  return out;
 }
 
 function isNoisyExportText(value: string): boolean {
@@ -46,7 +134,7 @@ function isNoisyExportText(value: string): boolean {
 }
 
 export function sanitizeBuyerText(value: string): string {
-  let out = value || "";
+  let out = sanitizeBuyerFacingCjkText(value || "");
   out = out
     .replace(/Chinese legal name:\s*江市有限公司[.;,]?\s*/gi, `${UNCERTAIN_CHINESE_LEGAL_NAME} `)
     .replace(/Chinese legal name:\s*江市\s+有限公司[.;,]?\s*/gi, `${UNCERTAIN_CHINESE_LEGAL_NAME} `)
@@ -68,10 +156,6 @@ export function sanitizeBuyerText(value: string): string {
     out = NO_RELIABLE_SHIPMENT_HISTORY;
   }
 
-  for (const bad of KNOWN_GARBLED_OCR) out = out.replaceAll(bad, "");
-  out = out
-    .replace(/江市\s+有限公司/g, "")
-    .replace(/江市江\s+区\s+3\s+地1\s+14\s+1406/g, "");
   return out
     .replace(new RegExp(GARBLED_BUSINESS_SCOPE_LABEL, "g"), UNCERTAIN_BUSINESS_SCOPE)
     .replace(/\(?\s*evidence references\s*\)?/gi, "")
@@ -81,7 +165,7 @@ export function sanitizeBuyerText(value: string): string {
     .replace(/国Unified Social Credit Code公|名称Unified Social Credit Code注册|代码/g, "")
     .replace(/\bObtain a copy of the supplier's official business licen[cs]e\b/gi, "Confirm the uploaded business licence against an official Chinese registry source")
     .replace(/营业执照/g, "Business License")
-    .replace(/统一社会信用代码/g, "Unified Social Credit Code")
+    .replace(/统一社会信用(?:代码)?/g, "Unified Social Credit Code")
     .replace(/法定代表人/g, "Legal representative")
     .replace(/注册地址/g, "Registered address")
     .replace(/经营范围/g, "Business scope")
@@ -371,12 +455,12 @@ function sourceTypeLabel(value: string): string {
 function sanitizeManusClaim(claim: ManusEvidenceClaim): ManusEvidenceClaim {
   return {
     ...claim,
-    claim: sanitizeBuyerText(claim.claim),
-    exact_text_read_from_source: sanitizeBuyerText(claim.exact_text_read_from_source),
+    claim: sanitizeBuyerFacingCjkText(claim.claim, { sourceType: claim.source_type }),
+    exact_text_read_from_source: sanitizeBuyerFacingCjkText(claim.exact_text_read_from_source, { sourceType: claim.source_type }),
     source_title: displaySourceName(claim.source_title || claim.source_domain, claim.source_url),
     source_domain: sanitizeBuyerText(claim.source_domain),
-    limitation: sanitizeBuyerText(claim.limitation),
-    buyer_implication: sanitizeBuyerText(claim.buyer_implication),
+    limitation: sanitizeBuyerFacingCjkText(claim.limitation, { sourceType: claim.source_type }),
+    buyer_implication: sanitizeBuyerFacingCjkText(claim.buyer_implication, { sourceType: claim.source_type }),
   };
 }
 
