@@ -305,23 +305,30 @@ describe("Manus deep research integration", () => {
         source: "Business licence",
         fields: [
           { label: "Chinese legal name", value: "江市 有限公司", status: "extracted" },
+          { label: "Registered address", value: "阳江市江", status: "extracted" },
           { label: "Registered address", value: "江市江 区 3 地1 14 1406", status: "extracted" },
         ],
       },
     ];
     report.verified_report_comparison = [
       { label: "Business licence company name", value_found: "江市 有限公司", source: "Business licence", match_status: "MISMATCH", buyer_impact: "Compare against official registry." },
+      { label: "Registered address", value_found: "阳江市江", source: "Business licence", match_status: "MISMATCH", buyer_impact: "Address extraction is incomplete." },
+      { label: "Certificate holder/applicant", value_found: "阳江市佳仕达工贸有限公司", source: "Certificate/test report", match_status: "MATCH", buyer_impact: "Holder name is source-bound." },
     ];
 
     const view = buildBuyerFacingReportViewModel(report);
     const serialized = JSON.stringify(view);
-    expect(serialized).not.toMatch(/江市\s*有限公司|江市江\s*区\s*3\s*地1\s*14\s*1406/);
+    expect(serialized).not.toMatch(/江市\s*有限公司|江市江\s*区\s*3\s*地1\s*14\s*1406|阳江市江/);
     expect(serialized).toContain("Could not be reliably extracted");
     expect(serialized).toContain("Tianyancha / registry-snippet data reports USCC 91441702553600081W");
     expect(serialized).not.toMatch(/officially registered|officially verified active company|active company confirmed/i);
+    expect(view.verified_report_document_summary.flatMap((doc) => doc.fields).find((field) => field.label === "Registered address")?.value).toBe("Could not be reliably extracted");
+    expect(view.verified_report_comparison.find((row) => row.label === "Registered address")?.value_found).toBe("Could not be reliably extracted");
+    expect(view.verified_report_comparison.find((row) => row.label === "Registered address")?.match_status).toBe("CANNOT CONFIRM");
+    expect(view.verified_report_comparison.find((row) => row.label === "Certificate holder/applicant")?.value_found).toBe("阳江市佳仕达工贸有限公司");
 
     const text = await extractPdfText(await renderReportPdf(report));
-    expect(text).not.toMatch(/江市\s*有限公司|江市江\s*区\s*3\s*地1\s*14\s*1406/);
+    expect(text).not.toMatch(/江市\s*有限公司|江市江\s*区\s*3\s*地1\s*14\s*1406|阳江市江/);
     expect(text).toContain("Could not be reliably extracted");
     expect(text).toContain("Tianyancha / registry-snippet data reports USCC 91441702553600081W");
     expect(text).not.toMatch(/officially registered|officially verified active company|active company confirmed/i);
