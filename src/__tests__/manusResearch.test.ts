@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getDocument, VerbosityLevel } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { renderReportPdf } from "../lib/investigation/pdf.server";
+import { buildBuyerFacingReportViewModel, CJK_SOURCE_PRESENT_NOT_DISPLAYED } from "../lib/investigation/report-sanitizer";
 import {
   buildManusSupplierResearchPrompt,
   parseManusResearchOutput,
@@ -237,5 +238,113 @@ describe("Manus deep research integration", () => {
     expect(text).not.toContain("RAW MANUS OUTPUT");
     expect(text).not.toContain("official government registry");
     expect(text).not.toContain("official verification succeeded");
+  });
+
+  it("rejects corrupted CJK Manus claims before they reach buyer rendering", () => {
+    const parsed = parseManusResearchOutput({
+      claims: [{
+        claim: "Company is officially registered as 江市 有限公司 with USCC 91441702553600081W.",
+        exact_text_read_from_source: "Tianyancha snippet: 江市 有限公司 91441702553600081W",
+        source_url: "https://www.tianyancha.com/search?key=Yangjiang%20Justa",
+        source_title: "Tianyancha registry snippet",
+        source_domain: "tianyancha.com",
+        source_type: "commercial_registry_aggregator",
+        retrieved_at: "2026-07-30T00:00:00.000Z",
+        limitation: "Tianyancha snippet only.",
+        buyer_implication: "Official active status confirmed.",
+      }],
+    }, supplierInput, "2026-07-30T00:00:00.000Z");
+
+    expect(parsed.accepted_claims).toHaveLength(0);
+    expect(parsed.rejected_reason_counts.rejected_corrupted_cjk).toBe(1);
+    expect(JSON.stringify(parsed)).not.toContain("江市 有限公司");
+  });
+
+  it("rewrites commercial registry official-overclaim language for accepted Manus claims", () => {
+    const parsed = parseManusResearchOutput({
+      claims: [{
+        claim: "Company is officially registered as 阳江市佳仕达工贸有限公司 with USCC 91441702553600081W.",
+        exact_text_read_from_source: "Tianyancha lists Yangjiang Justa Industry & Trade Co., Ltd. and USCC 91441702553600081W.",
+        source_url: "https://www.tianyancha.com/company/123",
+        source_title: "Tianyancha registry snippet",
+        source_domain: "tianyancha.com",
+        source_type: "commercial_registry_aggregator",
+        retrieved_at: "2026-07-30T00:00:00.000Z",
+        limitation: "Commercial registry aggregator result, not GSXT.",
+        buyer_implication: "Officially verified active company.",
+      }],
+    }, supplierInput, "2026-07-30T00:00:00.000Z");
+
+    expect(parsed.accepted_claims).toHaveLength(1);
+    expect(parsed.accepted_claims[0].claim).toContain("Tianyancha / registry-snippet data reports USCC 91441702553600081W");
+    expect(parsed.accepted_claims[0].claim).toContain("not been verified against China's official GSXT registry");
+    expect(parsed.accepted_claims[0].claim).not.toMatch(/officially registered|officially verified|active company confirmed/i);
+    expect(parsed.accepted_claims[0].buyer_implication).not.toMatch(/officially verified|official active status confirmed/i);
+  });
+
+  it("uses the same CJK safety filter for Manus claims, document tables and comparison rows", async () => {
+    const parsed = parseManusResearchOutput({
+      claims: [{
+        claim: "Tianyancha / registry-snippet data reports USCC 91441702553600081W for a company associated with this supplier.",
+        exact_text_read_from_source: "Tianyancha lists Yangjiang Justa Industry & Trade Co., Ltd. and USCC 91441702553600081W.",
+        source_url: "https://www.tianyancha.com/company/123",
+        source_title: "Tianyancha registry snippet",
+        source_domain: "tianyancha.com",
+        source_type: "commercial_registry_aggregator",
+        retrieved_at: "2026-07-30T00:00:00.000Z",
+        limitation: "This has not been verified against China's official GSXT registry.",
+        buyer_implication: "Use as supporting registry-snippet context only.",
+      }],
+      questions_before_payment: ["Confirm the uploaded business licence against GSXT/CODS."],
+    }, supplierInput, "2026-07-30T00:00:00.000Z");
+    const report = reportWithManus(parsed);
+    report.verified_report_document_summary = [
+      {
+        document_type: "business_licence",
+        label: "Business licence",
+        source: "Business licence",
+        fields: [
+          { label: "Chinese legal name", value: "江市 有限公司", status: "extracted" },
+          { label: "Registered address", value: "江市江 区 3 地1 14 1406", status: "extracted" },
+        ],
+      },
+    ];
+    report.verified_report_comparison = [
+      { label: "Business licence company name", value_found: "江市 有限公司", source: "Business licence", match_status: "MISMATCH", buyer_impact: "Compare against official registry." },
+    ];
+
+    const view = buildBuyerFacingReportViewModel(report);
+    const serialized = JSON.stringify(view);
+    expect(serialized).not.toMatch(/江市\s*有限公司|江市江\s*区\s*3\s*地1\s*14\s*1406/);
+    expect(serialized).toContain("Could not be reliably extracted");
+    expect(serialized).toContain("Tianyancha / registry-snippet data reports USCC 91441702553600081W");
+    expect(serialized).not.toMatch(/officially registered|officially verified active company|active company confirmed/i);
+
+    const text = await extractPdfText(await renderReportPdf(report));
+    expect(text).not.toMatch(/江市\s*有限公司|江市江\s*区\s*3\s*地1\s*14\s*1406/);
+    expect(text).toContain("Could not be reliably extracted");
+    expect(text).toContain("Tianyancha / registry-snippet data reports USCC 91441702553600081W");
+    expect(text).not.toMatch(/officially registered|officially verified active company|active company confirmed/i);
+  });
+
+  it("renders known valid Chinese safely or explicitly suppresses it without degrading into corrupted text", async () => {
+    const parsed = parseManusResearchOutput({
+      claims: [{
+        claim: "Commercial registry aggregator reports 阳江市佳仕达工贸有限公司 for Yangjiang Justa.",
+        exact_text_read_from_source: "阳江市佳仕达工贸有限公司 Yangjiang Justa Industry & Trade Co., Ltd.",
+        source_url: "https://www.tianyancha.com/company/123",
+        source_title: "Tianyancha registry snippet",
+        source_domain: "tianyancha.com",
+        source_type: "commercial_registry_aggregator",
+        retrieved_at: "2026-07-30T00:00:00.000Z",
+        limitation: "Commercial registry aggregator result, not official GSXT.",
+        buyer_implication: "Use only as source-cited registry-snippet context.",
+      }],
+    }, supplierInput, "2026-07-30T00:00:00.000Z");
+
+    const text = await extractPdfText(await renderReportPdf(reportWithManus(parsed)));
+    expect(text).toMatch(new RegExp(`阳江市佳仕达工贸有限公司|${CJK_SOURCE_PRESENT_NOT_DISPLAYED}`));
+    expect(text).not.toContain("江市 有限公司");
+    expect(text).not.toContain("江市有限公司");
   });
 });

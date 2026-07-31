@@ -185,6 +185,7 @@ export type ManusClaimValidationStatus =
   | "rejected_missing_source"
   | "rejected_missing_exact_text"
   | "rejected_supplier_claim_only"
+  | "rejected_corrupted_cjk"
   | "rejected_low_relevance";
 
 export interface ManusEvidenceClaim {
