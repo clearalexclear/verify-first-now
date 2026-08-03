@@ -449,4 +449,73 @@ describe("Manus deep research integration", () => {
     expect(text).not.toMatch(/Material contradictions .*16-year Gold Supplier/i);
     expect(text).not.toMatch(/officially registered|officially verified active company|active company confirmed|evidence_ids|RAW MANUS OUTPUT/i);
   });
+
+  it("suppresses stray registered-capital OCR and stale CJK-display language in buyer reports", async () => {
+    const parsed = parseManusResearchOutput({
+      claims: [
+        {
+          claim: "Commercial registry/search-snippet data reports USCC 91441702553600081W for Yangjiang Justa. Chinese legal name was present in source material but is not displayed because rendering reliability could not be confirmed.)",
+          exact_text_read_from_source: "阳江市佳仕达工贸有限公司 统一社会信用代码 91441702553600081W",
+          source_url: "https://www.tianyancha.com/company/yangjiang-justa",
+          source_title: "Tianyancha registry snippet",
+          source_domain: "tianyancha.com",
+          source_type: "commercial_registry_aggregator",
+          retrieved_at: "2026-07-30T00:00:00.000Z",
+          limitation: "Commercial registry aggregator result, not official GSXT verification.",
+          buyer_implication: "Supports entity consistency only; confirm against GSXT/CODS before payment.",
+        },
+        {
+          claim: "ImportGenius records indicate shipment traces connected to Yangjiang Justa and DOIY.",
+          exact_text_read_from_source: "Yangjiang Justa Industry & Trade Co., Ltd. shipment DOIY",
+          source_url: "https://www.importgenius.com/suppliers/yangjiang-justa",
+          source_title: "ImportGenius supplier shipment trace",
+          source_domain: "importgenius.com",
+          source_type: "trade_data",
+          retrieved_at: "2026-07-30T00:00:00.000Z",
+          limitation: "Trade-data/public source material, not VerifyFirst's licensed production shipment connector.",
+          buyer_implication: "Provides shipment context but should not be treated as complete shipment verification.",
+        },
+      ],
+    }, supplierInput, "2026-07-30T00:00:00.000Z");
+    const report = reportWithManus(parsed);
+    report.resolved_entity.registered_capital = "人";
+    report.verified_report_document_summary = [
+      {
+        document_type: "business_licence",
+        label: "Business licence",
+        source: "Uploaded business licence",
+        fields: [
+          { label: "Chinese legal name", value: "阳江市佳仕达工贸有限公司", status: "extracted" },
+          { label: "USCC / registration number", value: "91441702553600081W", status: "extracted" },
+          { label: "Registered capital", value: "人", status: "extracted" },
+        ],
+      },
+    ];
+    report.verified_report_comparison = [
+      { label: "Registered capital", value_found: "人", source: "Business licence", match_status: "MISMATCH", buyer_impact: "OCR output is unreliable." },
+    ];
+
+    const view = buildBuyerFacingReportViewModel(report);
+    const serialized = JSON.stringify(view);
+    expect(view.legal_entity_summary.chinese_legal_name).toBe("阳江市佳仕达工贸有限公司");
+    expect(view.legal_entity_summary.registered_capital).toBe("Not independently verified");
+    expect(view.verified_report_document_summary[0].fields.find((field) => field.label === "Registered capital")?.value).toBe("Could not be reliably extracted");
+    expect(view.verified_report_comparison[0].value_found).toBe("Could not be reliably extracted");
+    expect(view.verified_report_comparison[0].match_status).toBe("CANNOT CONFIRM");
+    expect(view.shipment_history_summary).toContain("Shipment-history evidence was identified from trade-data/public source material");
+    expect(view.manus_material_contradictions.join("\n")).not.toMatch(/ImportGenius records indicate shipment traces/);
+    expect(serialized).toContain("阳江市佳仕达工贸有限公司");
+    expect(serialized).toContain("Commercial registry/search-snippet evidence provided company identity details, but official GSXT verification is still required.");
+    expect(serialized).not.toContain("Registered capital: 人");
+    expect(serialized).not.toMatch(/not displayed because rendering reliability could not be confirmed|confirmed\.\)/i);
+
+    const text = await extractPdfText(await renderReportPdf(report));
+    expect(text).toContain("阳江市佳仕达工贸有限公司");
+    expect(text).toContain("Registered capital: Not independently verified");
+    expect(text).toContain("Commercial registry/search-snippet evidence provided company identity details, but official GSXT verification is still required.");
+    expect(text).toContain("Shipment-history evidence was identified from trade-data/public source material");
+    expect(text).toContain("No material contradiction was identified from validated evidence");
+    expect(text).not.toContain("Registered capital: 人");
+    expect(text).not.toMatch(/not displayed because rendering reliability could not be confirmed|confirmed\.\)/i);
+  });
 });
