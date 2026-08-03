@@ -22,7 +22,6 @@ import {
   buildBuyerFacingReportViewModel,
   displaySourceName,
   MISSING_BENEFICIARY_WORDING,
-  NO_RELIABLE_SHIPMENT_HISTORY,
   sanitizeBuyerText as customerFacingText,
   type BuyerFacingReportViewModel,
 } from "./report-sanitizer";
@@ -112,6 +111,47 @@ function fontForText(ctx: Ctx, text: string, bold = false): PDFFont {
   return bold ? ctx.bold : ctx.regular;
 }
 
+function isCjkChar(char: string): boolean {
+  return /[\u3400-\u9fff]/.test(char);
+}
+
+function drawTextRun(ctx: Ctx, text: string, opts: { x: number; y: number; size: number; bold?: boolean; color: ReturnType<typeof rgb> }) {
+  if (!text) return;
+  if (!ctx.cjkRegular || !needsCjkFont(text)) {
+    const font = opts.bold ? ctx.bold : ctx.regular;
+    ctx.page.drawText(text, { x: opts.x, y: opts.y, size: opts.size, font, color: opts.color });
+    return;
+  }
+
+  let x = opts.x;
+  let current = "";
+  let currentIsCjk = false;
+  const flush = () => {
+    if (!current) return;
+    const font = currentIsCjk ? ctx.cjkRegular! : opts.bold ? ctx.bold : ctx.regular;
+    ctx.page.drawText(current, { x, y: opts.y, size: opts.size, font, color: opts.color });
+    x += font.widthOfTextAtSize(current, opts.size);
+    current = "";
+  };
+
+  for (const char of [...text]) {
+    const charIsCjk = isCjkChar(char);
+    if (!current) {
+      current = char;
+      currentIsCjk = charIsCjk;
+      continue;
+    }
+    if (charIsCjk === currentIsCjk) {
+      current += char;
+    } else {
+      flush();
+      current = char;
+      currentIsCjk = charIsCjk;
+    }
+  }
+  flush();
+}
+
 function drawWrapped(ctx: Ctx, text: string, opts: { size?: number; bold?: boolean; color?: ReturnType<typeof rgb>; gap?: number } = {}) {
   const size = opts.size ?? 10;
   const safe = pdfSafe(customerFacingText(text), Boolean(ctx.cjkRegular));
@@ -122,7 +162,7 @@ function drawWrapped(ctx: Ctx, text: string, opts: { size?: number; bold?: boole
   ensureSpace(ctx, lh * lines.length + 2);
   for (const line of lines) {
     if (ctx.y - lh < MARGIN + 30) newPage(ctx);
-    ctx.page.drawText(line, { x: MARGIN, y: ctx.y - size, size, font, color });
+    drawTextRun(ctx, line, { x: MARGIN, y: ctx.y - size, size, bold: opts.bold, color });
     ctx.y -= lh;
   }
   if (opts.gap !== undefined) ctx.y -= opts.gap;
@@ -467,7 +507,7 @@ function drawStrictStatusTable(ctx: Ctx, r: BuyerFacingReportViewModel) {
     "Corporate registry not officially verified.",
     "Sanctions/RPS not fully verified.",
     "Certificate authenticity not issuer-verified.",
-    "Shipment history not verified by licensed trade-data source.",
+    r.shipment_history_summary,
     "Litigation/adverse media limited to public web search.",
   ];
   for (const item of grouped) drawWrapped(ctx, `- ${item}`, { size: 9 });
@@ -486,8 +526,14 @@ function drawMiniTableRows(ctx: Ctx, rows: string[][], widths: number[], opts: {
       const lines = cellLines[i];
       for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
         const line = lines[lineIndex];
-        const font = fontForText(ctx, line, row[0] === "Document" || row[0] === "Check");
-        ctx.page.drawText(line, { x: x + 4, y: startY - 11 - lineIndex * size * 1.25, size, font, color: row[0] === "Document" || row[0] === "Check" ? NAVY : TEXT });
+        const isHeader = row[0] === "Document" || row[0] === "Check";
+        drawTextRun(ctx, line, {
+          x: x + 4,
+          y: startY - 11 - lineIndex * size * 1.25,
+          size,
+          bold: isHeader,
+          color: isHeader ? NAVY : TEXT,
+        });
       }
       x += widths[i];
     }
@@ -538,7 +584,9 @@ function drawStrictVerifiedReport(ctx: Ctx, r: BuyerFacingReportViewModel) {
 
   drawSectionHeader(ctx, "3. What could be confirmed");
   drawWrapped(ctx, `English entity name: ${r.legal_entity_summary.english_entity_name}`);
+  drawWrapped(ctx, `Uploaded licence Chinese legal name: ${r.legal_entity_summary.chinese_legal_name}`);
   drawWrapped(ctx, `USCC: ${r.legal_entity_summary.uscc_note}`);
+  drawWrapped(ctx, r.legal_entity_summary.registry_corroboration);
   drawWrapped(ctx, r.uflpa_summary.english_screening);
 
   drawSectionHeader(ctx, "Public web intelligence");
@@ -546,13 +594,18 @@ function drawStrictVerifiedReport(ctx: Ctx, r: BuyerFacingReportViewModel) {
   drawWrapped(ctx, "What we found online", { size: 10, bold: true, color: NAVY });
   const sourceSummaries = r.public_web_source_summaries;
   if (sourceSummaries.length === 0) {
-    drawWrapped(ctx, "- No supplier-linked public web sources met the relevance threshold.");
+    drawWrapped(ctx, `- ${r.public_web_empty_message}`);
   }
   for (const item of sourceSummaries) {
     drawWrapped(ctx, `- ${item.source_name} (${item.source_type}, ${item.source_reference}). ${item.what_it_supports} ${item.limitation}`);
   }
   drawWrapped(ctx, "What this corroborates", { size: 10, bold: true, color: NAVY });
-  for (const item of r.public_web_intelligence?.what_this_corroborates ?? ["No public-web fact was strong enough to corroborate supplier identity or operating claims."]) {
+  const corroborates = r.public_web_intelligence?.what_this_corroborates?.length
+    ? r.public_web_intelligence.what_this_corroborates
+    : r.manus_evidence_summary.length
+      ? ["Validated deep-research sources below provide the retained supplier-linked public-web and trade-data context."]
+      : ["No public-web fact was strong enough to corroborate supplier identity or operating claims."];
+  for (const item of corroborates) {
     drawWrapped(ctx, `- ${item}`);
   }
   drawWrapped(ctx, "What is still not verified", { size: 10, bold: true, color: NAVY });
@@ -565,7 +618,8 @@ function drawStrictVerifiedReport(ctx: Ctx, r: BuyerFacingReportViewModel) {
   ];
   for (const item of limitations) drawWrapped(ctx, `- ${item}`);
   drawWrapped(ctx, "Potential contradictions", { size: 10, bold: true, color: NAVY });
-  for (const item of r.public_web_intelligence?.potential_contradictions ?? ["No supplier-linked contradiction was retained from the public-web scouting pass."]) {
+  const publicWebContradictions = r.public_web_intelligence?.potential_contradictions?.filter(Boolean) ?? [];
+  for (const item of publicWebContradictions.length ? publicWebContradictions : ["No supplier-linked contradiction was retained from the public-web scouting pass."]) {
     drawWrapped(ctx, `- ${item}`);
   }
   drawWrapped(ctx, "Buyer impact", { size: 10, bold: true, color: NAVY });
@@ -591,9 +645,11 @@ function drawStrictVerifiedReport(ctx: Ctx, r: BuyerFacingReportViewModel) {
       drawWrapped(ctx, "Platform/trade-data intelligence", { size: 10, bold: true, color: NAVY });
       for (const item of r.manus_platform_trade_intelligence) drawWrapped(ctx, `- ${item}`);
     }
+    drawWrapped(ctx, "Material contradictions", { size: 10, bold: true, color: r.manus_material_contradictions.length ? RED : NAVY });
     if (r.manus_material_contradictions.length) {
-      drawWrapped(ctx, "Material contradictions", { size: 10, bold: true, color: RED });
       for (const item of r.manus_material_contradictions) drawWrapped(ctx, `- ${item}`);
+    } else {
+      drawWrapped(ctx, "- No material contradiction was identified from validated evidence, but several items remain unverified.");
     }
     if (r.manus_questions_before_payment.length) {
       drawWrapped(ctx, "Questions before payment", { size: 10, bold: true, color: NAVY });
@@ -602,13 +658,21 @@ function drawStrictVerifiedReport(ctx: Ctx, r: BuyerFacingReportViewModel) {
   }
 
   drawSectionHeader(ctx, "4. What could not be independently verified");
-  drawWrapped(ctx, `Chinese legal name: ${r.legal_entity_summary.chinese_legal_name}`);
-  drawWrapped(ctx, `Registered address: ${r.legal_entity_summary.registered_address}`);
+  if (/could not be reliably extracted/i.test(r.legal_entity_summary.chinese_legal_name)) {
+    drawWrapped(ctx, `Chinese legal name: ${r.legal_entity_summary.chinese_legal_name}`);
+  } else {
+    drawWrapped(ctx, `Chinese legal name official registry confirmation: still required for ${r.legal_entity_summary.chinese_legal_name}.`);
+  }
+  if (/could not be reliably extracted/i.test(r.legal_entity_summary.registered_address)) {
+    drawWrapped(ctx, `Registered address: ${r.legal_entity_summary.registered_address}`);
+  } else {
+    drawWrapped(ctx, `Registered address official registry confirmation: still required for the uploaded licence address.`);
+  }
   drawWrapped(ctx, `Registered capital: ${r.legal_entity_summary.registered_capital}`);
   drawWrapped(ctx, `Business licence validation: ${r.legal_entity_summary.business_licence_validation}`);
   drawWrapped(ctx, r.uflpa_summary.local_name_screening);
   drawWrapped(ctx, r.uflpa_summary.limitation);
-  drawWrapped(ctx, NO_RELIABLE_SHIPMENT_HISTORY);
+  drawWrapped(ctx, r.shipment_history_summary);
 
   drawSectionHeader(ctx, "5. Required actions before payment");
   drawWrapped(ctx, (r.verified_report_decision?.ask_supplier_before_payment ?? []).join(" ") || "Confirm payment beneficiary/account holder, confirm the uploaded business licence against GSXT/CODS or licensed registry data, verify TUV SUD certificate, and use escrow/LC tied to inspection.");

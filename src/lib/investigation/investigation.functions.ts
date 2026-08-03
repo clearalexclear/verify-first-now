@@ -11,7 +11,7 @@ export const getOrderStatusByToken = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => tokenInput.parse(i))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: c } = await supabaseAdmin
+    const { data: c, error: caseError } = await supabaseAdmin
       .from("supplier_cases")
       .select(
         `id, case_reference, status, investigation_error, package,
@@ -19,6 +19,10 @@ export const getOrderStatusByToken = createServerFn({ method: "POST" })
       )
       .eq("upload_token", data.token)
       .maybeSingle();
+    if (caseError) {
+      console.error("[getOrderStatusByToken] supplier_cases lookup failed", caseError);
+      throw new Error("Could not load order status. Please retry or contact VerifyFirst support.");
+    }
     if (!c) throw new Error("This link is invalid or has expired.");
     const order = Array.isArray(c.orders) ? c.orders[0] : (c.orders as any);
 
@@ -32,13 +36,17 @@ export const getOrderStatusByToken = createServerFn({ method: "POST" })
     // If the case is delivered, expose the share token to redirect
     let shareToken: string | null = null;
     if (c.status === "delivered" || c.status === "report_ready") {
-      const { data: rv } = await supabaseAdmin
+      const { data: rv, error: reportError } = await supabaseAdmin
         .from("report_versions")
         .select("share_token")
         .eq("case_id", c.id)
         .order("version_number", { ascending: false })
         .limit(1)
         .maybeSingle();
+      if (reportError) {
+        console.error("[getOrderStatusByToken] report_versions lookup failed", reportError);
+        throw new Error("Could not load the finished report link. Please retry or contact VerifyFirst support.");
+      }
       shareToken = (rv?.share_token as string) ?? null;
     }
 

@@ -354,4 +354,99 @@ describe("Manus deep research integration", () => {
     expect(text).not.toContain("江市 有限公司");
     expect(text).not.toContain("江市有限公司");
   });
+
+  it("keeps verified-report sections consistent when licence and deep research evidence are useful but non-official", async () => {
+    const parsed = parseManusResearchOutput({
+      claims: [
+        {
+          claim: "Tianyancha / registry-snippet data reports USCC 91441702553600081W for 阳江市佳仕达工贸有限公司.",
+          exact_text_read_from_source: "阳江市佳仕达工贸有限公司 统一社会信用代码 91441702553600081W",
+          source_url: "https://www.tianyancha.com/company/yangjiang-justa",
+          source_title: "Tianyancha registry snippet",
+          source_domain: "tianyancha.com",
+          source_type: "commercial_registry_aggregator",
+          retrieved_at: "2026-07-30T00:00:00.000Z",
+          limitation: "Commercial registry aggregator result, not official GSXT verification.",
+          buyer_implication: "Supports entity consistency only; confirm against GSXT/CODS before payment.",
+        },
+        {
+          claim: "Alibaba profile lists Yangjiang Justa as a 16-year Gold Supplier with kitchenware products.",
+          exact_text_read_from_source: "Yangjiang Justa Industry & Trade Co., Ltd. 16-year Gold Supplier cookware kitchenware",
+          source_url: "https://yangjiang-justa.en.alibaba.com",
+          source_title: "Yangjiang Justa Alibaba profile",
+          source_domain: "alibaba.com",
+          source_type: "marketplace_platform_recorded_data",
+          retrieved_at: "2026-07-30T00:00:00.000Z",
+          limitation: "Marketplace profile is platform-recorded/self-presented, not official registry verification.",
+          buyer_implication: "Supports online marketplace presence but does not clear payment risk.",
+        },
+        {
+          claim: "ImportGenius records indicate shipment traces connected to Yangjiang Justa and DOIY.",
+          exact_text_read_from_source: "Yangjiang Justa Industry & Trade Co., Ltd. shipment DOIY",
+          source_url: "https://www.importgenius.com/suppliers/yangjiang-justa",
+          source_title: "ImportGenius supplier shipment trace",
+          source_domain: "importgenius.com",
+          source_type: "trade_data",
+          retrieved_at: "2026-07-30T00:00:00.000Z",
+          limitation: "Trade-data/public source material, not VerifyFirst's licensed production shipment connector.",
+          buyer_implication: "Provides shipment context but should not be treated as complete shipment verification.",
+        },
+      ],
+      questions_before_payment: ["Confirm payment beneficiary/account holder before paying."],
+    }, supplierInput, "2026-07-30T00:00:00.000Z");
+
+    const report = reportWithManus(parsed);
+    report.public_web_intelligence = {
+      generated_at: "2026-07-30T00:00:00.000Z",
+      queries_run: ["Yangjiang Justa cookware"],
+      evidence: [],
+      what_found_online: [],
+      what_this_corroborates: [],
+      still_not_verified: ["Company registration/status has not been officially verified."],
+      potential_contradictions: [],
+      buyer_impact: "Generic open-web scouting produced no extra retained sources.",
+      recommended_next_actions: ["Confirm official registry, certificate and payment-document gaps before payment."],
+      diagnostics: {
+        searches_run: 1,
+        sources_found: 0,
+        retained_sources: 0,
+        rejected_sources: 0,
+        matched_identifiers: [],
+      },
+    };
+    report.verified_report_document_summary = [
+      {
+        document_type: "business_licence",
+        label: "Business licence",
+        source: "Uploaded business licence",
+        fields: [
+          { label: "Chinese legal name", value: "阳江市佳仕达工贸有限公司", status: "extracted" },
+          { label: "USCC / registration number", value: "91441702553600081W", status: "extracted" },
+          { label: "Registered address", value: "Could not be reliably extracted", status: "uncertain" },
+        ],
+      },
+    ];
+
+    const view = buildBuyerFacingReportViewModel(report);
+    const serialized = JSON.stringify(view);
+    expect(view.legal_entity_summary.chinese_legal_name).toBe("阳江市佳仕达工贸有限公司");
+    expect(view.legal_entity_summary.registry_corroboration).toContain("Uploaded licence lists 阳江市佳仕达工贸有限公司 with USCC 91441702553600081W");
+    expect(view.shipment_history_summary).toContain("Shipment-history evidence was identified from trade-data/public source material");
+    expect(view.public_web_source_summaries.some((source) => /Alibaba|ImportGenius|Tianyancha/i.test(source.source_name))).toBe(true);
+    expect(serialized).not.toContain("No supplier-linked public web sources met the relevance threshold");
+    expect(serialized).not.toContain("No reliable shipment-history evidence identified from public sources.");
+    expect(view.manus_material_contradictions.join("\n")).not.toMatch(/16-year Gold Supplier|ImportGenius records indicate shipment traces/);
+    expect(serialized).not.toMatch(/officially registered|officially verified active company|active company confirmed|evidence_ids|RAW MANUS OUTPUT|exact_text_read_from_source":"[^"]/i);
+
+    const text = await extractPdfText(await renderReportPdf(report));
+    expect(text).toContain("阳江市佳仕达工贸有限公司");
+    expect(text).toContain("Uploaded licence lists 阳江市佳仕达工贸有限公司 with USCC 91441702553600081W");
+    expect(text).toContain("Shipment-history evidence was identified from trade-data/public source material");
+    expect(text).toContain("No material contradiction was identified from validated evidence");
+    expect(text).not.toContain("Chinese legal name: Could not be reliably extracted");
+    expect(text).not.toContain("No supplier-linked public web sources met the relevance threshold");
+    expect(text).not.toContain("No reliable shipment-history evidence identified from public sources.");
+    expect(text).not.toMatch(/Material contradictions .*16-year Gold Supplier/i);
+    expect(text).not.toMatch(/officially registered|officially verified active company|active company confirmed|evidence_ids|RAW MANUS OUTPUT/i);
+  });
 });

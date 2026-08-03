@@ -275,7 +275,9 @@ function VerifiedReportStrictPage({ r, pdfUrl, checklist }: { r: BuyerFacingRepo
 
         <Section title="3. What could be confirmed">
           <p>English entity name: {r.legal_entity_summary.english_entity_name}</p>
+          <p>Uploaded licence Chinese legal name: {r.legal_entity_summary.chinese_legal_name}</p>
           <p>USCC: {r.legal_entity_summary.uscc_note}</p>
+          <p>{r.legal_entity_summary.registry_corroboration}</p>
           <p>{r.uflpa_summary.english_screening}</p>
         </Section>
 
@@ -287,7 +289,7 @@ function VerifiedReportStrictPage({ r, pdfUrl, checklist }: { r: BuyerFacingRepo
               source_name: "No supplier-linked public source",
               source_type: "Public web",
               source_reference: "n/a",
-              what_it_supports: "No supplier-linked public web sources met the relevance threshold.",
+              what_it_supports: r.public_web_empty_message,
               limitation: "Public-web absence is not proof that no supplier presence exists.",
             }]).map((item, index) => (
               <li key={index}>
@@ -297,7 +299,11 @@ function VerifiedReportStrictPage({ r, pdfUrl, checklist }: { r: BuyerFacingRepo
           </ul>
           <h3 className="mt-4 text-sm font-semibold text-navy">What this corroborates</h3>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
-            {(r.public_web_intelligence?.what_this_corroborates ?? ["No public-web fact was strong enough to corroborate supplier identity or operating claims."]).map((item, index) => <li key={index}>{item}</li>)}
+            {(r.public_web_intelligence?.what_this_corroborates?.length
+              ? r.public_web_intelligence.what_this_corroborates
+              : r.manus_evidence_summary.length
+                ? ["Validated deep-research sources below provide the retained supplier-linked public-web and trade-data context."]
+                : ["No public-web fact was strong enough to corroborate supplier identity or operating claims."]).map((item, index) => <li key={index}>{item}</li>)}
           </ul>
           <h3 className="mt-4 text-sm font-semibold text-navy">What is still not verified</h3>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
@@ -311,7 +317,9 @@ function VerifiedReportStrictPage({ r, pdfUrl, checklist }: { r: BuyerFacingRepo
           </ul>
           <h3 className="mt-4 text-sm font-semibold text-navy">Potential contradictions</h3>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
-            {(r.public_web_intelligence?.potential_contradictions ?? ["No supplier-linked contradiction was retained from the public-web scouting pass."]).map((item, index) => <li key={index}>{item}</li>)}
+            {(r.public_web_intelligence?.potential_contradictions?.length
+              ? r.public_web_intelligence.potential_contradictions
+              : ["No supplier-linked contradiction was retained from the public-web scouting pass."]).map((item, index) => <li key={index}>{item}</li>)}
           </ul>
           <h3 className="mt-4 text-sm font-semibold text-navy">Buyer impact</h3>
           <p className="mt-2 text-sm">{r.public_web_intelligence?.buyer_impact ?? "Public web scouting did not add reliable supplier-linked intelligence in this run."}</p>
@@ -373,6 +381,12 @@ function VerifiedReportStrictPage({ r, pdfUrl, checklist }: { r: BuyerFacingRepo
                   </ul>
                 </>
               )}
+              {r.manus_material_contradictions.length === 0 && (
+                <>
+                  <h3 className="text-sm font-semibold text-navy">Material contradictions</h3>
+                  <p className="text-sm">No material contradiction was identified from validated evidence, but several items remain unverified.</p>
+                </>
+              )}
               {r.manus_questions_before_payment.length > 0 && (
                 <>
                   <h3 className="text-sm font-semibold text-navy">Questions before payment</h3>
@@ -386,12 +400,21 @@ function VerifiedReportStrictPage({ r, pdfUrl, checklist }: { r: BuyerFacingRepo
         </Section>
 
         <Section title="4. What could not be independently verified">
-          <p>Chinese legal name: {r.legal_entity_summary.chinese_legal_name}</p>
-          <p>Registered address: {r.legal_entity_summary.registered_address}</p>
+          {/could not be reliably extracted/i.test(r.legal_entity_summary.chinese_legal_name) ? (
+            <p>Chinese legal name: {r.legal_entity_summary.chinese_legal_name}</p>
+          ) : (
+            <p>Chinese legal name official registry confirmation: still required for {r.legal_entity_summary.chinese_legal_name}.</p>
+          )}
+          {/could not be reliably extracted/i.test(r.legal_entity_summary.registered_address) ? (
+            <p>Registered address: {r.legal_entity_summary.registered_address}</p>
+          ) : (
+            <p>Registered address official registry confirmation: still required for the uploaded licence address.</p>
+          )}
           <p>Registered capital: {r.legal_entity_summary.registered_capital}</p>
           <p>Business licence validation: {r.legal_entity_summary.business_licence_validation}</p>
           <p>{r.uflpa_summary.local_name_screening}</p>
           <p>{r.uflpa_summary.limitation}</p>
+          <p>{r.shipment_history_summary}</p>
         </Section>
 
         <Section title="5. Required actions before payment">
@@ -420,7 +443,7 @@ function VerifiedReportStrictPage({ r, pdfUrl, checklist }: { r: BuyerFacingRepo
             <li>Corporate registry not officially verified.</li>
             <li>Sanctions/RPS not fully verified.</li>
             <li>Certificate authenticity not issuer-verified.</li>
-            <li>Shipment history not verified by licensed trade-data source.</li>
+            <li>{r.shipment_history_summary}</li>
             <li>Litigation/adverse media limited to public web search.</li>
           </ul>
         </Section>

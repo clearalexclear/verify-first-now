@@ -336,6 +336,7 @@ export interface BuyerFacingReportViewModel {
     what_it_supports: string;
     limitation: string;
   }[];
+  public_web_empty_message: string;
   top_buyer_risks: string[];
   top_required_actions: string[];
   verified_report_document_summary: VerifiedReportDocumentSummary[];
@@ -348,7 +349,9 @@ export interface BuyerFacingReportViewModel {
     registered_address: string;
     registered_capital: string;
     business_licence_validation: string;
+    registry_corroboration: string;
   };
+  shipment_history_summary: string;
   uflpa_summary: {
     english_screening: string;
     local_name_screening: string;
@@ -398,6 +401,39 @@ function buildPublicWebSourceSummaries(report: SupplierInternetScoutingReport | 
       what_it_supports: sanitizeBuyerText(supportForPublicWebSource(evidence)),
       limitation: sanitizeBuyerText(evidence.limitation),
     }));
+}
+
+function buildDeepResearchSourceSummaries(report: ManusResearchReport | undefined): BuyerFacingReportViewModel["public_web_source_summaries"] {
+  return (report?.accepted_claims ?? [])
+    .filter((claim) => (
+      claim.source_type === "marketplace_platform_recorded_data"
+      || claim.source_type === "trade_data"
+      || claim.source_type === "commercial_registry_aggregator"
+      || claim.source_type === "third_party_database"
+    ))
+    .slice(0, 6)
+    .map((claim) => ({
+      source_name: displaySourceName(claim.source_title || claim.source_domain, claim.source_url),
+      source_type: sourceTypeLabel(claim.source_type),
+      source_reference: sourceReference(claim.source_url),
+      what_it_supports: sanitizeBuyerText(claim.claim),
+      limitation: sanitizeBuyerText(claim.limitation),
+    }));
+}
+
+function mergeSourceSummaries(
+  publicWeb: BuyerFacingReportViewModel["public_web_source_summaries"],
+  deepResearch: BuyerFacingReportViewModel["public_web_source_summaries"],
+): BuyerFacingReportViewModel["public_web_source_summaries"] {
+  const seen = new Set<string>();
+  const out: BuyerFacingReportViewModel["public_web_source_summaries"] = [];
+  for (const item of [...publicWeb, ...deepResearch]) {
+    const key = `${item.source_name}|${item.source_reference}|${item.what_it_supports}`.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out.slice(0, 8);
 }
 
 function sanitizeDocumentSummary(rows: VerifiedReportDocumentSummary[] | undefined): VerifiedReportDocumentSummary[] {
@@ -490,7 +526,7 @@ function sanitizeManusClaim(claim: ManusEvidenceClaim): ManusEvidenceClaim {
   return {
     ...claim,
     claim: sanitizeBuyerFacingCjkText(claim.claim, { sourceType: claim.source_type }),
-    exact_text_read_from_source: sanitizeBuyerFacingCjkText(claim.exact_text_read_from_source, { sourceType: claim.source_type }),
+    exact_text_read_from_source: "",
     source_title: displaySourceName(claim.source_title || claim.source_domain, claim.source_url),
     source_domain: sanitizeBuyerText(claim.source_domain),
     limitation: sanitizeBuyerFacingCjkText(claim.limitation, { sourceType: claim.source_type }),
@@ -536,10 +572,60 @@ function buildManusPlatformTradeIntelligence(report: ManusResearchReport | undef
 
 function buildManusMaterialContradictions(report: ManusResearchReport | undefined): string[] {
   return (report?.accepted_claims ?? [])
-    .filter((claim) => /contradict|mismatch|conflict|different|penalt|lawsuit|enforcement|risk/i.test(`${claim.claim} ${claim.buyer_implication}`))
+    .filter((claim) => /contradict|mismatch|conflict|different legal entity|differs from|does not match|inconsistent/i.test(`${claim.claim} ${claim.buyer_implication}`))
     .slice(0, 4)
     .map((claim) => sanitizeBuyerText(`${claim.claim} Buyer implication: ${claim.buyer_implication}`))
     .filter(Boolean);
+}
+
+function cleanVisibleValue(value: string | null | undefined): string | null {
+  const clean = sanitizeBuyerText(value ?? "");
+  if (!clean || /not extracted|could not be reliably extracted/i.test(clean)) return null;
+  return clean;
+}
+
+function findDocumentField(
+  documents: VerifiedReportDocumentSummary[],
+  documentType: VerifiedReportDocumentSummary["document_type"],
+  labelPattern: RegExp,
+): string | null {
+  for (const doc of documents) {
+    if (doc.document_type !== documentType) continue;
+    const field = doc.fields.find((item) => labelPattern.test(item.label));
+    if (!field || field.status === "uncertain") continue;
+    const value = cleanVisibleValue(field.value);
+    if (value) return value;
+  }
+  return null;
+}
+
+function safeRegisteredCapital(value: string | null | undefined): string | null {
+  const clean = cleanVisibleValue(value);
+  if (!clean) return null;
+  if (/^[\u3400-\u9fff]{1,2}$/.test(clean)) return null;
+  return clean;
+}
+
+function hasRegistryCorroboration(report: ManusResearchReport | undefined, args: { chineseName: string | null; uscc: string | null }): boolean {
+  if (!args.uscc && !args.chineseName) return false;
+  return (report?.accepted_claims ?? []).some((claim) => {
+    if (!["official_government_registry", "commercial_registry_aggregator", "third_party_database"].includes(claim.source_type)) return false;
+    const text = sanitizeBuyerText(`${claim.claim} ${claim.exact_text_read_from_source} ${claim.source_title} ${claim.source_domain}`);
+    const usccMatches = args.uscc ? text.includes(args.uscc) : true;
+    const nameMatches = args.chineseName ? text.includes(args.chineseName) : true;
+    return usccMatches && nameMatches;
+  });
+}
+
+function hasTradeDataEvidence(report: ManusResearchReport | undefined): boolean {
+  return (report?.accepted_claims ?? []).some((claim) => claim.source_type === "trade_data");
+}
+
+function buildShipmentHistorySummary(report: ManusResearchReport | undefined): string {
+  if (hasTradeDataEvidence(report)) {
+    return "Shipment-history evidence was identified from trade-data/public source material, but it has not been verified through a licensed production connector.";
+  }
+  return NO_RELIABLE_SHIPMENT_HISTORY;
 }
 
 function safeLocalName(report: InvestigationReport): string | null {
@@ -577,7 +663,10 @@ export function buildBuyerFacingReportViewModel(report: InvestigationReport, opt
   }));
   const publicWebIntelligence = sanitizePublicWebIntelligence(report.public_web_intelligence);
   const manusResearch = sanitizeManusResearch(report.manus_research);
-  const publicWebSourceSummaries = buildPublicWebSourceSummaries(publicWebIntelligence);
+  const publicWebSourceSummaries = mergeSourceSummaries(
+    buildPublicWebSourceSummaries(publicWebIntelligence),
+    buildDeepResearchSourceSummaries(manusResearch),
+  );
   const sanitizedReportForDecision: InvestigationReport = {
     ...report,
     findings,
@@ -588,8 +677,19 @@ export function buildBuyerFacingReportViewModel(report: InvestigationReport, opt
     sources_unavailable: sourcesUnavailable,
   };
   const isVerifiedReport = Boolean(opts.forceVerifiedReport) || Boolean(report.verified_report_decision) || inferUploadedDocumentsChecked(report).length > 0;
+  const documentSummary = sanitizeDocumentSummary(report.verified_report_document_summary);
+  const comparison = sanitizeComparison(report.verified_report_comparison);
   const englishEntityName = sanitizeBuyerText(report.resolved_entity.legal_name_en || report.supplier_input.name);
-  const uscc = report.resolved_entity.registration_number ? sanitizeBuyerText(report.resolved_entity.registration_number) : null;
+  const licenceChineseName = findDocumentField(documentSummary, "business_licence", /chinese legal name/i)
+    ?? safeLocalName(report);
+  const licenceUscc = findDocumentField(documentSummary, "business_licence", /uscc|unified social credit|registration number/i);
+  const uscc = licenceUscc ?? (report.resolved_entity.registration_number ? sanitizeBuyerText(report.resolved_entity.registration_number) : null);
+  const licenceAddress = findDocumentField(documentSummary, "business_licence", /registered address|address/i)
+    ?? (isUnreliableRegisteredAddressExtraction(report.resolved_entity.registered_address) ? null : cleanVisibleValue(report.resolved_entity.registered_address));
+  const capital = safeRegisteredCapital(report.resolved_entity.registered_capital);
+  const registryCorroborated = hasRegistryCorroboration(report.manus_research, { chineseName: licenceChineseName, uscc });
+  const shipmentHistorySummary = buildShipmentHistorySummary(manusResearch);
+  const hasDeepResearchSources = Boolean(manusResearch?.accepted_claims.length);
 
   return {
     generated_at: report.generated_at,
@@ -632,6 +732,9 @@ export function buildBuyerFacingReportViewModel(report: InvestigationReport, opt
     manus_material_contradictions: buildManusMaterialContradictions(manusResearch),
     manus_questions_before_payment: (manusResearch?.questions_before_payment ?? []).map(sanitizeBuyerText).filter(Boolean),
     public_web_source_summaries: publicWebSourceSummaries,
+    public_web_empty_message: hasDeepResearchSources
+      ? "Generic open-web scouting did not retain additional supplier-linked sources beyond the validated deep-research sources below."
+      : "No supplier-linked public web sources met the relevance threshold.",
     top_buyer_risks: [
       "Cannot confirm payment beneficiary matches licence holder.",
       "Company registration/status has not been officially verified.",
@@ -642,20 +745,32 @@ export function buildBuyerFacingReportViewModel(report: InvestigationReport, opt
       "Verify the business licence against GSXT/CODS or licensed registry data.",
       "Ask supplier for certificate issuer verification link and use escrow/LC tied to inspection.",
     ],
-    verified_report_document_summary: sanitizeDocumentSummary(report.verified_report_document_summary),
-    verified_report_comparison: sanitizeComparison(report.verified_report_comparison),
+    verified_report_document_summary: documentSummary,
+    verified_report_comparison: comparison,
     legal_entity_summary: {
       english_entity_name: englishEntityName,
       uscc,
-      uscc_note: uscc ? `${uscc} — structurally present but not official registry verified` : "Not independently verified",
-      chinese_legal_name: "Could not be reliably extracted from uploaded licence",
-      registered_address: "Could not be reliably extracted from uploaded licence",
-      registered_capital: "Not independently verified",
-      business_licence_validation: "Not independently verified pending official registry confirmation",
+      uscc_note: uscc
+        ? registryCorroborated
+          ? `${uscc} — shown on the uploaded licence and corroborated by non-official registry-snippet/commercial-aggregator evidence; not official GSXT verified`
+          : `${uscc} — structurally present but not official registry verified`
+        : "Not independently verified",
+      chinese_legal_name: licenceChineseName ?? "Could not be reliably extracted from uploaded licence",
+      registered_address: licenceAddress ?? "Could not be reliably extracted from uploaded licence",
+      registered_capital: capital ?? "Not independently verified",
+      business_licence_validation: licenceChineseName || uscc
+        ? "Uploaded licence fields support internal entity consistency; official registry confirmation is still required."
+        : "Not independently verified pending official registry confirmation",
+      registry_corroboration: registryCorroborated && licenceChineseName && uscc
+        ? `Uploaded licence lists ${licenceChineseName} with USCC ${uscc}. Registry-snippet/commercial aggregator evidence also reports this USCC/name pair. This supports entity consistency, but it has not been verified against China's official GSXT registry.`
+        : "Official GSXT/CODS or licensed registry confirmation is still required before relying on registration status.",
     },
+    shipment_history_summary: shipmentHistorySummary,
     uflpa_summary: {
       english_screening: "English name screened against stored DHS UFLPA snapshot: no match",
-      local_name_screening: "Local Chinese legal name was not reliably extracted and was not used for local-name screening.",
+      local_name_screening: licenceChineseName
+        ? `Local Chinese legal name from uploaded licence: ${licenceChineseName}. This is available for follow-up screening, but it is not a full sanctions/RPS clearance.`
+        : "Local Chinese legal name was not reliably extracted and was not used for local-name screening.",
       limitation: "This is not a full sanctions/RPS clearance.",
     },
   };
