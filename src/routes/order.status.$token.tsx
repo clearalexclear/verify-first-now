@@ -22,7 +22,7 @@ const STAGES = [
   { key: "entity_resolution", label: "Resolving registered legal entity" },
   { key: "risk_screening", label: "Screening connected evidence sources" },
   { key: "report_generated", label: "Generating sourced report" },
-  { key: "report_delivered", label: "Emailing PDF to you" },
+  { key: "report_delivered", label: "Report delivery" },
 ] as const;
 
 type Status = Awaited<ReturnType<typeof getOrderStatusByToken>>;
@@ -105,7 +105,7 @@ function StatusPage() {
             <div className="mt-6 rounded-lg border border-border bg-muted/30 p-5 text-sm leading-relaxed">
               {bypassActivity ? (
                 <>
-                  Test mode: payment bypassed. Investigation started.
+                  Test mode: email delivery is disabled. Your report will appear here when ready.
                 </>
               ) : isPaymentPending ? (
                 <>
@@ -151,7 +151,7 @@ function StatusPage() {
             <div className="mt-8 rounded-lg border border-success/30 bg-success/5 p-5">
               <p className="text-sm">
                 {bypassActivity
-                  ? "Test mode: payment bypassed. Investigation completed and the report is ready for review."
+                  ? "Test mode: email delivery is disabled. Your report is ready for review."
                   : <>We have emailed the report to <strong>{status.customerEmail}</strong>.</>}
               </p>
               <div className="mt-4">

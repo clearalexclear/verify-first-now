@@ -19,11 +19,17 @@ describe("order route layout", () => {
   it("status route shows bypass and report_ready copy for verified_report bypass mode", () => {
     const src = readFileSync(path.join(routes, "order.status.$token.tsx"), "utf8");
     expect(src).toMatch(/payment_bypassed_for_test/);
-    expect(src).toMatch(/Test mode: payment bypassed/);
+    expect(src).toMatch(/Test mode: email delivery is disabled/);
     expect(src).toMatch(/report_ready/);
     expect(src).toMatch(/Open report online/);
     // Must never render the /order Stripe payment-setup copy from this file.
     expect(src).not.toMatch(/Review & payment setup/);
     expect(src).not.toMatch(/Create pending order/);
+  });
+
+  it("server status lookup has a non-expired-link message for database/query errors", () => {
+    const src = readFileSync(path.resolve(__dirname, "..", "lib", "investigation", "investigation.functions.ts"), "utf8");
+    expect(src).toContain("Could not load order status. Please retry or contact VerifyFirst support.");
+    expect(src).toContain("[getOrderStatusByToken] supplier_cases lookup failed");
   });
 });
