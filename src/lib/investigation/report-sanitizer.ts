@@ -17,6 +17,7 @@ export const MISSING_BENEFICIARY_WORDING = "Payment beneficiary was not extracte
 export const DEFAULT_VERIFIED_REPORT_ACTIONS =
   "Confirm payment beneficiary/account holder, confirm the uploaded business licence against GSXT/CODS or licensed registry data, verify TUV SUD certificate, and use escrow/LC tied to inspection.";
 export const CJK_SOURCE_PRESENT_NOT_DISPLAYED = "Chinese legal name was present in source material but is not displayed because rendering reliability could not be confirmed.";
+const COMMERCIAL_REGISTRY_IDENTITY_LIMITATION = "Commercial registry/search-snippet evidence provided company identity details, but official GSXT verification is still required.";
 
 const KNOWN_GARBLED_OCR = [
   GARBLED_CHINESE_LEGAL_NAME,
@@ -105,6 +106,16 @@ export function isUnreliableRegisteredAddressExtraction(value: string | null | u
   return !hasAddressMarker || !hasStreetSpecificity;
 }
 
+export function isUnreliableRegisteredCapitalExtraction(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const clean = sanitizeBuyerText(value);
+  const compact = compactCjk(clean.replace(/^registered capital:\s*/i, ""));
+  if (!compact || /not independently verified|could not be reliably extracted/i.test(clean)) return false;
+  if (/^[\u3400-\u9fff]{1,2}$/.test(compact)) return true;
+  if (/^[^\dA-Za-z$€£¥￥]+$/.test(compact) && compact.length <= 4) return true;
+  return false;
+}
+
 function cautiousSourceLabel(sourceType?: string): string {
   if (sourceType === "commercial_registry_aggregator") return "Commercial registry aggregator";
   if (sourceType === "marketplace_platform_recorded_data") return "Marketplace platform record";
@@ -147,7 +158,11 @@ export function sanitizeBuyerFacingCjkText(value: string, options: { sourceType?
     .replace(/江区/g, "")
     .replace(/\bBusiness scope:\s*技术\b/gi, UNCERTAIN_BUSINESS_SCOPE);
   if (hasCjk(out) && !options.preserveReliableChinese) out = replaceReliableChineseCompanyNames(out);
-  return out;
+  return out
+    .replace(/\(?\s*Chinese legal name was present in source material but is not displayed because rendering reliability could not be confirmed\.?\s*\)?/gi, COMMERCIAL_REGISTRY_IDENTITY_LIMITATION)
+    .replace(/([.!?])([A-Z])/g, "$1 $2")
+    .replace(/\s+\)/g, "")
+    .replace(/\(\s+/g, "(");
 }
 
 function isNoisyExportText(value: string): boolean {
@@ -446,11 +461,15 @@ function sanitizeDocumentSummary(rows: VerifiedReportDocumentSummary[] | undefin
       const unreliable = isUnreliableChineseExtraction(field.value);
       const isAddress = /registered address|address/i.test(label);
       const isName = /chinese legal name|company name|licen[cs]e company/i.test(label);
+      const isCapital = /registered capital|capital/i.test(label);
       const unreliableAddress = isAddress && (isUnreliableRegisteredAddressExtraction(field.value) || field.status === "uncertain");
+      const unreliableCapital = isCapital && (isUnreliableRegisteredCapitalExtraction(field.value) || field.status === "uncertain");
       return {
         ...field,
         label,
-        value: unreliableAddress
+        value: unreliableCapital
+          ? "Could not be reliably extracted"
+          : unreliableAddress
           ? "Could not be reliably extracted"
           : unreliable
           ? isAddress
@@ -459,7 +478,7 @@ function sanitizeDocumentSummary(rows: VerifiedReportDocumentSummary[] | undefin
               ? "Could not be reliably extracted"
               : sanitizeBuyerText(field.value)
           : sanitizeBuyerText(field.value),
-        status: unreliable || unreliableAddress ? "uncertain" : field.status,
+        status: unreliable || unreliableAddress || unreliableCapital ? "uncertain" : field.status,
       };
     }),
   }));
@@ -470,14 +489,15 @@ function sanitizeComparison(rows: VerifiedReportComparisonRow[] | undefined): Ve
     const label = sanitizeBuyerText(row.label);
     const unreliableChinese = isUnreliableChineseExtraction(row.value_found);
     const unreliableAddress = /address/i.test(label) && isUnreliableRegisteredAddressExtraction(row.value_found);
+    const unreliableCapital = /registered capital|capital/i.test(label) && isUnreliableRegisteredCapitalExtraction(row.value_found);
     return {
       ...row,
       label,
-      value_found: unreliableChinese || unreliableAddress
+      value_found: unreliableChinese || unreliableAddress || unreliableCapital
         ? "Could not be reliably extracted"
         : sanitizeBuyerText(row.value_found),
       source: sanitizeBuyerText(row.source),
-      match_status: (unreliableChinese || unreliableAddress) && row.match_status === "MISMATCH" ? "CANNOT CONFIRM" : row.match_status,
+      match_status: (unreliableChinese || unreliableAddress || unreliableCapital) && row.match_status === "MISMATCH" ? "CANNOT CONFIRM" : row.match_status,
       buyer_impact: sanitizeBuyerText(row.buyer_impact),
     };
   });
@@ -602,7 +622,7 @@ function findDocumentField(
 function safeRegisteredCapital(value: string | null | undefined): string | null {
   const clean = cleanVisibleValue(value);
   if (!clean) return null;
-  if (/^[\u3400-\u9fff]{1,2}$/.test(clean)) return null;
+  if (isUnreliableRegisteredCapitalExtraction(clean)) return null;
   return clean;
 }
 
