@@ -15,7 +15,7 @@ export const getOrderStatusByToken = createServerFn({ method: "POST" })
       .from("supplier_cases")
       .select(
         `id, case_reference, status, investigation_error, package,
-         orders(order_reference, supplier_company_name, customer_email)`,
+         orders!orders_case_id_fkey(order_reference, supplier_company_name, customer_email)`,
       )
       .eq("upload_token", data.token)
       .maybeSingle();
