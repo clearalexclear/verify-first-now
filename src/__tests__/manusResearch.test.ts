@@ -518,4 +518,67 @@ describe("Manus deep research integration", () => {
     expect(text).not.toContain("Registered capital: 人");
     expect(text).not.toMatch(/not displayed because rendering reliability could not be confirmed|confirmed\.\)/i);
   });
+
+  it("renders questions before payment from Manus objects as buyer-readable text", async () => {
+    const parsed = parseManusResearchOutput({
+      claims: [{
+        claim: "Tianyancha / registry-snippet data reports USCC 91441702553600081W for 阳江市佳仕达工贸有限公司.",
+        exact_text_read_from_source: "阳江市佳仕达工贸有限公司 统一社会信用代码 91441702553600081W",
+        source_url: "https://www.tianyancha.com/company/yangjiang-justa",
+        source_title: "Tianyancha registry snippet",
+        source_domain: "tianyancha.com",
+        source_type: "commercial_registry_aggregator",
+        retrieved_at: "2026-07-30T00:00:00.000Z",
+        limitation: "Commercial registry aggregator result, not official GSXT verification.",
+        buyer_implication: "Supports entity consistency only; confirm against GSXT/CODS before payment.",
+      }],
+      questions_before_payment: [
+        "Confirm the bank beneficiary/account holder before paying.",
+        { question: "Ask whether the invoice seller and bank account holder are the same legal entity." },
+        { text: "Request the supplier's current GSXT/CODS registry capture." },
+        { nested: { body: "Ask for the certificate issuer verification link." } },
+        { value: "   " },
+        {},
+      ],
+    }, supplierInput, "2026-07-30T00:00:00.000Z");
+    expect(parsed.questions_before_payment).toEqual([
+      "Confirm the bank beneficiary/account holder before paying.",
+      "Ask whether the invoice seller and bank account holder are the same legal entity.",
+      "Request the supplier's current GSXT/CODS registry capture.",
+      "Ask for the certificate issuer verification link.",
+    ]);
+
+    const report = reportWithManus(parsed);
+    report.verified_report_document_summary = [{
+      document_type: "business_licence",
+      label: "Business licence",
+      source: "Uploaded business licence",
+      fields: [
+        { label: "Chinese legal name", value: "阳江市佳仕达工贸有限公司", status: "extracted" },
+        { label: "USCC / registration number", value: "91441702553600081W", status: "extracted" },
+      ],
+    }];
+    report.manus_research!.questions_before_payment = [
+      ...report.manus_research!.questions_before_payment,
+      { title: "Confirm the proforma invoice payment beneficiary in writing." },
+      { details: { value: "" } },
+    ] as any;
+
+    const view = buildBuyerFacingReportViewModel(report);
+    const serialized = JSON.stringify(view);
+    expect(view.manus_questions_before_payment).toContain("Confirm the proforma invoice payment beneficiary in writing.");
+    expect(view.manus_questions_before_payment).not.toContain("[object Object]");
+    expect(serialized).toContain("阳江市佳仕达工贸有限公司");
+    expect(serialized).toContain("Ask whether the invoice seller and bank account holder are the same legal entity.");
+    expect(serialized).toContain("Ask for the certificate issuer verification link.");
+    expect(serialized).not.toContain("[object Object]");
+
+    const text = await extractPdfText(await renderReportPdf(report));
+    expect(text).toContain("Questions before payment");
+    expect(text).toContain("Ask whether the invoice seller and bank account holder are the same legal entity.");
+    expect(text).toContain("Request the supplier's current GSXT/CODS registry capture.");
+    expect(text).toContain("Confirm the proforma invoice payment beneficiary in writing.");
+    expect(text).toContain("阳江市佳仕达工贸有限公司");
+    expect(text).not.toContain("[object Object]");
+  });
 });
