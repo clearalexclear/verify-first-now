@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { vi } from "vitest";
-import { buildVerifiedReportConsistency, extractVerifiedBusinessLicenceFields, selectVerifiedReportEvidenceDocs, type VerifiedBusinessLicenceFields, type VerifiedInvoiceFields } from "../lib/investigation/verified-report.server";
+import { buildVerifiedReportCommercialTables, buildVerifiedReportConsistency, extractVerifiedBusinessLicenceFields, extractVerifiedInvoiceFields, selectVerifiedReportEvidenceDocs, type VerifiedBusinessLicenceFields, type VerifiedInvoiceFields } from "../lib/investigation/verified-report.server";
 import { demoInput } from "../lib/demo/demo.functions";
 import { missingVerifiedReportDocuments, normalizeVerifiedReportDocumentCategory, submitVerifiedReportImpl, verifiedReportBypassEnabled, type SubmitVerifiedReportInput } from "../lib/verified-report.functions";
 import type { ExtractedDoc } from "../lib/investigation/extract-documents.server";
@@ -86,8 +86,8 @@ describe("Verified Supplier Report consistency engine", () => {
     expect(result.decision.payment_decision).toBe("PAUSE");
     expect(result.decision.entity_payment_consistency).toBe("NOT_VERIFIED");
     expect(result.decision.deal_specific_blockers).not.toContain("Invoice beneficiary differs from the licensed supplier legal name.");
-    expect(result.findings.find((finding) => finding.item === "Payment beneficiary not extracted")?.evidence_excerpt)
-      .toBe("Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder.");
+    expect(result.findings.find((finding) => finding.item === "Payment beneficiary/account holder not visible")?.evidence_excerpt)
+      .toBe("Payment beneficiary/account holder was not visible/provided in the uploaded proforma invoice — cannot confirm payee matches licence holder.");
   });
 
   it("does not create a beneficiary blocker when extracted beneficiary matches", () => {
@@ -95,6 +95,34 @@ describe("Verified Supplier Report consistency engine", () => {
     expect(result.finalOutcome).toBe("PROCEED_WITH_SAFEGUARDS");
     expect(result.decision.payment_decision).toBe("PROCEED");
     expect(result.decision.deal_specific_blockers).not.toContain("Invoice beneficiary differs from the licensed supplier legal name.");
+  });
+
+  it("extracts invoice bank holder fields and distinguishes missing payee from extraction failure", () => {
+    const doc: ExtractedDoc = {
+      filename: "proforma.pdf",
+      category: "proforma_invoice",
+      doc_type: "proforma_invoice",
+      extracted_entities: { company_name_en: "Huawei Technologies Co., Ltd.", company_name_zh: null, usci_number: null, registered_address: null, contact: null, dates: [], amounts: ["USD 25000"], certificate_authority: null, certificate_number: null, validity_dates: null },
+      proforma_invoice: {
+        issuerSellerEntity: "Huawei Technologies Co., Ltd.",
+        beneficiaryName: "Huawei Technologies Co., Ltd.",
+        bankAccountName: null,
+        bankName: "Bank of China",
+        bankCountry: "China",
+        invoiceAddress: null,
+        currency: "USD",
+        orderAmount: "25000",
+        productDescription: "Kitchenware",
+        buyerName: "Buyer Ltd",
+      },
+      summary: "Invoice shows seller and bank details.",
+    };
+    const extracted = extractVerifiedInvoiceFields(doc);
+    expect(extracted?.beneficiaryName).toBe("Huawei Technologies Co., Ltd.");
+    expect(extracted?.bankName).toBe("Bank of China");
+    const result = run({ proformaInvoice: extracted });
+    expect(result.decision.payment_decision).toBe("PROCEED");
+    expect(result.decision.why.join(" ")).not.toMatch(/not visible\/provided|extraction failed/i);
   });
 
   it("makes HK third-party beneficiary mismatch a No-Go", () => {
@@ -215,6 +243,28 @@ describe("Verified Supplier Report consistency engine", () => {
       product_category: "kitchenware",
       destination_market: "United States",
     })).not.toThrow();
+  });
+});
+
+describe("Verified Supplier Report commercial document tables", () => {
+  it("extracts certificate report date and test period from certificate prose", () => {
+    const tables = buildVerifiedReportCommercialTables({
+      supplierName: "Yangjiang Justa Industry&trade Co., Ltd.",
+      resolvedEnglishName: "YANGJIANG JUSTA INDUSTRY & TRADE CO.,LTD",
+      businessLicence: null,
+      proformaInvoice: null,
+      certificates: [{
+        holderName: null,
+        certificateName: "LFGB",
+        issuerName: "TUV SUD",
+        certificateNumber: "CERT-9988",
+        productScope: "LFGB test report dated 2017-09-26. Tests conducted between 2017-09-14 and 2017-09-25 for cookware.",
+        validityDates: null,
+      }],
+    });
+    const fields = tables.documents.flatMap((doc) => doc.fields);
+    expect(fields.find((field) => field.label === "Certificate/test report date")?.value).toBe("2017-09-26");
+    expect(fields.find((field) => field.label === "Test period")?.value).toBe("2017-09-14 to 2017-09-25");
   });
 });
 

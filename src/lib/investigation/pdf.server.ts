@@ -70,14 +70,33 @@ function wrap(text: string, font: PDFFont, size: number, maxWidth: number): stri
   const words = safe.split(" ");
   const lines: string[] = [];
   let line = "";
+  const splitLongWord = (word: string): string[] => {
+    if (font.widthOfTextAtSize(word, size) <= maxWidth) return [word];
+    const chunks: string[] = [];
+    let chunk = "";
+    for (const char of [...word]) {
+      const test = chunk + char;
+      if (font.widthOfTextAtSize(test, size) > maxWidth && chunk) {
+        chunks.push(chunk);
+        chunk = char;
+      } else {
+        chunk = test;
+      }
+    }
+    if (chunk) chunks.push(chunk);
+    return chunks;
+  };
   for (const w of words) {
-    const test = line ? line + " " + w : w;
-    const width = font.widthOfTextAtSize(test, size);
-    if (width > maxWidth && line) {
-      lines.push(line);
-      line = w;
-    } else {
-      line = test;
+    const pieces = splitLongWord(w);
+    for (const piece of pieces) {
+      const test = line ? line + " " + piece : piece;
+      const width = font.widthOfTextAtSize(test, size);
+      if (width > maxWidth && line) {
+        lines.push(line);
+        line = piece;
+      } else {
+        line = test;
+      }
     }
   }
   if (line) lines.push(line);
@@ -413,7 +432,7 @@ function inferVerifiedReportWhy(r: BuyerFacingReportViewModel): string[] {
     checklist_results: r.checklist_results,
     payment_recommendation: r.payment_recommendation,
   });
-  if (/Payment beneficiary (?:was )?not extracted/i.test(text)) {
+  if (/Payment beneficiary(?:\/account holder)? (?:was )?(?:not extracted|not visible|not provided)|beneficiary.*not visible\/provided/i.test(text)) {
     return [MISSING_BENEFICIARY_WORDING];
   }
   return [];
@@ -600,11 +619,10 @@ function drawStrictVerifiedReport(ctx: Ctx, r: BuyerFacingReportViewModel) {
     drawWrapped(ctx, `- ${item.source_name} (${item.source_type}, ${item.source_reference}). ${item.what_it_supports} ${item.limitation}`);
   }
   drawWrapped(ctx, "What this corroborates", { size: 10, bold: true, color: NAVY });
-  const corroborates = r.public_web_intelligence?.what_this_corroborates?.length
+  const hasRegistryCorroborationSummary = r.public_web_corroboration_summary.some((item) => /commercial registry\/search-snippet evidence/i.test(item));
+  const corroborates = !hasRegistryCorroborationSummary && r.public_web_intelligence?.what_this_corroborates?.length
     ? r.public_web_intelligence.what_this_corroborates
-    : r.manus_evidence_summary.length
-      ? ["Validated deep-research sources below provide the retained supplier-linked public-web and trade-data context."]
-      : ["No public-web fact was strong enough to corroborate supplier identity or operating claims."];
+    : r.public_web_corroboration_summary;
   for (const item of corroborates) {
     drawWrapped(ctx, `- ${item}`);
   }
@@ -633,11 +651,11 @@ function drawStrictVerifiedReport(ctx: Ctx, r: BuyerFacingReportViewModel) {
   if (!r.manus_research || r.manus_research.status === "not_configured") {
     drawWrapped(ctx, "Deep research backend unavailable/not configured.");
   } else if (r.manus_research.status !== "completed") {
-    drawWrapped(ctx, `Deep research backend unavailable/not configured. Manus status: ${r.manus_research.status}.`);
+    drawWrapped(ctx, `Deep research backend unavailable/not configured. Deep research status: ${r.manus_research.status}.`);
   } else if (r.manus_evidence_summary.length === 0) {
-    drawWrapped(ctx, "Manus returned no evidence-bound claims that passed VerifyFirst source validation.");
+    drawWrapped(ctx, "The deep research backend returned no evidence-bound claims that passed VerifyFirst source validation.");
   } else {
-    drawWrapped(ctx, "Accepted Manus claims are shown only after VerifyFirst validation for source URL, exact source text, source type and supplier relevance.", { bold: true });
+    drawWrapped(ctx, "Validated deep-research findings are shown only after VerifyFirst validation for source URL, exact source text, source type and supplier relevance.", { bold: true });
     for (const claim of r.manus_evidence_summary.slice(0, 6)) {
       drawWrapped(ctx, `- ${claim.claim} Source: ${claim.source}. Source type: ${claim.source_type}. Limitation: ${claim.limitation} Buyer implication: ${claim.buyer_implication}`);
     }

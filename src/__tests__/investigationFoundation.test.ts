@@ -321,7 +321,7 @@ describe("canonical checklist", () => {
         payment_decision: "PAUSE",
         entity_payment_consistency: "NOT_VERIFIED",
         documents_checked: ["Business licence", "Proforma invoice"],
-        why: ["Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder."],
+        why: ["Payment beneficiary/account holder was not visible/provided in the uploaded proforma invoice — cannot confirm payee matches licence holder."],
         deal_specific_blockers: [],
         ask_supplier_before_payment: ["Ask the supplier to provide a proforma invoice or bank letter showing the payment beneficiary legal name."],
       },
@@ -332,7 +332,7 @@ describe("canonical checklist", () => {
     expect(text).toContain("Payment decision: Pause");
     expect(text).toContain("Entity/payment consistency: CANNOT CONFIRM");
     expect(text).toContain("Documents checked: Business licence; Proforma invoice");
-    expect(text).toContain("Why: Payment beneficiary was not extracted from the proforma invoice - cannot confirm payee matches licence holder.");
+    expect(text).toContain("Why: Payment beneficiary/account holder was not visible/provided in the uploaded proforma invoice - cannot confirm payee matches licence holder.");
     expect(text).not.toContain("Deal-specific blockers: None identified from the extracted payment fields.");
     expect(text).toContain("Ask supplier before payment: Confirm payment beneficiary/account holder");
   });
@@ -434,7 +434,7 @@ describe("canonical checklist", () => {
         "The uploaded business licence was reviewed, but Chinese legal name: 江市有限公司, Registered address: 江市江区3地1141406 and Business scope: 技术 appeared in OCR. Obtain a copy of the supplier's official business license.",
       buyer_implications: "UFLPA and website consistency used 江市有限公司 and Business scope: 技术 in old snapshot text.",
       recommended_safeguards: "Obtain a copy of the supplier's official business license and review noisy export snippets.",
-      payment_recommendation: "Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder.",
+      payment_recommendation: "Payment beneficiary/account holder was not visible/provided in the uploaded proforma invoice — cannot confirm payee matches licence holder.",
       findings: [
         {
           ...baseFinding,
@@ -449,10 +449,10 @@ describe("canonical checklist", () => {
         {
           ...baseFinding,
           section: "payment_safeguards",
-          item: "Payment beneficiary not extracted",
+          item: "Payment beneficiary/account holder not visible",
           status: "NOT_VERIFIED",
           source_name: "Verified Supplier Report consistency engine",
-          evidence_excerpt: "Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder.",
+          evidence_excerpt: "Payment beneficiary/account holder was not visible/provided in the uploaded proforma invoice — cannot confirm payee matches licence holder.",
           evidence_ids: [],
           evidence_classification: "NOT_INDEPENDENTLY_VERIFIED",
         },
@@ -528,7 +528,7 @@ describe("canonical checklist", () => {
     expect(text).toContain("Business licence validation: Not independently verified pending official registry confirmation");
     expect(text).toContain("Local Chinese legal name was not reliably extracted and was not used for local-name screening.");
     expect(text).toContain("Documents checked: Business licence; Proforma invoice; 1 certificate/test report(s)");
-    expect(text).toContain("Payment beneficiary was not extracted from the proforma invoice - cannot confirm payee matches licence holder.");
+    expect(text).toContain("Payment beneficiary/account holder was not visible/provided in the uploaded proforma invoice - cannot confirm payee matches licence holder.");
     expect(text).toContain("No reliable shipment-history evidence identified from public sources.");
     expect(text).not.toMatch(/GlobalSources multilingual directory|deveirter|gnirts|代码|مصنع|fournisseur|hersteller/);
     expect(text).toContain("confirm the uploaded business licence against GSXT/CODS or licensed registry data");
@@ -553,7 +553,7 @@ describe("canonical checklist", () => {
         registered_capital: "人",
         business_scope: "技术",
       },
-      payment_recommendation: "Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder.",
+      payment_recommendation: "Payment beneficiary/account holder was not visible/provided in the uploaded proforma invoice — cannot confirm payee matches licence holder.",
       findings: [
         {
           ...baseFinding,
@@ -595,7 +595,7 @@ describe("canonical checklist", () => {
 
     const text = await extractPdfText(await renderReportPdf(report));
     expect(text).toContain("Business licence; Proforma invoice; 1 certificate/test report");
-    expect(text).toContain("Payment beneficiary was not extracted from the proforma invoice");
+    expect(text).toContain("Payment beneficiary/account holder was not visible/provided in the uploaded proforma invoice");
     expect(text).toContain("Chinese legal name: Could not be reliably extracted");
     expect(text).toContain("Local Chinese legal name was not reliably extracted and was not used for local-name screening");
     expect(text).not.toContain("江市有限公司");
@@ -623,7 +623,7 @@ describe("canonical checklist", () => {
         registered_capital: "人",
         business_scope: "技术",
       },
-      payment_recommendation: "Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder.",
+      payment_recommendation: "Payment beneficiary/account holder was not visible/provided in the uploaded proforma invoice — cannot confirm payee matches licence holder.",
       findings: [{
         ...baseFinding,
         section: "sanctions_forced_labour",
@@ -694,7 +694,7 @@ describe("canonical checklist", () => {
     expect(text).not.toContain("Ownership and related companies");
     expect(text).not.toContain("Chinese legal name: 江市有限公司");
     expect(text).toContain("Business licence; Proforma invoice; 1 certificate/test report");
-    expect(text).toContain("Payment beneficiary was not extracted from the proforma invoice");
+    expect(text).toContain("Payment beneficiary/account holder was not visible/provided in the uploaded proforma invoice");
   });
 
   it("builds a safe buyer-facing view model without raw snapshot legal fields", () => {
@@ -702,7 +702,7 @@ describe("canonical checklist", () => {
       supplier_input: { ...mockReport().supplier_input, chinese_name: "江市有限公司" },
       resolved_entity: { ...baseResolvedEntity, legal_name_local: "江市有限公司", registered_address: "江市江区3地1141406", business_scope: "技术" },
       buyer_implications: "UFLPA screening used local: \"江市有限公司\" and export history used GlobalSources multilingual directory مصنع fournisseur.",
-      payment_recommendation: "Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder.",
+      payment_recommendation: "Payment beneficiary/account holder was not visible/provided in the uploaded proforma invoice — cannot confirm payee matches licence holder.",
       customer_evidence: [
         { name: "Customer upload: business_licence.jpg", url: null, retrieved_at: "2026-07-21T17:15:39.000Z", category: "customer_upload" },
         { name: "Customer upload: proforma_invoice.pdf", url: null, retrieved_at: "2026-07-21T17:15:39.000Z", category: "customer_upload" },
@@ -728,7 +728,7 @@ describe("canonical checklist", () => {
       "Proforma invoice",
       "1 certificate/test report(s)",
     ]);
-    expect(text).toContain("Payment beneficiary was not extracted from the proforma invoice");
+    expect(text).toContain("Payment beneficiary/account holder was not visible/provided in the uploaded proforma invoice");
     expect(text).not.toContain("江市有限公司");
     expect(text).not.toContain("江市江区3地1141406");
     expect(text).not.toContain("\"business_scope\"");
@@ -949,7 +949,7 @@ describe("Verified Supplier Report public web intelligence scouting", () => {
         payment_decision: "PAUSE",
         entity_payment_consistency: "NOT_VERIFIED",
         documents_checked: ["Business licence", "Proforma invoice", "1 certificate/test report(s)"],
-        why: ["Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder."],
+        why: ["Payment beneficiary/account holder was not visible/provided in the uploaded proforma invoice — cannot confirm payee matches licence holder."],
         deal_specific_blockers: [],
         ask_supplier_before_payment: ["Confirm payment beneficiary/account holder before payment."],
       },

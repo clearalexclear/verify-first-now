@@ -5,7 +5,7 @@ import { SiteFooter } from "@/components/SiteFooter";
 import { Button } from "@/components/ui/button";
 import { Download, Printer } from "lucide-react";
 import type { ChecklistReportResult, FindingStatus, InvestigationReport, VerifiedReportDecision } from "@/lib/investigation/types";
-import { buildBuyerFacingReportViewModel, type BuyerFacingReportViewModel } from "@/lib/investigation/report-sanitizer";
+import { buildBuyerFacingReportViewModel, MISSING_BENEFICIARY_WORDING, type BuyerFacingReportViewModel } from "@/lib/investigation/report-sanitizer";
 import {
   CLASSIFICATION_LABEL,
   CONFIDENCE_LABEL,
@@ -246,7 +246,7 @@ function VerifiedReportStrictPage({ r, pdfUrl, checklist }: { r: BuyerFacingRepo
 
         <Section title="2. Entity & payment consistency">
           <p className="font-semibold">Entity/payment consistency: CANNOT CONFIRM</p>
-          <p className="mt-2">Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder.</p>
+          <p className="mt-2">{MISSING_BENEFICIARY_WORDING}</p>
           <div className="mt-4 overflow-x-auto">
             <table className="w-full border-collapse text-sm">
               <thead>
@@ -299,11 +299,9 @@ function VerifiedReportStrictPage({ r, pdfUrl, checklist }: { r: BuyerFacingRepo
           </ul>
           <h3 className="mt-4 text-sm font-semibold text-navy">What this corroborates</h3>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
-            {(r.public_web_intelligence?.what_this_corroborates?.length
+            {(!r.public_web_corroboration_summary.some((item) => /commercial registry\/search-snippet evidence/i.test(item)) && r.public_web_intelligence?.what_this_corroborates?.length
               ? r.public_web_intelligence.what_this_corroborates
-              : r.manus_evidence_summary.length
-                ? ["Validated deep-research sources below provide the retained supplier-linked public-web and trade-data context."]
-                : ["No public-web fact was strong enough to corroborate supplier identity or operating claims."]).map((item, index) => <li key={index}>{item}</li>)}
+              : r.public_web_corroboration_summary).map((item, index) => <li key={index}>{item}</li>)}
           </ul>
           <h3 className="mt-4 text-sm font-semibold text-navy">What is still not verified</h3>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
@@ -333,13 +331,13 @@ function VerifiedReportStrictPage({ r, pdfUrl, checklist }: { r: BuyerFacingRepo
           {!r.manus_research || r.manus_research.status === "not_configured" ? (
             <p>Deep research backend unavailable/not configured.</p>
           ) : r.manus_research.status !== "completed" ? (
-            <p>Deep research backend unavailable/not configured. Manus status: {r.manus_research.status}.</p>
+            <p>Deep research backend unavailable/not configured. Deep research status: {r.manus_research.status}.</p>
           ) : r.manus_evidence_summary.length === 0 ? (
-            <p>Manus returned no evidence-bound claims that passed VerifyFirst source validation.</p>
+            <p>The deep research backend returned no evidence-bound claims that passed VerifyFirst source validation.</p>
           ) : (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Accepted Manus claims are shown only after VerifyFirst validation for source URL, exact source text, source type and supplier relevance.
+                Validated deep-research findings are shown only after VerifyFirst validation for source URL, exact source text, source type and supplier relevance.
               </p>
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-sm">

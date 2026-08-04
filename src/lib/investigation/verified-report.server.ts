@@ -23,6 +23,7 @@ export interface VerifiedInvoiceFields {
   issuerSellerEntity: string | null;
   beneficiaryName: string | null;
   bankAccountName: string | null;
+  bankName?: string | null;
   bankCountry: string | null;
   invoiceAddress: string | null;
   currency: string | null;
@@ -38,6 +39,8 @@ export interface VerifiedCertificateFields {
   certificateNumber?: string | null;
   productScope?: string | null;
   validityDates?: string | null;
+  certificateDate?: string | null;
+  testPeriod?: string | null;
   requiredForOrder?: boolean;
 }
 
@@ -80,6 +83,36 @@ function field(label: string, value: string | null | undefined, status?: "extrac
 function uncertainField(label: string, value: string | null | undefined, uncertain?: boolean): VerifiedReportDocumentSummary["fields"][number] {
   if (uncertain) return { label, value: "Could not be reliably extracted", status: "uncertain" };
   return field(label, value);
+}
+
+function extractCertificateDate(value: string | null | undefined): string | null {
+  const text = clean(value);
+  if (!text) return null;
+  return text.match(/\bdated\s+(\d{4}-\d{2}-\d{2})\b/i)?.[1]
+    ?? text.match(/\b(?:date|issue date|report date)\s*[:-]?\s*(\d{4}-\d{2}-\d{2})\b/i)?.[1]
+    ?? null;
+}
+
+function extractTestPeriod(value: string | null | undefined): string | null {
+  const text = clean(value);
+  if (!text) return null;
+  const between = text.match(/\bconducted\s+between\s+(\d{4}-\d{2}-\d{2})\s+and\s+(\d{4}-\d{2}-\d{2})\b/i);
+  if (between) return `${between[1]} to ${between[2]}`;
+  const range = text.match(/\b(?:test(?:ing)? period|test dates?)\s*[:-]?\s*(\d{4}-\d{2}-\d{2})\s*(?:to|and|[-–—])\s*(\d{4}-\d{2}-\d{2})\b/i);
+  if (range) return `${range[1]} to ${range[2]}`;
+  return null;
+}
+
+function certificateDateValue(cert: VerifiedCertificateFields): string | null {
+  return clean(cert.certificateDate)
+    ?? extractCertificateDate(cert.validityDates)
+    ?? extractCertificateDate(cert.productScope);
+}
+
+function certificateTestPeriodValue(cert: VerifiedCertificateFields): string | null {
+  return clean(cert.testPeriod)
+    ?? extractTestPeriod(cert.validityDates)
+    ?? extractTestPeriod(cert.productScope);
 }
 
 function reliableLicenceName(licence: VerifiedBusinessLicenceFields | null): string | null {
@@ -139,7 +172,8 @@ export function buildVerifiedReportCommercialTables(args: {
         field("Product", invoice.productDescription),
         field("Order amount", invoice.orderAmount),
         field("Payment beneficiary / account holder", invoice.beneficiaryName ?? invoice.bankAccountName),
-        field("Bank name", invoice.bankCountry),
+        field("Bank name", invoice.bankName),
+        field("Bank country", invoice.bankCountry),
       ],
     });
   }
@@ -147,6 +181,8 @@ export function buildVerifiedReportCommercialTables(args: {
   for (const [index, cert] of certificates.entries()) {
     const issuer = cert.issuerName ?? (cert.certificateName && /tuv|tüv|sgs|intertek|ul|bureau|lab/i.test(cert.certificateName) ? cert.certificateName : null);
     const number = cert.certificateNumber ?? (cert.certificateName && !/tuv|tüv|sgs|intertek|ul|bureau|lab/i.test(cert.certificateName) ? cert.certificateName : null);
+    const certificateDate = certificateDateValue(cert);
+    const testPeriod = certificateTestPeriodValue(cert);
     documents.push({
       document_type: "certificate_or_test_report",
       label: certificates.length > 1 ? `Certificate/test report ${index + 1}` : "Certificate/test report",
@@ -155,6 +191,8 @@ export function buildVerifiedReportCommercialTables(args: {
         field("Issuer / lab name", issuer, issuer ? "extracted" : "uncertain"),
         field("Certificate / report number", number, number ? "extracted" : "uncertain"),
         field("Product scope", cert.productScope, cert.productScope ? "extracted" : "uncertain"),
+        field("Certificate/test report date", certificateDate, certificateDate ? "extracted" : "uncertain"),
+        field("Test period", testPeriod, testPeriod ? "extracted" : "uncertain"),
         field("Date / validity", cert.validityDates, cert.validityDates ? "extracted" : "uncertain"),
       ],
     });
@@ -410,7 +448,8 @@ export function extractVerifiedInvoiceFields(doc: ExtractedDoc | null | undefine
   return {
     issuerSellerEntity: clean(fields.issuerSellerEntity ?? fields.invoiceIssuer ?? fields.seller ?? fields.issuer_seller_entity ?? e.company_name_en ?? e.company_name_zh),
     beneficiaryName: clean(fields.beneficiaryName ?? fields.beneficiary ?? fields.paymentBeneficiary),
-    bankAccountName: clean(fields.bankAccountName ?? fields.bank_account_name),
+    bankAccountName: clean(fields.bankAccountName ?? fields.bank_account_name ?? fields.accountHolder ?? fields.account_holder),
+    bankName: clean(fields.bankName ?? fields.bank_name ?? fields.bank),
     bankCountry: clean(fields.bankCountry ?? fields.bank_country),
     invoiceAddress: clean(fields.invoiceAddress ?? fields.invoice_address ?? e.registered_address),
     currency: clean(fields.currency),
@@ -570,13 +609,13 @@ export function buildVerifiedReportConsistency(input: VerifiedReportConsistencyI
       blockers.push("Invoice requests payment to a personal bank account.");
       entityPaymentConsistency = "MISMATCH";
     } else if (!beneficiary) {
-      const message = "Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder.";
+      const message = "Payment beneficiary/account holder was not visible/provided in the uploaded proforma invoice — cannot confirm payee matches licence holder.";
       why.push(message);
       asks.push("Ask the supplier to provide a proforma invoice or bank letter showing the payment beneficiary legal name.");
       entityPaymentConsistency = "NOT_VERIFIED";
       findings.push(finding({
         section: "payment_safeguards",
-        item: "Payment beneficiary not extracted",
+        item: "Payment beneficiary/account holder not visible",
         status: "NOT_VERIFIED",
         confidence: "low",
         source_name: ENGINE_SOURCE,
@@ -584,7 +623,7 @@ export function buildVerifiedReportConsistency(input: VerifiedReportConsistencyI
         evidence_ids: [],
         evidence_excerpt: message,
         buyer_impact: "The payee cannot be compared against the licence holder, so wire-transfer risk cannot be cleared.",
-        recommended_action: "Request a clearer proforma invoice or bank account confirmation naming the beneficiary legal entity before payment.",
+        recommended_action: "Request a proforma invoice or bank account confirmation naming the beneficiary legal entity before payment.",
       }, now));
     } else if (!sellerMatches || !beneficiaryMatches) {
       const message = offshore
