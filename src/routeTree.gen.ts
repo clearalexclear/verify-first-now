@@ -9,52 +9,36 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as VerifiedReportRouteImport } from './routes/verified-report'
-import { Route as TermsRouteImport } from './routes/terms'
-import { Route as SampleReportRouteImport } from './routes/sample-report'
-import { Route as PrivacyRouteImport } from './routes/privacy'
-import { Route as DemoRouteImport } from './routes/demo'
-import { Route as AuthRouteImport } from './routes/auth'
-import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as OrderIndexRouteImport } from './routes/order.index'
-import { Route as UploadTokenRouteImport } from './routes/upload.$token'
-import { Route as RShareTokenRouteImport } from './routes/r.$shareToken'
+import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as DemoRouteImport } from './routes/demo'
+import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as SampleReportRouteImport } from './routes/sample-report'
+import { Route as TermsRouteImport } from './routes/terms'
+import { Route as VerifiedReportRouteImport } from './routes/verified-report'
 import { Route as AuthenticatedAdminRouteRouteImport } from './routes/_authenticated/admin/route'
+import { Route as OrderIndexRouteImport } from './routes/order.index'
+import { Route as RShareTokenRouteImport } from './routes/r.$shareToken'
+import { Route as UploadTokenRouteImport } from './routes/upload.$token'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
-import { Route as OrderStatusTokenRouteImport } from './routes/order.status.$token'
-import { Route as ApiStripeWebhookRouteImport } from './routes/api/stripe/webhook'
-import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
-import { Route as AuthenticatedAdminTemplatesRouteImport } from './routes/_authenticated/admin/templates'
-import { Route as AuthenticatedAdminOfficialRegistryRouteImport } from './routes/_authenticated/admin/official-registry'
-import { Route as AuthenticatedAdminManualEvidenceRouteImport } from './routes/_authenticated/admin/manual-evidence'
 import { Route as AuthenticatedAdminIntegrationDiagnosticsRouteImport } from './routes/_authenticated/admin/integration-diagnostics'
-import { Route as ApiPublicInvestigateCaseIdRouteImport } from './routes/api/public/investigate.$caseId'
+import { Route as AuthenticatedAdminManualEvidenceRouteImport } from './routes/_authenticated/admin/manual-evidence'
+import { Route as AuthenticatedAdminOfficialRegistryRouteImport } from './routes/_authenticated/admin/official-registry'
+import { Route as AuthenticatedAdminTemplatesRouteImport } from './routes/_authenticated/admin/templates'
+import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
+import { Route as ApiStripeWebhookRouteImport } from './routes/api/stripe/webhook'
+import { Route as OrderStatusTokenRouteImport } from './routes/order.status.$token'
 import { Route as AuthenticatedAdminCasesCaseIdRouteImport } from './routes/_authenticated/admin/cases.$caseId'
+import { Route as ApiPublicInvestigateCaseIdRouteImport } from './routes/api/public/investigate.$caseId'
 
-const VerifiedReportRoute = VerifiedReportRouteImport.update({
-  id: '/verified-report',
-  path: '/verified-report',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TermsRoute = TermsRouteImport.update({
-  id: '/terms',
-  path: '/terms',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SampleReportRoute = SampleReportRouteImport.update({
-  id: '/sample-report',
-  path: '/sample-report',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PrivacyRoute = PrivacyRouteImport.update({
-  id: '/privacy',
-  path: '/privacy',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DemoRoute = DemoRouteImport.update({
-  id: '/demo',
-  path: '/demo',
+const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
+  id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -62,28 +46,29 @@ const AuthRoute = AuthRouteImport.update({
   path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
-  id: '/_authenticated',
+const DemoRoute = DemoRouteImport.update({
+  id: '/demo',
+  path: '/demo',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
-const OrderIndexRoute = OrderIndexRouteImport.update({
-  id: '/order/',
-  path: '/order/',
+const SampleReportRoute = SampleReportRouteImport.update({
+  id: '/sample-report',
+  path: '/sample-report',
   getParentRoute: () => rootRouteImport,
 } as any)
-const UploadTokenRoute = UploadTokenRouteImport.update({
-  id: '/upload/$token',
-  path: '/upload/$token',
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RShareTokenRoute = RShareTokenRouteImport.update({
-  id: '/r/$shareToken',
-  path: '/r/$shareToken',
+const VerifiedReportRoute = VerifiedReportRouteImport.update({
+  id: '/verified-report',
+  path: '/verified-report',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedAdminRouteRoute = AuthenticatedAdminRouteRouteImport.update({
@@ -91,36 +76,30 @@ const AuthenticatedAdminRouteRoute = AuthenticatedAdminRouteRouteImport.update({
   path: '/admin',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const OrderIndexRoute = OrderIndexRouteImport.update({
+  id: '/order/',
+  path: '/order/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RShareTokenRoute = RShareTokenRouteImport.update({
+  id: '/r/$shareToken',
+  path: '/r/$shareToken',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UploadTokenRoute = UploadTokenRouteImport.update({
+  id: '/upload/$token',
+  path: '/upload/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthenticatedAdminRouteRoute,
 } as any)
-const OrderStatusTokenRoute = OrderStatusTokenRouteImport.update({
-  id: '/order/status/$token',
-  path: '/order/status/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiStripeWebhookRoute = ApiStripeWebhookRouteImport.update({
-  id: '/api/stripe/webhook',
-  path: '/api/stripe/webhook',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
-  id: '/users',
-  path: '/users',
-  getParentRoute: () => AuthenticatedAdminRouteRoute,
-} as any)
-const AuthenticatedAdminTemplatesRoute =
-  AuthenticatedAdminTemplatesRouteImport.update({
-    id: '/templates',
-    path: '/templates',
-    getParentRoute: () => AuthenticatedAdminRouteRoute,
-  } as any)
-const AuthenticatedAdminOfficialRegistryRoute =
-  AuthenticatedAdminOfficialRegistryRouteImport.update({
-    id: '/official-registry',
-    path: '/official-registry',
+const AuthenticatedAdminIntegrationDiagnosticsRoute =
+  AuthenticatedAdminIntegrationDiagnosticsRouteImport.update({
+    id: '/integration-diagnostics',
+    path: '/integration-diagnostics',
     getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
 const AuthenticatedAdminManualEvidenceRoute =
@@ -129,10 +108,37 @@ const AuthenticatedAdminManualEvidenceRoute =
     path: '/manual-evidence',
     getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
-const AuthenticatedAdminIntegrationDiagnosticsRoute =
-  AuthenticatedAdminIntegrationDiagnosticsRouteImport.update({
-    id: '/integration-diagnostics',
-    path: '/integration-diagnostics',
+const AuthenticatedAdminOfficialRegistryRoute =
+  AuthenticatedAdminOfficialRegistryRouteImport.update({
+    id: '/official-registry',
+    path: '/official-registry',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
+const AuthenticatedAdminTemplatesRoute =
+  AuthenticatedAdminTemplatesRouteImport.update({
+    id: '/templates',
+    path: '/templates',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
+const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AuthenticatedAdminRouteRoute,
+} as any)
+const ApiStripeWebhookRoute = ApiStripeWebhookRouteImport.update({
+  id: '/api/stripe/webhook',
+  path: '/api/stripe/webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrderStatusTokenRoute = OrderStatusTokenRouteImport.update({
+  id: '/order/status/$token',
+  path: '/order/status/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedAdminCasesCaseIdRoute =
+  AuthenticatedAdminCasesCaseIdRouteImport.update({
+    id: '/cases/$caseId',
+    path: '/cases/$caseId',
     getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
 const ApiPublicInvestigateCaseIdRoute =
@@ -140,12 +146,6 @@ const ApiPublicInvestigateCaseIdRoute =
     id: '/api/public/investigate/$caseId',
     path: '/api/public/investigate/$caseId',
     getParentRoute: () => rootRouteImport,
-  } as any)
-const AuthenticatedAdminCasesCaseIdRoute =
-  AuthenticatedAdminCasesCaseIdRouteImport.update({
-    id: '/cases/$caseId',
-    path: '/cases/$caseId',
-    getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -309,46 +309,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/verified-report': {
-      id: '/verified-report'
-      path: '/verified-report'
-      fullPath: '/verified-report'
-      preLoaderRoute: typeof VerifiedReportRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/terms': {
-      id: '/terms'
-      path: '/terms'
-      fullPath: '/terms'
-      preLoaderRoute: typeof TermsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/sample-report': {
-      id: '/sample-report'
-      path: '/sample-report'
-      fullPath: '/sample-report'
-      preLoaderRoute: typeof SampleReportRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/privacy': {
-      id: '/privacy'
-      path: '/privacy'
-      fullPath: '/privacy'
-      preLoaderRoute: typeof PrivacyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/demo': {
-      id: '/demo'
-      path: '/demo'
-      fullPath: '/demo'
-      preLoaderRoute: typeof DemoRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth': {
-      id: '/auth'
-      path: '/auth'
-      fullPath: '/auth'
-      preLoaderRoute: typeof AuthRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated': {
@@ -358,32 +323,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/order/': {
-      id: '/order/'
-      path: '/order'
-      fullPath: '/order/'
-      preLoaderRoute: typeof OrderIndexRouteImport
+    '/demo': {
+      id: '/demo'
+      path: '/demo'
+      fullPath: '/demo'
+      preLoaderRoute: typeof DemoRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/upload/$token': {
-      id: '/upload/$token'
-      path: '/upload/$token'
-      fullPath: '/upload/$token'
-      preLoaderRoute: typeof UploadTokenRouteImport
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/r/$shareToken': {
-      id: '/r/$shareToken'
-      path: '/r/$shareToken'
-      fullPath: '/r/$shareToken'
-      preLoaderRoute: typeof RShareTokenRouteImport
+    '/sample-report': {
+      id: '/sample-report'
+      path: '/sample-report'
+      fullPath: '/sample-report'
+      preLoaderRoute: typeof SampleReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/verified-report': {
+      id: '/verified-report'
+      path: '/verified-report'
+      fullPath: '/verified-report'
+      preLoaderRoute: typeof VerifiedReportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/admin': {
@@ -393,53 +372,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminRouteRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/order/': {
+      id: '/order/'
+      path: '/order'
+      fullPath: '/order/'
+      preLoaderRoute: typeof OrderIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/r/$shareToken': {
+      id: '/r/$shareToken'
+      path: '/r/$shareToken'
+      fullPath: '/r/$shareToken'
+      preLoaderRoute: typeof RShareTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/upload/$token': {
+      id: '/upload/$token'
+      path: '/upload/$token'
+      fullPath: '/upload/$token'
+      preLoaderRoute: typeof UploadTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/admin/': {
       id: '/_authenticated/admin/'
       path: '/'
       fullPath: '/admin/'
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
-      parentRoute: typeof AuthenticatedAdminRouteRoute
-    }
-    '/order/status/$token': {
-      id: '/order/status/$token'
-      path: '/order/status/$token'
-      fullPath: '/order/status/$token'
-      preLoaderRoute: typeof OrderStatusTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/stripe/webhook': {
-      id: '/api/stripe/webhook'
-      path: '/api/stripe/webhook'
-      fullPath: '/api/stripe/webhook'
-      preLoaderRoute: typeof ApiStripeWebhookRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_authenticated/admin/users': {
-      id: '/_authenticated/admin/users'
-      path: '/users'
-      fullPath: '/admin/users'
-      preLoaderRoute: typeof AuthenticatedAdminUsersRouteImport
-      parentRoute: typeof AuthenticatedAdminRouteRoute
-    }
-    '/_authenticated/admin/templates': {
-      id: '/_authenticated/admin/templates'
-      path: '/templates'
-      fullPath: '/admin/templates'
-      preLoaderRoute: typeof AuthenticatedAdminTemplatesRouteImport
-      parentRoute: typeof AuthenticatedAdminRouteRoute
-    }
-    '/_authenticated/admin/official-registry': {
-      id: '/_authenticated/admin/official-registry'
-      path: '/official-registry'
-      fullPath: '/admin/official-registry'
-      preLoaderRoute: typeof AuthenticatedAdminOfficialRegistryRouteImport
-      parentRoute: typeof AuthenticatedAdminRouteRoute
-    }
-    '/_authenticated/admin/manual-evidence': {
-      id: '/_authenticated/admin/manual-evidence'
-      path: '/manual-evidence'
-      fullPath: '/admin/manual-evidence'
-      preLoaderRoute: typeof AuthenticatedAdminManualEvidenceRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
     '/_authenticated/admin/integration-diagnostics': {
@@ -449,11 +407,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminIntegrationDiagnosticsRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
-    '/api/public/investigate/$caseId': {
-      id: '/api/public/investigate/$caseId'
-      path: '/api/public/investigate/$caseId'
-      fullPath: '/api/public/investigate/$caseId'
-      preLoaderRoute: typeof ApiPublicInvestigateCaseIdRouteImport
+    '/_authenticated/admin/manual-evidence': {
+      id: '/_authenticated/admin/manual-evidence'
+      path: '/manual-evidence'
+      fullPath: '/admin/manual-evidence'
+      preLoaderRoute: typeof AuthenticatedAdminManualEvidenceRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/admin/official-registry': {
+      id: '/_authenticated/admin/official-registry'
+      path: '/official-registry'
+      fullPath: '/admin/official-registry'
+      preLoaderRoute: typeof AuthenticatedAdminOfficialRegistryRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/admin/templates': {
+      id: '/_authenticated/admin/templates'
+      path: '/templates'
+      fullPath: '/admin/templates'
+      preLoaderRoute: typeof AuthenticatedAdminTemplatesRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/admin/users': {
+      id: '/_authenticated/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AuthenticatedAdminUsersRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/api/stripe/webhook': {
+      id: '/api/stripe/webhook'
+      path: '/api/stripe/webhook'
+      fullPath: '/api/stripe/webhook'
+      preLoaderRoute: typeof ApiStripeWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/order/status/$token': {
+      id: '/order/status/$token'
+      path: '/order/status/$token'
+      fullPath: '/order/status/$token'
+      preLoaderRoute: typeof OrderStatusTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/admin/cases/$caseId': {
@@ -462,6 +455,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/cases/$caseId'
       preLoaderRoute: typeof AuthenticatedAdminCasesCaseIdRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/api/public/investigate/$caseId': {
+      id: '/api/public/investigate/$caseId'
+      path: '/api/public/investigate/$caseId'
+      fullPath: '/api/public/investigate/$caseId'
+      preLoaderRoute: typeof ApiPublicInvestigateCaseIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
   }
 }
@@ -525,13 +525,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
