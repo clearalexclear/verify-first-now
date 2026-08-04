@@ -11,6 +11,7 @@ import type {
 } from "../types";
 import {
   hasCorruptedBuyerFacingCjk,
+  normalizeQuestionsBeforePayment,
   sanitizeBuyerFacingCjkText,
 } from "../report-sanitizer";
 
@@ -339,7 +340,7 @@ function parseJsonOutput(raw: unknown): ParsedOutput | null {
   return {
     claims: claims.map(claimFromObject),
     buyer_interpretations: Array.isArray(root?.buyer_interpretations) ? root.buyer_interpretations.map(String) : [],
-    questions_before_payment: Array.isArray(root?.questions_before_payment) ? root.questions_before_payment.map(String) : [],
+    questions_before_payment: normalizeQuestionsBeforePayment(root?.questions_before_payment),
   };
 }
 

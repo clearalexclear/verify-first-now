@@ -45,6 +45,43 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function extractQuestionText(value: unknown, depth = 0): string | null {
+  if (depth > 3 || value === null || value === undefined) return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === "[object Object]") return null;
+    return trimmed;
+  }
+  if (!isObject(value)) return null;
+
+  for (const key of ["question", "text", "title", "body", "value"]) {
+    const child = value[key];
+    const text = extractQuestionText(child, depth + 1);
+    if (text) return text;
+  }
+
+  for (const child of Object.values(value)) {
+    const text = extractQuestionText(child, depth + 1);
+    if (text) return text;
+  }
+  return null;
+}
+
+export function normalizeQuestionsBeforePayment(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const text = sanitizeBuyerText(extractQuestionText(value) ?? "");
+    if (!text || text === "[object Object]") continue;
+    const key = text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+  }
+  return out;
+}
+
 function hasCjk(value: string): boolean {
   return /[\u3400-\u9fff]/.test(value);
 }
@@ -563,7 +600,7 @@ function sanitizeManusResearch(report: ManusResearchReport | undefined): ManusRe
     rejected_claims: [],
     supplier_marketing_claims: report.supplier_marketing_claims.map(sanitizeManusClaim),
     buyer_interpretations: report.buyer_interpretations.map(sanitizeBuyerText).filter(Boolean),
-    questions_before_payment: report.questions_before_payment.map(sanitizeBuyerText).filter(Boolean),
+    questions_before_payment: normalizeQuestionsBeforePayment(report.questions_before_payment),
     sources_used: report.sources_used.map((source) => ({
       ...source,
       title: displaySourceName(source.title, source.url),
@@ -750,7 +787,7 @@ export function buildBuyerFacingReportViewModel(report: InvestigationReport, opt
     manus_evidence_summary: buildManusEvidenceSummary(manusResearch),
     manus_platform_trade_intelligence: buildManusPlatformTradeIntelligence(manusResearch),
     manus_material_contradictions: buildManusMaterialContradictions(manusResearch),
-    manus_questions_before_payment: (manusResearch?.questions_before_payment ?? []).map(sanitizeBuyerText).filter(Boolean),
+    manus_questions_before_payment: normalizeQuestionsBeforePayment(manusResearch?.questions_before_payment),
     public_web_source_summaries: publicWebSourceSummaries,
     public_web_empty_message: hasDeepResearchSources
       ? "Generic open-web scouting did not retain additional supplier-linked sources beyond the validated deep-research sources below."
