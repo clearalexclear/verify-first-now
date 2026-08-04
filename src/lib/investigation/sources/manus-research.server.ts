@@ -303,11 +303,35 @@ function sanitizeClaimText(value: string, sourceType: ManusSourceType): string {
   return sanitizeBuyerFacingCjkText(value, { sourceType });
 }
 
-function applySourceSpecificClaimWording(value: string, partial: Partial<ManusEvidenceClaim>, sourceType: ManusSourceType): string {
+function cleanSupplierNameForClaim(value: string): string {
+  return value
+    .replace(/&trade;|&amp;/gi, " & ")
+    .replace(/\s*&\s*/g, " & ")
+    .replace(/\s+/g, " ")
+    .replace(/\bCo\s*,?\s*Ltd\b\.?/i, "Co., Ltd.")
+    .trim();
+}
+
+function applySourceSpecificClaimWording(value: string, partial: Partial<ManusEvidenceClaim>, sourceType: ManusSourceType, input: ManusResearchInput): string {
   if (sourceType !== "commercial_registry_aggregator") return value;
   const sourceText = `${partial.source_title ?? ""} ${partial.source_domain ?? ""} ${partial.source_url ?? ""}`;
+  const uscc = [
+    value,
+    partial.exact_text_read_from_source,
+    partial.source_title,
+  ].join(" ").match(/\b[0-9A-Z]{18}\b/)?.[0];
+  if (/registered as|with USCC|unified social credit|qichacha|qcc|tianyancha|aiqicha/i.test(`${value} ${sourceText}`) && uscc) {
+    return `Commercial registry/search-snippet evidence reports ${cleanSupplierNameForClaim(input.supplierName)} with USCC ${uscc}.`;
+  }
   if (!/tianyancha/i.test(sourceText)) return value;
   return value.replace(/^Commercial registry aggregator reports/i, "Tianyancha / registry-snippet data reports");
+}
+
+function applySourceSpecificLimitation(value: string, sourceType: ManusSourceType): string {
+  if (sourceType === "commercial_registry_aggregator") {
+    return "This is commercial registry/search-snippet evidence, not official GSXT verification.";
+  }
+  return value;
 }
 
 function claimHasCorruptedCjk(partial: Partial<ManusEvidenceClaim>): boolean {
@@ -381,14 +405,14 @@ export function parseManusResearchOutput(raw: unknown, input: ManusResearchInput
     else if (sourceType === "buyer_interpretation" || !isSupplierRelevant(partial, input)) validation = "rejected_low_relevance";
 
     const claim: ManusEvidenceClaim = {
-      claim: applySourceSpecificClaimWording(sanitizeClaimText(String(partial.claim ?? ""), sourceType), partial, sourceType),
+      claim: applySourceSpecificClaimWording(sanitizeClaimText(String(partial.claim ?? ""), sourceType), partial, sourceType, input),
       exact_text_read_from_source: sanitizeClaimText(String(partial.exact_text_read_from_source ?? ""), sourceType),
       source_url: String(partial.source_url ?? ""),
       source_title: sanitizeClaimText(String(partial.source_title ?? ""), sourceType),
       source_domain: String(partial.source_domain || domainFromUrl(partial.source_url)),
       source_type: sourceType,
       retrieved_at: partial.retrieved_at || now,
-      limitation: sanitizeClaimText(partial.limitation || "Manus claim retained only as evidence-bound deep research; VerifyFirst did not independently verify the source beyond the captured citation.", sourceType),
+      limitation: applySourceSpecificLimitation(sanitizeClaimText(partial.limitation || "Deep-research claim retained only as evidence-bound research; VerifyFirst did not independently verify the source beyond the captured citation.", sourceType), sourceType),
       buyer_implication: sanitizeClaimText(partial.buyer_implication || "Use this as supporting research and confirm critical items through official or licensed sources before payment.", sourceType),
       validation_status: validation,
     };

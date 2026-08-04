@@ -13,7 +13,7 @@ export const UNCERTAIN_REGISTERED_ADDRESS = "Registered address could not be rel
 export const UNCERTAIN_BUSINESS_SCOPE = "Business scope could not be reliably extracted from the uploaded licence.";
 export const UFLPA_LOCAL_NAME_UNCERTAIN = "Local legal name was not reliably extracted and was not used for local-name screening.";
 export const NO_RELIABLE_SHIPMENT_HISTORY = "No reliable shipment-history evidence identified from public sources.";
-export const MISSING_BENEFICIARY_WORDING = "Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder.";
+export const MISSING_BENEFICIARY_WORDING = "Payment beneficiary/account holder was not visible/provided in the uploaded proforma invoice — cannot confirm payee matches licence holder.";
 export const DEFAULT_VERIFIED_REPORT_ACTIONS =
   "Confirm payment beneficiary/account holder, confirm the uploaded business licence against GSXT/CODS or licensed registry data, verify TUV SUD certificate, and use escrow/LC tied to inspection.";
 export const CJK_SOURCE_PRESENT_NOT_DISPLAYED = "Chinese legal name was present in source material but is not displayed because rendering reliability could not be confirmed.";
@@ -245,6 +245,12 @@ export function sanitizeBuyerText(value: string): string {
     .replace(/法定代表人/g, "Legal representative")
     .replace(/注册地址/g, "Registered address")
     .replace(/经营范围/g, "Business scope")
+    .replace(/\bAccepted Manus claims\b/gi, "Validated deep-research findings")
+    .replace(/\bManus returned\b/gi, "The deep research backend returned")
+    .replace(/\bManus status\b/gi, "Deep research status")
+    .replace(/\bManus\b/g, "deep research")
+    .replace(/connectors?\s+remain\s+disabled\s+until\s+credentials\s+are\s+supplied\.?/gi, "Certain checks require licensed data sources or direct issuer/registry confirmation.")
+    .replace(/(?:QCC|QINCheck|Panda360|ImportGenius|OpenSanctions|IAF CertSearch)[^.;]*(?:not configured|credentials|disabled)[^.;]*[.;]?/gi, "Certain checks require licensed data sources or direct issuer/registry confirmation.")
     .replace(/\((?:[\u4e00-\u9fff]\s*){1,3}\)/g, "")
     .replace(/\s+/g, " ")
     .replace(/\s+([.;,])/g, "$1")
@@ -256,6 +262,7 @@ function fallbackSourceLabel(url: string | null | undefined): string | null {
   try {
     const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
     if (/cods\.org\.cn|gsxt\.gov\.cn|creditchina\.gov\.cn|samr\.gov\.cn/.test(host)) return "CODS / USCC lookup";
+    if (/qichacha|qcc\.com|tianyancha|aiqicha/.test(host)) return "Commercial registry/search-snippet source";
     if (/globalsources|importyeti|panjiva|shipment|bill|shipping/.test(host)) return "Shipping aggregator result";
     if (/alibaba|1688|made-in-china|exporthub/.test(host)) return "Public web search result";
   } catch {
@@ -273,6 +280,8 @@ export function isLowQualitySourceTitle(value: string): boolean {
   if (/[\u0600-\u06ff]/.test(v)) return true;
   const cjkCount = (v.match(/[\u3400-\u9fff]/g) ?? []).length;
   const latinCount = (v.match(/[A-Za-z]/g) ?? []).length;
+  if (cjkCount > 0 && latinCount === 0 && !/(有限公司|有限责任公司|股份有限公司|集团有限公司|公司)$/.test(v) && v.length <= 12) return true;
+  if (cjkCount > 0 && /[一人总]/.test(v) && v.length <= 12) return true;
   if (cjkCount > 0 && latinCount > 0 && /Unified Social Credit Code|Registration status|Legal representative/i.test(v)) return true;
   if (cjkCount > 0 && latinCount > 0 && v.length < 32) return true;
   return false;
@@ -282,6 +291,15 @@ export function displaySourceName(name: string, url: string | null | undefined):
   const clean = sanitizeBuyerText(name || "");
   if (clean && clean.length <= 80 && !isLowQualitySourceTitle(clean)) return clean;
   return fallbackSourceLabel(url) ?? "Public web search result";
+}
+
+function displaySourceNameForType(name: string, url: string | null | undefined, sourceType?: string): string {
+  const clean = displaySourceName(name, url);
+  if (clean !== "Public web search result") return clean;
+  if (sourceType === "commercial_registry_aggregator" || sourceType === "third_party_database") return "Commercial registry/search-snippet source";
+  if (sourceType === "trade_data") return "Trade-data source";
+  if (sourceType === "marketplace_platform_recorded_data") return "Marketplace platform record";
+  return clean;
 }
 
 function inferDocumentsChecked(report: InvestigationReport): string[] {
@@ -316,7 +334,7 @@ function inferWhy(report: InvestigationReport): string[] {
     checklist_results: report.checklist_results ?? [],
     payment_recommendation: report.payment_recommendation,
   });
-  if (/Payment beneficiary (?:was )?not extracted/i.test(text)) return [MISSING_BENEFICIARY_WORDING];
+  if (/Payment beneficiary(?:\/account holder)? (?:was )?(?:not extracted|not visible|not provided)|beneficiary.*not visible\/provided/i.test(text)) return [MISSING_BENEFICIARY_WORDING];
   return [];
 }
 
@@ -381,6 +399,7 @@ export interface BuyerFacingReportViewModel {
   manus_platform_trade_intelligence: string[];
   manus_material_contradictions: string[];
   manus_questions_before_payment: string[];
+  public_web_corroboration_summary: string[];
   public_web_source_summaries: {
     source_name: string;
     source_type: string;
@@ -465,7 +484,7 @@ function buildDeepResearchSourceSummaries(report: ManusResearchReport | undefine
     ))
     .slice(0, 6)
     .map((claim) => ({
-      source_name: displaySourceName(claim.source_title || claim.source_domain, claim.source_url),
+      source_name: displaySourceNameForType(claim.source_title || claim.source_domain, claim.source_url, claim.source_type),
       source_type: sourceTypeLabel(claim.source_type),
       source_reference: sourceReference(claim.source_url),
       what_it_supports: sanitizeBuyerText(claim.claim),
@@ -584,7 +603,7 @@ function sanitizeManusClaim(claim: ManusEvidenceClaim): ManusEvidenceClaim {
     ...claim,
     claim: sanitizeBuyerFacingCjkText(claim.claim, { sourceType: claim.source_type }),
     exact_text_read_from_source: "",
-    source_title: displaySourceName(claim.source_title || claim.source_domain, claim.source_url),
+    source_title: displaySourceNameForType(claim.source_title || claim.source_domain, claim.source_url, claim.source_type),
     source_domain: sanitizeBuyerText(claim.source_domain),
     limitation: sanitizeBuyerFacingCjkText(claim.limitation, { sourceType: claim.source_type }),
     buyer_implication: sanitizeBuyerFacingCjkText(claim.buyer_implication, { sourceType: claim.source_type }),
@@ -603,7 +622,7 @@ function sanitizeManusResearch(report: ManusResearchReport | undefined): ManusRe
     questions_before_payment: normalizeQuestionsBeforePayment(report.questions_before_payment),
     sources_used: report.sources_used.map((source) => ({
       ...source,
-      title: displaySourceName(source.title, source.url),
+      title: displaySourceNameForType(source.title, source.url, source.source_type),
       domain: sanitizeBuyerText(source.domain),
     })),
   };
@@ -668,6 +687,7 @@ function hasRegistryCorroboration(report: ManusResearchReport | undefined, args:
   return (report?.accepted_claims ?? []).some((claim) => {
     if (!["official_government_registry", "commercial_registry_aggregator", "third_party_database"].includes(claim.source_type)) return false;
     const text = sanitizeBuyerText(`${claim.claim} ${claim.exact_text_read_from_source} ${claim.source_title} ${claim.source_domain}`);
+    if (args.uscc && text.includes(args.uscc)) return true;
     const usccMatches = args.uscc ? text.includes(args.uscc) : true;
     const nameMatches = args.chineseName ? text.includes(args.chineseName) : true;
     return usccMatches && nameMatches;
@@ -747,6 +767,11 @@ export function buildBuyerFacingReportViewModel(report: InvestigationReport, opt
   const registryCorroborated = hasRegistryCorroboration(report.manus_research, { chineseName: licenceChineseName, uscc });
   const shipmentHistorySummary = buildShipmentHistorySummary(manusResearch);
   const hasDeepResearchSources = Boolean(manusResearch?.accepted_claims.length);
+  const publicWebCorroborationSummary = registryCorroborated
+    ? ["Supplier identity is corroborated by commercial registry/search-snippet evidence, but not officially verified via GSXT."]
+    : hasDeepResearchSources
+      ? ["Validated deep-research sources below provide the retained supplier-linked public-web and trade-data context."]
+      : ["No public-web fact was strong enough to corroborate supplier identity or operating claims."];
 
   return {
     generated_at: report.generated_at,
@@ -782,12 +807,15 @@ export function buildBuyerFacingReportViewModel(report: InvestigationReport, opt
     critical_blockers: (report.critical_blockers ?? []).map(sanitizeBuyerText),
     verified_report_decision: sanitizeVerifiedDecision(sanitizedReportForDecision),
     is_verified_report: isVerifiedReport,
-    public_web_intelligence: publicWebIntelligence,
+    public_web_intelligence: publicWebIntelligence && registryCorroborated
+      ? { ...publicWebIntelligence, what_this_corroborates: publicWebCorroborationSummary }
+      : publicWebIntelligence,
     manus_research: manusResearch,
     manus_evidence_summary: buildManusEvidenceSummary(manusResearch),
     manus_platform_trade_intelligence: buildManusPlatformTradeIntelligence(manusResearch),
     manus_material_contradictions: buildManusMaterialContradictions(manusResearch),
     manus_questions_before_payment: normalizeQuestionsBeforePayment(manusResearch?.questions_before_payment),
+    public_web_corroboration_summary: publicWebCorroborationSummary,
     public_web_source_summaries: publicWebSourceSummaries,
     public_web_empty_message: hasDeepResearchSources
       ? "Generic open-web scouting did not retain additional supplier-linked sources beyond the validated deep-research sources below."

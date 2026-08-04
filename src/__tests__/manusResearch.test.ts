@@ -100,7 +100,7 @@ function reportWithManus(manus: InvestigationReport["manus_research"]): Investig
       payment_decision: "PAUSE",
       entity_payment_consistency: "NOT_VERIFIED",
       documents_checked: ["Business licence", "Proforma invoice"],
-      why: ["Payment beneficiary was not extracted from the proforma invoice — cannot confirm payee matches licence holder."],
+      why: ["Payment beneficiary/account holder was not visible/provided in the uploaded proforma invoice — cannot confirm payee matches licence holder."],
       deal_specific_blockers: [],
       ask_supplier_before_payment: ["Confirm payment beneficiary/account holder before paying."],
     },
@@ -276,8 +276,8 @@ describe("Manus deep research integration", () => {
     }, supplierInput, "2026-07-30T00:00:00.000Z");
 
     expect(parsed.accepted_claims).toHaveLength(1);
-    expect(parsed.accepted_claims[0].claim).toContain("Tianyancha / registry-snippet data reports USCC 91441702553600081W");
-    expect(parsed.accepted_claims[0].claim).toContain("not been verified against China's official GSXT registry");
+    expect(parsed.accepted_claims[0].claim).toContain("Commercial registry/search-snippet evidence reports Yangjiang Justa Industry & Trade Co., Ltd. with USCC 91441702553600081W");
+    expect(parsed.accepted_claims[0].limitation).toBe("This is commercial registry/search-snippet evidence, not official GSXT verification.");
     expect(parsed.accepted_claims[0].claim).not.toMatch(/officially registered|officially verified|active company confirmed/i);
     expect(parsed.accepted_claims[0].buyer_implication).not.toMatch(/officially verified|official active status confirmed/i);
   });
@@ -285,7 +285,7 @@ describe("Manus deep research integration", () => {
   it("uses the same CJK safety filter for Manus claims, document tables and comparison rows", async () => {
     const parsed = parseManusResearchOutput({
       claims: [{
-        claim: "Tianyancha / registry-snippet data reports USCC 91441702553600081W for a company associated with this supplier.",
+        claim: "Commercial registry/search-snippet evidence reports Yangjiang Justa Industry & Trade Co., Ltd. with USCC 91441702553600081W.",
         exact_text_read_from_source: "Tianyancha lists Yangjiang Justa Industry & Trade Co., Ltd. and USCC 91441702553600081W.",
         source_url: "https://www.tianyancha.com/company/123",
         source_title: "Tianyancha registry snippet",
@@ -320,7 +320,7 @@ describe("Manus deep research integration", () => {
     const serialized = JSON.stringify(view);
     expect(serialized).not.toMatch(/江市\s*有限公司|江市江\s*区\s*3\s*地1\s*14\s*1406|阳江市江/);
     expect(serialized).toContain("Could not be reliably extracted");
-    expect(serialized).toContain("Tianyancha / registry-snippet data reports USCC 91441702553600081W");
+    expect(serialized).toContain("Commercial registry/search-snippet evidence reports Yangjiang Justa Industry & Trade Co., Ltd. with USCC 91441702553600081W");
     expect(serialized).not.toMatch(/officially registered|officially verified active company|active company confirmed/i);
     expect(view.verified_report_document_summary.flatMap((doc) => doc.fields).find((field) => field.label === "Registered address")?.value).toBe("Could not be reliably extracted");
     expect(view.verified_report_comparison.find((row) => row.label === "Registered address")?.value_found).toBe("Could not be reliably extracted");
@@ -330,7 +330,7 @@ describe("Manus deep research integration", () => {
     const text = await extractPdfText(await renderReportPdf(report));
     expect(text).not.toMatch(/江市\s*有限公司|江市江\s*区\s*3\s*地1\s*14\s*1406|阳江市江/);
     expect(text).toContain("Could not be reliably extracted");
-    expect(text).toContain("Tianyancha / registry-snippet data reports USCC 91441702553600081W");
+    expect(text).toContain("Commercial registry/search-snippet evidence reports Yangjiang Justa Industry & Trade Co., Ltd. with USCC 91441702553600081W");
     expect(text).not.toMatch(/officially registered|officially verified active company|active company confirmed/i);
   });
 
@@ -359,7 +359,7 @@ describe("Manus deep research integration", () => {
     const parsed = parseManusResearchOutput({
       claims: [
         {
-          claim: "Tianyancha / registry-snippet data reports USCC 91441702553600081W for 阳江市佳仕达工贸有限公司.",
+          claim: "Commercial registry/search-snippet evidence reports Yangjiang Justa Industry & Trade Co., Ltd. with USCC 91441702553600081W for 阳江市佳仕达工贸有限公司.",
           exact_text_read_from_source: "阳江市佳仕达工贸有限公司 统一社会信用代码 91441702553600081W",
           source_url: "https://www.tianyancha.com/company/yangjiang-justa",
           source_title: "Tianyancha registry snippet",
@@ -505,14 +505,14 @@ describe("Manus deep research integration", () => {
     expect(view.shipment_history_summary).toContain("Shipment-history evidence was identified from trade-data/public source material");
     expect(view.manus_material_contradictions.join("\n")).not.toMatch(/ImportGenius records indicate shipment traces/);
     expect(serialized).toContain("阳江市佳仕达工贸有限公司");
-    expect(serialized).toContain("Commercial registry/search-snippet evidence provided company identity details, but official GSXT verification is still required.");
+    expect(serialized).toContain("This is commercial registry/search-snippet evidence, not official GSXT verification.");
     expect(serialized).not.toContain("Registered capital: 人");
     expect(serialized).not.toMatch(/not displayed because rendering reliability could not be confirmed|confirmed\.\)/i);
 
     const text = await extractPdfText(await renderReportPdf(report));
     expect(text).toContain("阳江市佳仕达工贸有限公司");
     expect(text).toContain("Registered capital: Not independently verified");
-    expect(text).toContain("Commercial registry/search-snippet evidence provided company identity details, but official GSXT verification is still required.");
+    expect(text).toContain("This is commercial registry/search-snippet evidence, not official GSXT verification.");
     expect(text).toContain("Shipment-history evidence was identified from trade-data/public source material");
     expect(text).toContain("No material contradiction was identified from validated evidence");
     expect(text).not.toContain("Registered capital: 人");
@@ -522,7 +522,7 @@ describe("Manus deep research integration", () => {
   it("renders questions before payment from Manus objects as buyer-readable text", async () => {
     const parsed = parseManusResearchOutput({
       claims: [{
-        claim: "Tianyancha / registry-snippet data reports USCC 91441702553600081W for 阳江市佳仕达工贸有限公司.",
+        claim: "Commercial registry/search-snippet evidence reports Yangjiang Justa Industry & Trade Co., Ltd. with USCC 91441702553600081W for 阳江市佳仕达工贸有限公司.",
         exact_text_read_from_source: "阳江市佳仕达工贸有限公司 统一社会信用代码 91441702553600081W",
         source_url: "https://www.tianyancha.com/company/yangjiang-justa",
         source_title: "Tianyancha registry snippet",
@@ -580,5 +580,74 @@ describe("Manus deep research integration", () => {
     expect(text).toContain("Confirm the proforma invoice payment beneficiary in writing.");
     expect(text).toContain("阳江市佳仕达工贸有限公司");
     expect(text).not.toContain("[object Object]");
+  });
+
+  it("keeps final buyer-facing deep research language clean and non-contradictory", async () => {
+    const parsed = parseManusResearchOutput({
+      claims: [{
+        claim: "Company is registered as YANGJIANG JUSTA INDUSTRY & TRADE CO.,LTD Chinese legal name was present in source material but is not displayed because rendering reliability could not be confirmed.) with USCC 91441702553600081W.",
+        exact_text_read_from_source: "Qichacha lists Yangjiang Justa Industry & Trade Co., Ltd. with USCC 91441702553600081W.",
+        source_url: "https://www.qcc.com/firm/example",
+        source_title: "总阳江市一人",
+        source_domain: "qcc.com",
+        source_type: "commercial_registry_aggregator",
+        retrieved_at: "2026-07-30T00:00:00.000Z",
+        limitation: "Qichacha commercial registry snippet, not GSXT.",
+        buyer_implication: "Supports entity consistency only.",
+      }],
+      questions_before_payment: [{ question: "Confirm the payment beneficiary/account holder before paying." }],
+    }, supplierInput, "2026-07-30T00:00:00.000Z");
+    const report = reportWithManus(parsed);
+    report.methodology = "Automated sources were checked; connectors remain disabled until credentials are supplied.";
+    report.limitations = "QCC and ImportGenius connectors remain disabled until credentials are supplied.";
+    report.public_web_intelligence = {
+      generated_at: "2026-07-30T00:00:00.000Z",
+      queries_run: ["Yangjiang Justa Qichacha USCC"],
+      evidence: [],
+      what_found_online: ["Qichacha/company identity search result found."],
+      what_this_corroborates: ["No public-web fact was strong enough to corroborate supplier identity or operating claims."],
+      still_not_verified: ["Corporate registry not officially verified."],
+      potential_contradictions: [],
+      buyer_impact: "Use non-official registry snippets only as supporting context.",
+      recommended_next_actions: ["Confirm official registry, certificate and payment-document gaps before payment."],
+      diagnostics: {
+        searches_run: 1,
+        sources_found: 1,
+        retained_sources: 1,
+        rejected_sources: 0,
+        matched_identifiers: ["Yangjiang Justa", "91441702553600081W"],
+      },
+    };
+    report.verified_report_document_summary = [{
+      document_type: "business_licence",
+      label: "Business licence",
+      source: "Uploaded business licence",
+      fields: [
+        { label: "Chinese legal name", value: "阳江市佳仕达工贸有限公司", status: "extracted" },
+        { label: "USCC / registration number", value: "91441702553600081W", status: "extracted" },
+      ],
+    }];
+
+    const view = buildBuyerFacingReportViewModel(report);
+    const serialized = JSON.stringify(view);
+    expect(view.manus_evidence_summary[0].claim).toBe("Commercial registry/search-snippet evidence reports Yangjiang Justa Industry & Trade Co., Ltd. with USCC 91441702553600081W.");
+    expect(view.manus_evidence_summary[0].limitation).toBe("This is commercial registry/search-snippet evidence, not official GSXT verification.");
+    expect(view.manus_evidence_summary[0].source).toContain("Commercial registry/search-snippet source");
+    expect(view.public_web_corroboration_summary).toContain("Supplier identity is corroborated by commercial registry/search-snippet evidence, but not officially verified via GSXT.");
+    expect(serialized).toContain("Certain checks require licensed data sources or direct issuer/registry confirmation.");
+    expect(serialized).toContain("阳江市佳仕达工贸有限公司");
+    expect(serialized).not.toMatch(/Accepted Manus claims|Manus|总阳江市一人|No public-web fact was strong enough|connectors remain disabled|\[object Object\]/);
+    expect(serialized).not.toMatch(/Company is registered as .*Commercial registry\/search-snippet evidence provided.* with USCC/i);
+
+    const text = await extractPdfText(await renderReportPdf(report));
+    expect(text).toContain("Validated deep-research findings");
+    expect(text).toContain("Commercial registry/search-snippet evidence reports Yangjiang Justa Industry & Trade Co., Ltd. with USCC 91441702553600081W.");
+    expect(text).toContain("This is commercial registry/search-snippet evidence, not official GSXT verification.");
+    expect(text).toContain("Supplier identity is corroborated by commercial registry/search-snippet evidence, but not officially verified via GSXT.");
+    expect(text).toContain("Certain checks require licensed data sources or direct issuer/registry confirmation.");
+    expect(text).toContain("阳江市佳仕达工贸有限公司");
+    expect(text).toContain("Confirm the payment beneficiary/account holder before paying.");
+    expect(text).not.toMatch(/Accepted Manus claims|Manus|总阳江市一人|No public-web fact was strong enough|connectors remain disabled|\[object Object\]/);
+    expect(text).not.toMatch(/Company is registered as .*Commercial registry\/search-snippet evidence provided.* with USCC/i);
   });
 });
